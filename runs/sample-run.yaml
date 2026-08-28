@@ -1,0 +1,58 @@
+# Sample run configuration for heval
+name: "broad-first-pass"
+description: "Broad first pass: all 5 harnesses, 2 providers, both task tracks"
+
+harnesses:
+  - name: opencode
+    adapter: opencode
+    observability_tier: full
+    config:
+      mode: agent
+
+  - name: claude-code
+    adapter: claude_code
+    observability_tier: partial
+    config:
+      max_turns: 50
+
+  - name: codex
+    adapter: codex
+    observability_tier: partial
+    config: {}
+
+  - name: pi
+    adapter: pi
+    observability_tier: minimal
+    config: {}
+
+  - name: omp
+    adapter: omp
+    observability_tier: minimal
+    config: {}
+
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    config:
+      max_tokens: 16384
+
+  - name: gpt-4o
+    provider: openai
+    api_key_env: OPENAI_API_KEY
+    config:
+      max_tokens: 16384
+
+tasks:
+  - "*"  # All tasks in the library
+
+task_library_path: "./tasks"
+repeats: 5
+budget_usd: 100.0
+gateway_port: 8877
+gateway_db: "heval_gateway.db"
+results_db: "heval_results.db"
+workdir: "./heval_workdir"
+docker_image: "python:3.12-slim"
+timeout_per_task: 600
+parallel_runs: 1

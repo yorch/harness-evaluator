@@ -1,0 +1,46 @@
+# Sample task: spec-driven feature addition
+tasks:
+  - id: feature-add-001
+    name: "Add CLI flag --verbose to script"
+    track: swe
+    difficulty: easy
+    description: |
+      Add a `--verbose` flag to the CLI script in src/cli.py.
+      When set, it should print debug information to stderr.
+    task_prompt: |
+      Add a `--verbose` / `-v` flag to the CLI in src/cli.py.
+      When the flag is set, print "Verbose mode enabled" to stderr
+      before any other output.
+    test_command: "python -m pytest tests/test_cli.py -v"
+    test_patch: |
+      diff --git a/tests/test_cli.py b/tests/test_cli.py
+      index 0000000..1234567
+      --- /dev/null
+      +++ b/tests/test_cli.py
+      @@ -0,0 +1,20 @@
+      +import subprocess
+      +import sys
+      +
+      +def test_verbose_flag():
+      +    result = subprocess.run(
+      +        [sys.executable, "-m", "src.cli", "--verbose"],
+      +        capture_output=True, text=True
+      +    )
+      +    assert "Verbose mode enabled" in result.stderr
+      +
+      +def test_no_verbose_flag():
+      +    result = subprocess.run(
+      +        [sys.executable, "-m", "src.cli"],
+      +        capture_output=True, text=True
+      +    )
+      +    assert "Verbose mode enabled" not in result.stderr
+      +
+      +def test_short_verbose_flag():
+      +    result = subprocess.run(
+      +        [sys.executable, "-m", "src.cli", "-v"],
+      +        capture_output=True, text=True
+      +    )
+      +    assert "Verbose mode enabled" in result.stderr
+    expected_files:
+      - src/cli.py
+    timeout_seconds: 120

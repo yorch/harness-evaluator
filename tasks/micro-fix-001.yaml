@@ -1,0 +1,39 @@
+# Sample task: deterministic micro-fix (off-by-one bug)
+tasks:
+  - id: micro-fix-001
+    name: "Fix off-by-one in range_sum function"
+    track: swe
+    difficulty: trivial
+    description: |
+      The `range_sum` function in src/utils.py has an off-by-one bug.
+      It should sum integers from 1 to n inclusive, but currently excludes n.
+      Fix the bug so that all tests pass.
+    task_prompt: |
+      Fix the off-by-one bug in the `range_sum` function in src/utils.py.
+      The function should sum integers from 1 to n inclusive.
+    test_command: "python -m pytest tests/test_utils.py -v"
+    test_patch: |
+      diff --git a/tests/test_utils.py b/tests/test_utils.py
+      index 0000000..1234567
+      --- /dev/null
+      +++ b/tests/test_utils.py
+      @@ -0,0 +1,15 @@
+      +from src.utils import range_sum
+      +
+      +def test_range_sum_1():
+      +    assert range_sum(1) == 1
+      +
+      +def test_range_sum_5():
+      +    assert range_sum(5) == 15  # 1+2+3+4+5
+      +
+      +def test_range_sum_10():
+      +    assert range_sum(10) == 55
+      +
+      +def test_range_sum_0():
+      +    assert range_sum(0) == 0
+      +
+      +def test_range_sum_100():
+      +    assert range_sum(100) == 5050
+    expected_files:
+      - src/utils.py
+    timeout_seconds: 120

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>heval — {{ run_name }}</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; margin: 2rem; background: #f8f9fa; }
+        h1, h2, h3 { color: #1a1a1a; }
+        table { border-collapse: collapse; width: 100%; margin: 1rem 0; background: white; }
+        th, td { border: 1px solid #ddd; padding: 0.5rem 0.75rem;
+                 text-align: left; font-size: 0.9rem; }
+        th { background: #f1f3f5; }
+        tr:nth-child(even) { background: #f8f9fa; }
+        .pass { color: #1971c2; font-weight: 600; }
+        .fail { color: #c92a2a; font-weight: 600; }
+        .partial { color: #e67700; font-weight: 600; }
+        .summary { display: flex; gap: 2rem; margin: 1rem 0; }
+        .summary-card { background: white; padding: 1rem 1.5rem; border-radius: 8px;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .summary-card .value { font-size: 1.5rem; font-weight: 700; }
+        .summary-card .label { font-size: 0.8rem; color: #666; text-transform: uppercase; }
+        .filters { background: white; padding: 1rem; border-radius: 8px; margin: 1rem 0; }
+        .filters select, .filters input { margin-right: 1rem; padding: 0.25rem; }
+        a { color: #1971c2; text-decoration: none; }
+        .nav { margin: 1rem 0; }
+        .pagination { margin: 1rem 0; }
+        .pagination a, .pagination span {
+            display: inline-block; padding: 0.25rem 0.5rem; margin: 0 0.25rem;
+            border: 1px solid #ddd; border-radius: 4px; background: white;
+        }
+        .pagination .current { background: #1971c2; color: white; border-color: #1971c2; }
+        .state-badge {
+            display: inline-block; padding: 0.25rem 0.75rem; border-radius: 12px;
+            font-size: 0.8rem; font-weight: 600; margin-left: 0.5rem;
+        }
+        .state-pending { background: #fff3bf; color: #e67700; }
+        .state-running { background: #d0ebff; color: #1971c2; }
+        .state-completed { background: #d3f9d8; color: #2b8a3e; }
+        .state-failed { background: #ffe0e0; color: #c92a2a; }
+    </style>
+</head>
+<body>
+    <div class="nav"><a href="/">&larr; All runs</a></div>
+    <h1>{{ run_name }}</h1>
+
+    {% if state_summary %}
+    <div class="state-info">
+        {% for status, count in state_summary.items() %}
+        <span class="state-badge state-{{ status }}">{{ status }}: {{ count }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="summary">
+        <div class="summary-card">
+            <div class="value">{{ total_cells }}</div><div class="label">Total Cells</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{{ passed }}</div><div class="label">Passed</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">${{ "%.4f"|format(cost) }}</div><div class="label">Cost</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{{ total_count }}</div><div class="label">Filtered</div>
+        </div>
+    </div>
+
+    <div class="filters">
+        <form method="get" action="/run/{{ run_name }}">
+            <select name="model">
+                <option value="">All models</option>
+                {% for m in models %}
+                <option value="{{ m }}" {% if m == current_model %}selected{% endif %}>{{ m }}</option>
+                {% endfor %}
+            </select>
+            <select name="harness">
+                <option value="">All harnesses</option>
+                {% for h in harnesses %}
+                <option value="{{ h }}" {% if h == current_harness %}selected{% endif %}>{{ h }}</option>
+                {% endfor %}
+            </select>
+            <select name="track">
+                <option value="">All tracks</option>
+                {% for t in tracks %}
+                <option value="{{ t }}" {% if t == current_track %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+            </select>
+            <input type="number" name="min_success" placeholder="min success"
+                   value="{{ '' if current_min_success is none else current_min_success }}"
+                   step="0.1" min="0" max="1">
+            <input type="number" name="per_page" value="{{ per_page }}" min="1" max="500">
+            <button type="submit">Filter</button>
+        </form>
+    </div>
+
+    {% if leaderboards %}
+    <h2>Leaderboards</h2>
+    {% for model_name, rows in leaderboards.items() %}
+    <h3>{{ model_name }}</h3>
+    <table class="leaderboard">
+        <tr><th>Harness</th><th>Success</th><th>Avg Tokens</th>
+            <th>Avg Cost</th><th>Avg Time</th><th>API Calls</th></tr>
+        {% for row in rows %}
+        <tr>
+            <td>{{ row.harness }}</td>
+            <td class="{{ row.success_class }}">{{ row.success_pct }}%</td>
+            <td>{{ row.avg_tokens }}</td>
+            <td>${{ row.avg_cost }}</td>
+            <td>{{ row.avg_time_s }}s</td>
+            <td>{{ row.avg_api_calls }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endfor %}
+    {% endif %}
+
+    <h2>Results ({{ total_count }} total, showing {{ results|length }})</h2>
+    <table>
+        <tr><th>Harness</th><th>Model</th><th>Task</th><th>Repeat</th>
+            <th>Exit</th><th>Success</th><th>Tokens</th><th>Cost</th>
+            <th>Time</th><th>Error Class</th></tr>
+        {% for r in results %}
+        {% set total_tokens = r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens + r.reasoning_tokens %}
+        {% set exit_class = 'pass' if r.exit_class == 'pass' else ('partial' if r.exit_class == 'partial' else 'fail') %}
+        <tr>
+            <td>{{ r.harness }}</td>
+            <td>{{ r.model }}</td>
+            <td>{{ r.task_id }}</td>
+            <td>r{{ r.repeat }}</td>
+            <td class="{{ exit_class }}">{{ r.exit_class }}</td>
+            <td>{{ "%.2f"|format(r.success) }}</td>
+            <td>{{ total_tokens }}</td>
+            <td>${{ "%.6f"|format(r.total_cost) }}</td>
+            <td>{{ "%.1f"|format(r.latency_ms / 1000) }}s</td>
+            <td>{{ r.error_class or '' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="/run/{{ run_name }}?model={{ current_model or '' }}&harness={{ current_harness or '' }}&track={{ current_track or '' }}&min_success={{ current_min_success or '' }}&page={{ page - 1 }}&per_page={{ per_page }}">&laquo; Prev</a>
+        {% endif %}
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="current">{{ p }}</span>
+            {% elif p <= 5 or p > total_pages - 2 or (p >= page - 1 and p <= page + 1) %}
+            <a href="/run/{{ run_name }}?model={{ current_model or '' }}&harness={{ current_harness or '' }}&track={{ current_track or '' }}&min_success={{ current_min_success or '' }}&page={{ p }}&per_page={{ per_page }}">{{ p }}</a>
+            {% elif p == 6 or p == total_pages - 2 %}
+            <span>...</span>
+            {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+        <a href="/run/{{ run_name }}?model={{ current_model or '' }}&harness={{ current_harness or '' }}&track={{ current_track or '' }}&min_success={{ current_min_success or '' }}&page={{ page + 1 }}&per_page={{ per_page }}">Next &raquo;</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</body>
+</html>

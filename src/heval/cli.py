@@ -1,0 +1,404 @@
+"""heval CLI — harness evaluator command line interface."""
+
+from __future__ import annotations
+
+import asyncio
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+app = typer.Typer(
+    name="heval",
+    help="Harness evaluator: compare agentic coding harnesses on effectiveness and efficiency.",
+    no_args_is_help=True,
+)
+console = Console()
+
+
+@app.command()
+def gateway(
+    host: str = typer.Option("127.0.0.1", help="Host to bind to"),
+    port: int = typer.Option(8877, help="Port to bind to"),
+    db: str = typer.Option("heval_gateway.db", help="SQLite DB path for captured calls"),
+) -> None:
+    """Start the gateway proxy server for token accounting."""
+    from heval.gateway.proxy import run_proxy
+
+    console.print(f"[bold green]Starting gateway proxy on {host}:{port}[/bold green]")
+    console.print(f"Captured calls stored to: {db}")
+    console.print(
+        "Configure harnesses with:\n"
+        "  ANTHROPIC_BASE_URL=http://127.0.0.1:8877\n"
+        "  OPENAI_BASE_URL=http://127.0.0.1:8877"
+    )
+    run_proxy(host=host, port=port, db_path=db)
+
+
+@app.command()
+def canary(
+    db: str = typer.Option("heval_gateway.db", help="SQLite DB path"),
+    tolerance: float = typer.Option(1.0, help="Max allowed discrepancy percentage"),
+) -> None:
+    """Run the proxy canary: verify token capture accuracy."""
+    from heval.gateway.canary import run_canary
+
+    result = asyncio.run(run_canary(db_path=db, tolerance_pct=tolerance))
+    if result.passed:
+        console.print("[bold green]Canary PASSED[/bold green]")
+        console.print(result.summary)
+    else:
+        console.print("[bold red]Canary FAILED[/bold red]")
+        console.print(result.summary)
+        raise typer.Exit(1)
+
+
+@app.command()
+def run(
+    config: str = typer.Argument(..., help="Path to run config YAML file"),
+    dry_run: bool = typer.Option(False, help="Print the matrix without executing"),
+) -> None:
+    """Execute an evaluation run from a config file."""
+    from heval.orchestrator.config import RunConfig
+    from heval.orchestrator.engine import Orchestrator
+    from heval.orchestrator.results_store import ResultsStore
+
+    cfg = RunConfig.from_yaml(config)
+    console.print(f"[bold]Run:[/bold] {cfg.name}")
+    console.print(f"  Harnesses: {[h.name for h in cfg.harnesses]}")
+    console.print(f"  Models: {[m.name for m in cfg.models]}")
+    console.print(f"  Repeats: {cfg.repeats}")
+
+    cells = cfg.build_matrix()
+    console.print(f"  Total cells: {len(cells)}")
+
+    if dry_run:
+        table = Table(title="Eval Matrix")
+        table.add_column("Cell ID")
+        table.add_column("Harness")
+        table.add_column("Model")
+        table.add_column("Task")
+        table.add_column("Repeat")
+        for cell in cells[:20]:
+            table.add_row(
+                cell.cell_id, cell.harness.name, cell.model.name, cell.task.id, str(cell.repeat)
+            )
+        if len(cells) > 20:
+            table.add_row("...", "...", "...", "...", "...")
+        console.print(table)
+        return
+
+    store = ResultsStore(cfg.results_db)
+
+    # Wire up the Docker runner
+    from heval.runner.docker import DockerRunner
+
+    runner = DockerRunner(
+        image=cfg.docker_image,
+        workdir_base=cfg.workdir,
+        gateway_port=cfg.gateway_port,
+        gateway_db=cfg.gateway_db,
+    )
+    orchestrator = Orchestrator(cfg, store, run_cell_fn=runner.run_cell)
+    progress = asyncio.run(orchestrator.run())
+
+    console.print("\n[bold green]Run complete[/bold green]")
+    console.print(f"  Passed: {progress.completed}")
+    console.print(f"  Failed: {progress.failed}")
+    console.print(f"  Skipped: {progress.skipped}")
+    console.print(f"  Cost: ${progress.total_cost:.4f}")
+
+
+@app.command()
+def report(
+    run_name: str = typer.Argument(..., help="Name of the run to report on"),
+    db: str = typer.Option("heval_results.db", help="Results DB path"),
+    output: str = typer.Option("./reports", help="Output directory for reports"),
+) -> None:
+    """Generate static reports (HTML, JSON, CSV) for a completed run."""
+    from heval.orchestrator.results_store import ResultsStore
+    from heval.reporting.static_report import ReportGenerator
+
+    store = ResultsStore(db)
+    gen = ReportGenerator(store)
+    paths = gen.generate(run_name, output)
+
+    console.print("[bold green]Reports generated:[/bold green]")
+    for fmt, path in paths.items():
+        console.print(f"  {fmt}: {path}")
+
+
+@app.command()
+def results(
+    run_name: str = typer.Argument(..., help="Name of the run to show"),
+    db: str = typer.Option("heval_results.db", help="Results DB path"),
+) -> None:
+    """Show results summary for a run in the console."""
+    from heval.orchestrator.results_store import ResultsStore
+
+    store = ResultsStore(db)
+    rows = store.get_all_results(run_name)
+
+    if not rows:
+        console.print(f"[red]No results found for run '{run_name}'[/red]")
+        raise typer.Exit(1)
+
+    table = Table(title=f"Results: {run_name}")
+    table.add_column("Harness")
+    table.add_column("Model")
+    table.add_column("Task")
+    table.add_column("Exit")
+    table.add_column("Success")
+    table.add_column("Tokens")
+    table.add_column("Cost")
+    table.add_column("Time(s)")
+
+    for r in rows:
+        total_tokens = (
+            r["input_tokens"]
+            + r["output_tokens"]
+            + r["cache_read_tokens"]
+            + r["cache_write_tokens"]
+            + r["reasoning_tokens"]
+        )
+        table.add_row(
+            r["harness"],
+            r["model"],
+            r["task_id"],
+            r["exit_class"],
+            f"{r['success']:.2f}",
+            str(total_tokens),
+            f"${r['total_cost']:.6f}",
+            f"{r['latency_ms'] / 1000:.1f}",
+        )
+
+    console.print(table)
+
+
+@app.command()
+def adapters() -> None:
+    """List available harness adapters and their observability tiers."""
+    from heval.adapters.registry import list_adapters
+
+    adapter_list = list_adapters()
+    if not adapter_list:
+        console.print("[red]No adapters registered[/red]")
+        return
+
+    table = Table(title="Harness Adapters")
+    table.add_column("Name")
+    table.add_column("Display Name")
+    table.add_column("Observability")
+    table.add_column("Description")
+    table.add_column("Requires Install")
+
+    for name, info in sorted(adapter_list.items()):
+        table.add_row(
+            name,
+            info.display_name,
+            info.observability_tier,
+            info.description,
+            "Yes" if info.requires_install else "No",
+        )
+
+    console.print(table)
+
+
+@app.command()
+def stats(
+    run_name: str = typer.Argument(..., help="Run name to analyze"),
+    db: str = typer.Option("heval_results.db", help="Results DB path"),
+) -> None:
+    """Generate statistical analysis for a run."""
+    from heval.orchestrator.results_store import ResultsStore
+    from heval.stats import analyze_results
+
+    store = ResultsStore(db)
+    results = store.get_all_results(run_name)
+    if not results:
+        console.print(f"[red]No results found for run '{run_name}'[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"\n[bold]Statistical Analysis: {run_name}[/bold]")
+    console.print(f"Observations: {len(results)}\n")
+
+    report = analyze_results(results)
+
+    if report.warnings:
+        for w in report.warnings:
+            console.print(f"[yellow]Warning: {w}[/yellow]")
+
+    # Variance decomposition
+    if report.variance_decomposition:
+        vd = report.variance_decomposition
+        console.print("[bold]Variance Decomposition[/bold]")
+        table = Table(show_header=True)
+        table.add_column("Component")
+        table.add_column("Variance", justify="right")
+        table.add_column("% of Total", justify="right")
+        table.add_row("Harness", f"{vd.harness_variance:.6f}", f"{vd.harness_pct:.1f}%")
+        table.add_row("Model", f"{vd.model_variance:.6f}", f"{vd.model_pct:.1f}%")
+        table.add_row("Task", f"{vd.task_variance:.6f}", f"{vd.task_pct:.1f}%")
+        table.add_row("Residual", f"{vd.residual_variance:.6f}", f"{vd.residual_pct:.1f}%")
+        console.print(table)
+        console.print()
+
+    # Mixed-effects model
+    if report.mixed_effects and report.mixed_effects.coefficients:
+        me = report.mixed_effects
+        console.print("[bold]Mixed-Effects Model[/bold]")
+        console.print(f"Formula: {me.formula}")
+        console.print(f"R²: {me.r_squared:.4f}")
+        if me.convergence_warning:
+            console.print(f"[red]Warning: {me.convergence_warning}[/red]")
+        table = Table(show_header=True)
+        table.add_column("Coefficient")
+        table.add_column("Estimate", justify="right")
+        table.add_column("Std Error", justify="right")
+        table.add_column("p-value", justify="right")
+        for name, coef in me.coefficients.items():
+            se = me.std_errors.get(name, 0)
+            p = me.p_values.get(name, 0)
+            sig = "***" if p < 0.001 else ("**" if p < 0.01 else ("*" if p < 0.05 else ""))
+            table.add_row(name, f"{coef:.6f}", f"{se:.6f}", f"{p:.4f} {sig}")
+        console.print(table)
+        console.print()
+
+    # Bootstrap CIs
+    if report.bootstrap_cis:
+        console.print("[bold]Bootstrap 95% CIs (Success by Harness)[/bold]")
+        table = Table(show_header=True)
+        table.add_column("Harness")
+        table.add_column("Mean", justify="right")
+        table.add_column("CI Lower", justify="right")
+        table.add_column("CI Upper", justify="right")
+        for harness, ci in sorted(report.bootstrap_cis.items()):
+            table.add_row(
+                harness,
+                f"{ci.point_estimate:.4f}",
+                f"{ci.ci_lower:.4f}",
+                f"{ci.ci_upper:.4f}",
+            )
+        console.print(table)
+        console.print()
+
+    # Consistency
+    if report.consistency:
+        console.print("[bold]Consistency Analysis[/bold]")
+        table = Table(show_header=True)
+        table.add_column("Harness")
+        table.add_column("Model")
+        table.add_column("Mean", justify="right")
+        table.add_column("Std", justify="right")
+        table.add_column("CV", justify="right")
+        table.add_column("N", justify="right")
+        for c in sorted(report.consistency, key=lambda x: (x.harness, x.model)):
+            table.add_row(
+                c.harness,
+                c.model,
+                f"{c.mean_success:.4f}",
+                f"{c.std_success:.4f}",
+                f"{c.cv_success:.4f}",
+                str(c.n_repeats),
+            )
+        console.print(table)
+
+
+@app.command()
+def dashboard(
+    host: str = typer.Option("127.0.0.1", help="Host to bind to"),
+    port: int = typer.Option(8080, help="Port to bind to"),
+    db: str = typer.Option("heval_results.db", help="Results DB path"),
+) -> None:
+    """Start the interactive web dashboard."""
+    import uvicorn
+
+    from heval.dashboard.app import create_app
+
+    app = create_app(results_db=db)
+    console.print(f"[bold green]Starting dashboard on http://{host}:{port}[/bold green]")
+    uvicorn.run(app, host=host, port=port)
+
+
+@app.command()
+def calibrate(
+    model: str = typer.Option("claude-sonnet-4-20250514", help="Judge model"),
+) -> None:
+    """Run judge calibration against anchor set."""
+    import os
+
+    from heval.evaluator.open_ended import (
+        DEFAULT_RUBRIC,
+        CalibrationSet,
+        FrozenJudge,
+        JudgeVersion,
+    )
+    from heval.orchestrator.config import TaskSpec, TaskTrack
+
+    # Read API key from environment, not CLI
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+
+    # Create a minimal task for calibration
+    task = TaskSpec(
+        id="calibration",
+        name="Calibration Task",
+        track=TaskTrack.OPEN_ENDED,
+        task_prompt="Implement a caching decorator",
+    )
+
+    # Create calibration set with known anchors
+    cal = CalibrationSet()
+    cal.add_anchor(
+        name="perfect",
+        diff="+def cached():\n+    pass\n",
+        expected_scores={
+            "correctness": 5,
+            "completeness": 5,
+            "code_quality": 5,
+            "test_quality": 5,
+            "documentation": 5,
+        },
+        expected_success=1.0,
+    )
+    cal.add_anchor(
+        name="minimal",
+        diff="+def cached():\n+    return None\n",
+        expected_scores={
+            "correctness": 2,
+            "completeness": 1,
+            "code_quality": 2,
+            "test_quality": 0,
+            "documentation": 0,
+        },
+        expected_success=0.25,
+    )
+
+    judge = FrozenJudge(
+        version=JudgeVersion.V1_0,
+        api_key=api_key,
+        model=model,
+    )
+
+    console.print("[bold]Running calibration...[/bold]")
+    result = cal.calibrate(judge, task, DEFAULT_RUBRIC)
+
+    console.print(f"\nJudge version: {result['judge_version']}")
+    console.print(f"Anchors: {result['num_anchors']}")
+    console.print(f"Mean Absolute Error: {result['mean_absolute_error']:.4f}")
+    console.print(
+        f"Drift detected: {'[red]Yes[/red]' if result['drift_detected'] else '[green]No[/green]'}"
+    )
+    console.print(
+        f"Reliable: {'[green]Yes[/green]' if result['reliable'] else '[red]No[/red]'}"
+    )
+
+    for r in result["results"]:
+        status = "[green]OK[/green]" if r["success_error"] < 0.15 else "[red]DRIFT[/red]"
+        console.print(
+            f"  {r['name']}: expected={r['expected_success']:.2f} "
+            f"actual={r['actual_success']:.2f} {status}"
+        )
+
+
+if __name__ == "__main__":
+    app()

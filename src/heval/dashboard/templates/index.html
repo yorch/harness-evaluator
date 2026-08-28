@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>heval Dashboard</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; margin: 2rem; background: #f8f9fa; }
+        h1 { color: #1a1a1a; }
+        .run-card { background: white; padding: 1rem 1.5rem; border-radius: 8px;
+                    margin: 1rem 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: box-shadow 0.2s; }
+        .run-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .stats { display: flex; gap: 1.5rem; }
+        .stat { font-size: 0.9rem; color: #555; }
+        .stat b { color: #1a1a1a; }
+        .stat.pass b { color: #1971c2; }
+        .stat.fail b { color: #c92a2a; }
+        a { color: #1971c2; text-decoration: none; }
+        .nav { margin: 1rem 0; }
+        .nav a { margin-right: 1rem; }
+    </style>
+</head>
+<body>
+    <h1>heval Dashboard</h1>
+    <div class="nav">
+        <a href="/">Runs</a>
+        <a href="/api/runs">API: Runs</a>
+    </div>
+    <h2>Runs</h2>
+    {% if runs %}
+        {% for run in runs %}
+        <div class="run-card">
+            <h3><a href="/run/{{ run.run_name }}">{{ run.run_name }}</a></h3>
+            <div class="stats">
+                <span class="stat"><b>{{ run.total_cells }}</b> cells</span>
+                <span class="stat pass"><b>{{ run.passed }}</b> passed</span>
+                <span class="stat fail"><b>{{ run.failed }}</b> failed</span>
+                <span class="stat"><b>${{ "%.4f"|format(run.total_cost) }}</b> cost</span>
+                <span class="stat"><b>{{ "%.1f"|format(run.avg_success * 100) }}%</b> avg success</span>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <p>No runs found. Execute an eval with <code>heval run</code> first.</p>
+    {% endif %}
+</body>
+</html>
