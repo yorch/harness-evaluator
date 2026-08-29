@@ -1,64 +1,85 @@
-# AGENTS.md — Project conventions for heval
+# AGENTS.md — heval
 
-## Build & Quality Gates
+## Commands
 
 ```bash
-# Install dependencies
+# Install
 uv sync --extra dev
 
-# Lint
+# Lint (fast, ~1s)
 uv run ruff check src/ tests/
 
-# Type check
+# Type check (fast, ~3s)
 uv run mypy src/heval/
 
-# Tests
-uv run pytest tests/ -v
+# Tests (full suite ~10s, 248 tests)
+uv run pytest tests/ -q
 
-# All gates at once
+# All gates at once — must pass before completing any change
 uv run ruff check src/ tests/ && uv run mypy src/heval/ && uv run pytest tests/ -q
+
+# Build Docker image (slow, ~5 min — only needed when changing Dockerfile)
+docker build -t heval-runner:latest .
 ```
 
-All three gates (ruff, mypy, pytest) must pass before completing any milestone.
+## Verification
+
+A change is incomplete until all three gates pass: ruff, mypy, pytest.
+Run focused tests first when iterating: `uv run pytest tests/<dir>/ -q`.
 
 ## Architecture
 
-- Python core (orchestrator, gateway, evaluator, CLI, dashboard)
-- TS adapters per harness where native integration matters
-- Custom HTTP/SSE proxy for token accounting (aiohttp-based)
-- SQLite for captured call storage
-- Docker for run isolation
+Python core that orchestrates Node.js coding harnesses running inside Docker
+containers, with all provider traffic routed through a custom aiohttp gateway
+proxy for token/cost accounting.
 
-## Key Modules
+- `src/heval/gateway/` — HTTP/SSE proxy, parsers, SQLite store, reconciliation
+- `src/heval/orchestrator/` — Matrix builder, budget engine, results store
+- `src/heval/runner/` — Docker lifecycle (container per cell, exec-based)
+- `src/heval/adapters/` — Per-harness CLI wrappers (claude, codex, opencode, pi, omp)
+- `src/heval/evaluator/` — SWE hidden-test + open-ended LLM judge tracks
+- `src/heval/dashboard/` — FastAPI dashboard with Jinja2 templates
+- `src/heval/stats/` — Mixed-effects model, variance decomposition, bootstrap CIs
+- `src/heval/cli.py` — Typer-based CLI entry point
+- `tasks/` — Task YAML definitions and repo fixtures
+- `Dockerfile` — Image with all 5 harnesses (node:22-slim base)
 
-- `heval.gateway.proxy` — HTTP/SSE proxy server
-- `heval.gateway.parsers.anthropic` — Anthropic SSE/JSON usage parser
-- `heval.gateway.parsers.openai` — OpenAI SSE/JSON usage parser
-- `heval.gateway.models` — Data models (TokenUsage, CapturedCall, PricingTable)
-- `heval.gateway.store` — SQLite-backed call storage
-- `heval.gateway.reconcile` — Multi-source token reconciliation
-- `heval.gateway.canary` — Proxy accuracy verification
-- `heval.orchestrator.config` — Task/run config models, matrix builder
-- `heval.orchestrator.engine` — Orchestrator with retry, budget, resumability
-- `heval.orchestrator.results_store` — SQLite results store
-- `heval.evaluator.swe` — SWE-bench-style evaluator with partial credit
-- `heval.evaluator.open_ended` — Frozen judge, rubric, structural checks, calibration
-- `heval.runner.docker` — Docker-based task runner (placeholder for M3)
-- `heval.reporting.static_report` — HTML/JSON/CSV report generator
-- `heval.dashboard.app` — FastAPI interactive dashboard
-- `heval.stats` — Mixed-effects model, variance decomposition, bootstrap CIs, consistency
-- `heval.adapters.base` — Base adapter class and adapter info
-- `heval.adapters.registry` — Adapter registry (load by name)
-- `heval.adapters.opencode` — OpenCode adapter (full observability)
-- `heval.adapters.claude_code` — Claude Code adapter (partial)
-- `heval.adapters.codex` — Codex adapter (partial)
-- `heval.adapters.pi` — Pi adapter (minimal)
-- `heval.adapters.omp` — OMP adapter (minimal)
-- `heval.cli` — CLI entry point (typer-based)
-
-## Code Style
+## Code style
 
 - Line length: 100 chars
 - Ruff rules: E, F, W, I, UP, B, SIM, C4
-- Strict mypy
+- Strict mypy (no `Any` without justification, all functions typed)
 - pytest-asyncio with auto mode
+- Do not add or remove comments unless asked
+
+## Boundaries
+
+- Do not edit `tasks/repos/*/` contents directly — they are task fixtures.
+  Change the source and re-init via the runner's `_git_init_fresh`.
+- Do not add production dependencies without running `uv add <pkg>` (not
+  manual `pyproject.toml` edits).
+- The gateway proxy must never forward internal trace headers
+  (`x-heval-trace-id`, `x-trace-id`) or the `trace_id` query param upstream.
+- The dashboard has no auth — keep it localhost-only by default.
+
+## Known traps
+
+- Task repos in `tasks/repos/` are plain directories (no `.git`). The runner
+  copies them via `shutil.copytree` and inits a fresh git repo. Do not assume
+  `repo_commit` hashes in task YAMLs are valid for these repos.
+- Adapters' `get_command()` must use bare binary names (e.g. `"claude"`), not
+  `shutil.which()` resolved paths — the binary lives inside the container.
+- `_clone_repo` resolves relative paths against the project root
+  (`Path(__file__).parents[3]`), not the current working directory.
+- Budget reservation is async-safe (single-process `asyncio.Lock`), not
+  thread-safe. Do not run the orchestrator across multiple processes.
+- The open-ended judge routes through the gateway only when `gateway_url` is
+  set. Direct API calls are a fallback for testing only.
+- `statsmodels` emits `SingularMatrixWarning` and `ConvergenceWarning` on
+  small/degenerate datasets — these are expected and not test failures.
+
+## CI
+
+- `.github/workflows/ci.yml` — ruff + mypy + pytest on every push/PR to main
+- `.github/workflows/docker.yml` — builds and verifies the Docker image on
+  Dockerfile changes (main only for push, PRs verify build)
