@@ -79,6 +79,48 @@ class TestOrchestratorDryRun:
         assert progress.skipped == 2
         assert progress.completed == 0
 
+    async def test_budget_accounts_for_prior_spend_on_resume(
+        self, tmp_task_dir, results_store
+    ):
+        """A resumed run must not re-spend the full budget.
+
+        First run consumes the whole budget on one cell; the second run
+        (same config, same store) should have no remaining budget and skip
+        the pending cell rather than letting it spend the full cap again.
+        """
+        config = RunConfig(
+            name="resume-budget",
+            harnesses=[HarnessSpec(name="h1", adapter="a")],
+            models=[ModelSpec(name="m1", provider="anthropic", api_key_env="X")],
+            tasks=["*"],
+            task_library_path=str(tmp_task_dir),
+            repeats=2,
+            budget_usd=0.001,  # only enough for exactly one cell
+        )
+
+        async def costly_cell(cell):
+            return {
+                "exit_class": "pass",
+                "success": 1.0,
+                "usage": TokenUsage(input_tokens=100, output_tokens=50),
+                "total_cost": 0.001,
+                "latency_ms": 100,
+            }
+
+        orch1 = Orchestrator(config, results_store, run_cell_fn=costly_cell)
+        progress1 = await orch1.run()
+        assert progress1.completed == 1
+        assert progress1.skipped == 1
+
+        # Resume: the one completed cell is skipped as done; the remaining
+        # pending cell must be skipped for budget (prior spend consumed it).
+        orch2 = Orchestrator(config, results_store, run_cell_fn=costly_cell)
+        progress2 = await orch2.run()
+        assert progress2.completed == 0
+        # No further cells should run; total recorded cost stays within budget.
+        total_cost = results_store.get_total_cost("resume-budget")
+        assert total_cost <= config.budget_usd + 1e-9
+
 
 class TestOrchestratorRetry:
     async def test_retryable_error_retries(self, sample_config, results_store):

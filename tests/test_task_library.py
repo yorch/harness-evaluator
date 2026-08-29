@@ -35,10 +35,35 @@ class TestTaskLibraryLoading:
     """Verify every YAML file in tasks/ loads cleanly."""
 
     def test_all_yaml_files_load(self, task_library: TaskLibrary) -> None:
-        """Every YAML file in tasks/ should load without error."""
+        """Every YAML file in tasks/ should load, one task per file."""
         yaml_files = sorted(TASKS_DIR.glob("*.yaml"))
         assert len(yaml_files) > 0, "No YAML task files found in tasks/"
-        assert len(task_library.tasks) > 0, "Task library loaded no tasks"
+        # Each task file currently defines exactly one task, so the loaded
+        # task count must equal the number of YAML files (catches a silently
+        # dropped/unindexed file).
+        assert len(task_library.tasks) == len(yaml_files), (
+            f"Loaded {len(task_library.tasks)} tasks from {len(yaml_files)} files"
+        )
+
+    def test_track_and_language_distribution(self, task_library: TaskLibrary) -> None:
+        """The curated mix has both tracks and both languages represented."""
+        tracks = {t.track for t in task_library.tasks}
+        assert TaskTrack.SWE in tracks and TaskTrack.OPEN_ENDED in tracks
+        languages = {t.metadata.get("language") for t in task_library.tasks}
+        assert "python" in languages, "No Python tasks found"
+        assert "typescript" in languages, "No TypeScript tasks found"
+
+    def test_typescript_tasks_use_bun(self, task_library: TaskLibrary) -> None:
+        """TypeScript tasks must use `bun test` as their test command."""
+        ts_tasks = [
+            t for t in task_library.tasks
+            if t.metadata.get("language") == "typescript" and t.test_command
+        ]
+        assert ts_tasks, "No TypeScript tasks with a test_command found"
+        for t in ts_tasks:
+            assert "bun" in (t.test_command or ""), (
+                f"TypeScript task {t.id} test_command is not bun-based: {t.test_command}"
+            )
 
     def test_task_ids_unique(self, task_library: TaskLibrary) -> None:
         """All task IDs must be unique."""
