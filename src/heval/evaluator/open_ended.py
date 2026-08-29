@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -215,6 +216,64 @@ class StructuralChecker:
                     }
                 )
                 all_passed = False
+
+        # Check 2b: TypeScript / JavaScript syntax validation
+        #
+        # Runs a best-effort syntax check for .ts/.tsx/.js/.jsx files. Uses
+        # `tsc --noEmit` when a TypeScript compiler is resolvable, and
+        # `node --check` for plain JS. If no toolchain is available on the
+        # host, the check is recorded as skipped (passed) rather than
+        # failing a submission for a missing local tool — the authoritative
+        # signal for TS tasks is the `bun test` test_command below.
+        ts_files = [
+            f
+            for ext in ("*.ts", "*.tsx", "*.js", "*.jsx")
+            for f in repo_dir.rglob(ext)
+            if "node_modules" not in f.parts
+        ]
+        tsc = shutil.which("tsc")
+        node = shutil.which("node")
+        for ts_file in ts_files:
+            rel = ts_file.relative_to(repo_dir)
+            cmd: list[str] | None = None
+            if ts_file.suffix in (".ts", ".tsx") and tsc:
+                cmd = [tsc, "--noEmit", "--skipLibCheck", "--allowJs", str(ts_file)]
+            elif ts_file.suffix in (".js", ".jsx") and node:
+                cmd = [node, "--check", str(ts_file)]
+            if cmd is None:
+                checks.append(
+                    {
+                        "name": f"syntax:{rel}",
+                        "passed": True,
+                        "detail": "skipped (no JS/TS toolchain)",
+                    }
+                )
+                continue
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                passed = result.returncode == 0
+                checks.append(
+                    {
+                        "name": f"syntax:{rel}",
+                        "passed": passed,
+                        "detail": (result.stderr or result.stdout) if not passed else "OK",
+                    }
+                )
+                if not passed:
+                    all_passed = False
+            except subprocess.TimeoutExpired:
+                checks.append(
+                    {
+                        "name": f"syntax:{rel}",
+                        "passed": False,
+                        "detail": "Syntax check timed out",
+                    }
+                )
+                all_passed = False
+            except OSError as e:
+                checks.append(
+                    {"name": f"syntax:{rel}", "passed": True, "detail": f"skipped: {e}"}
+                )
 
         # Check 3: Test command (if specified)
         if task.test_command:

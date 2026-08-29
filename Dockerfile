@@ -49,24 +49,31 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # ---------------------------------------------------------------------------
 # Harnesses (all installed globally via npm)
 # ---------------------------------------------------------------------------
+# Versions are pinned for reproducibility. Bump deliberately and re-verify.
 # Claude Code — Anthropic's CLI
-RUN npm install -g @anthropic-ai/claude-code@latest
+RUN npm install -g @anthropic-ai/claude-code@2.1.251
 
 # Codex — OpenAI's CLI
-RUN npm install -g @openai/codex@latest
+RUN npm install -g @openai/codex@0.151.0
 
 # OpenCode — open-source agentic coding tool
-RUN npm install -g opencode-ai@latest
+RUN npm install -g opencode-ai@1.18.25
 
 # Pi — minimal terminal coding harness
 # --ignore-scripts avoids running lifecycle scripts during install.
-RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@latest
+RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.84.4
+
+# Bun runtime — required by OMP's CLI entry point AND used to run
+# TypeScript task repos (`bun test`, `bun install`). Installed to
+# /usr/local so it is on PATH and readable/executable by the non-root
+# `heval` user (a prior version installed to /root/.bun, which is 0700
+# and unreadable by heval, breaking every TypeScript task and OMP).
+ENV BUN_INSTALL=/usr/local
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.0" \
+    && chmod -R a+rX /usr/local/bin/bun /usr/local/cache 2>/dev/null || true
 
 # OMP — coding-first fork of Pi with Rust core
-# OMP's CLI entry point requires the Bun runtime.
-RUN curl -fsSL https://bun.sh/install | bash \
-    && ln -sf /root/.bun/bin/bun /usr/local/bin/bun
-RUN npm install -g @oh-my-pi/pi-coding-agent@latest
+RUN npm install -g @oh-my-pi/pi-coding-agent@18.0.11
 
 # ---------------------------------------------------------------------------
 # Verification
@@ -77,6 +84,8 @@ RUN echo "=== Installed harnesses ===" \
     && opencode --version \
     && pi --version \
     && omp --version \
+    && echo "=== Bun (TypeScript tasks + OMP) ===" \
+    && bun --version \
     && echo "=== Python ===" \
     && python --version \
     && python -m pytest --version \

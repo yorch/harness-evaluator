@@ -142,6 +142,7 @@ class SWEEvaluator:
             success = tests_passed / tests_total
 
         # Determine error class
+        error_message = ""
         if success == 1.0:
             error_class = ErrorClass.SUCCESS
             exit_class = "pass"
@@ -150,6 +151,7 @@ class SWEEvaluator:
             if returncode != 0 and tests_total == 0:
                 # No tests were parsed and non-zero exit — likely a crash
                 error_class = ErrorClass.CRASH
+                error_message = "Test runner crashed or produced no parseable results"
             elif self._looks_like_overfit(test_output, diff):
                 error_class = ErrorClass.OVERFIT
             else:
@@ -169,6 +171,7 @@ class SWEEvaluator:
             exit_class=exit_class,
             success=success,
             error_class=error_class,
+            error_message=error_message,
             test_output=test_output,
             tests_passed=tests_passed,
             tests_total=tests_total,
@@ -301,7 +304,7 @@ class SWEEvaluator:
                 raw_out = raw_out.decode("utf-8", errors="replace")
             if isinstance(raw_err, bytes):
                 raw_err = raw_err.decode("utf-8", errors="replace")
-            timeout_output: str = str(raw_out) + str(raw_err)
+            timeout_output: str = raw_out + raw_err
             return timeout_output, -1, True
 
     def _parse_test_output(
@@ -309,7 +312,7 @@ class SWEEvaluator:
     ) -> tuple[int, int, list[dict[str, Any]]]:
         """Parse test output to count passed/total tests.
 
-        Supports pytest and unittest output formats.
+        Supports pytest, bun test, and unittest output formats.
         Returns (passed, total, detail_list).
         """
         results: list[dict[str, Any]] = []
@@ -339,20 +342,34 @@ class SWEEvaluator:
             total = passed + failed + errors
             return passed, total, results
 
+        # Try bun test format: "X pass", "Y fail", "Z skip" (word-boundary so
+        # it does not collide with pytest's "passed"/"failed").
+        bun_pass = re.search(r"(\d+) pass\b", output)
+        bun_fail = re.search(r"(\d+) fail\b", output)
+        if bun_pass or bun_fail:
+            passed = int(bun_pass.group(1)) if bun_pass else 0
+            failed = int(bun_fail.group(1)) if bun_fail else 0
+            total = passed + failed
+            if total > 0:
+                return passed, total, results
+
         # Try unittest format: "Ran X tests in Ys" + "OK" or "FAILED"
         unittest_match = re.search(r"Ran (\d+) tests", output)
         if unittest_match:
             total = int(unittest_match.group(1))
             if "OK" in output and "FAILED" not in output:
                 return total, total, results
-            # Count failures from FAILED line or individual FAIL/ERROR lines
-            fail_line = re.search(r"FAILED.*?\(failures=(\d+)", output)
-            if fail_line:
-                failed = int(fail_line.group(1))
+            # Count failures + errors from the "FAILED (...)" summary line, or
+            # fall back to counting individual FAIL:/ERROR: lines.
+            failures_match = re.search(r"failures=(\d+)", output)
+            errors_match = re.search(r"errors=(\d+)", output)
+            if failures_match or errors_match:
+                failed = int(failures_match.group(1)) if failures_match else 0
+                errors = int(errors_match.group(1)) if errors_match else 0
+                bad = failed + errors
             else:
-                fail_matches = re.findall(r"^(FAIL|ERROR):", output, re.MULTILINE)
-                failed = len(fail_matches)
-            return total - failed, total, results
+                bad = len(re.findall(r"^(?:FAIL|ERROR):", output, re.MULTILINE))
+            return max(total - bad, 0), total, results
 
         # Fallback: no parseable test output.
         # Previously, returncode=0 returned (1, 1) — a perfect pass —
@@ -369,26 +386,47 @@ class SWEEvaluator:
         return 0, 0, results
 
     def _looks_like_refusal(self, diff: str) -> bool:
-        """Check if the diff looks like a refusal rather than a real attempt."""
+        """Check if the diff looks like a natural-language refusal.
+
+        Only considers added lines (``+``) and matches natural-language
+        refusal phrases. ``raise NotImplementedError`` is intentionally NOT
+        treated as a refusal — it is legitimate in abstract methods/stubs.
+        """
+        added = "\n".join(
+            line[1:]
+            for line in diff.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        )
         refusal_patterns = [
-            r"I cannot (help|modify|change)",
+            r"I cannot (help|modify|change|assist)",
             r"I'm unable to",
+            r"I am unable to",
             r"This is not something I can",
-            r"raise NotImplementedError",
         ]
-        return any(re.search(pattern, diff, re.IGNORECASE) for pattern in refusal_patterns)
+        return any(re.search(pattern, added, re.IGNORECASE) for pattern in refusal_patterns)
 
     def _looks_like_overfit(self, test_output: str, diff: str) -> bool:
         """Heuristic: check if the solution looks overfit to visible tests.
 
-        Looks for patterns like hardcoding expected values or checking
-        for specific test inputs.
+        Conservative: only flags a very short diff whose added lines directly
+        reference a value that also appears in the visible test output (a
+        strong signal of hardcoding to specific test cases), rather than any
+        ``if x == 0`` / ``return 0`` which occur in ordinary correct code.
         """
-        overfit_patterns = [
-            r"if.*==.*\d+",  # Hardcoded expected values
-            r"return\s+\d+",  # Returning constant
+        added_lines = [
+            line[1:].strip()
+            for line in diff.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
         ]
-        # Only flag if the diff is very short (suspicious for overfitting)
-        if len(diff.splitlines()) < 10:
-            return any(re.search(p, diff, re.IGNORECASE) for p in overfit_patterns)
+        # Only suspicious for very small diffs.
+        if not added_lines or len(added_lines) >= 6:
+            return False
+        # Look for literal numeric/string constants in added code that also
+        # appear verbatim in the visible test output.
+        literal_re = re.compile(r"(?:==|return)\s*['\"]?([A-Za-z0-9_]{2,})['\"]?")
+        for line in added_lines:
+            for m in literal_re.finditer(line):
+                literal = m.group(1)
+                if literal and literal in test_output:
+                    return True
         return False
