@@ -394,13 +394,31 @@ All identifiers (run names, harness names, model names) are validated against `[
 
 ## Docker image configuration
 
-The Docker image is configured via the `Dockerfile`. See [Docker Runner](docker-runner/) for details on the image contents and build process.
+The runner image contains all five harnesses and their dependencies. You can either pull the pre-built image from GHCR or build it locally. See [Docker Runner](docker-runner/) for details on the image contents.
+
+### Pull the pre-built image (recommended)
 
 ```bash
-# Build the image
-docker build -t heval-runner:latest .
+docker pull ghcr.io/yorch/heval-runner:latest
+```
 
-# Use a custom image name in run config
+Then reference it in your run config:
+
+```yaml
+docker_image: "ghcr.io/yorch/heval-runner:latest"
+```
+
+Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), and `main`.
+
+### Build locally
+
+```bash
+docker build -t heval-runner:latest .
+```
+
+The default `docker_image` is `heval-runner:latest`, so local builds work without any config change. You can also use a custom image name:
+
+```yaml
 docker_image: "my-custom-runner:latest"
 ```
 

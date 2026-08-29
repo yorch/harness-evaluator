@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-description: Step-by-step guide to install heval, build the Docker image, set API keys, and run your first evaluation.
+description: Step-by-step guide to install heval, get the Docker image, set API keys, and run your first evaluation.
 ---
 
 # Getting Started
 
-This guide walks you through installing heval, building the Docker image, configuring API keys, and running your first evaluation end-to-end.
+This guide walks you through installing heval, getting the Docker image, configuring API keys, and running your first evaluation end-to-end.
 
 ## Prerequisites
 
@@ -37,9 +37,40 @@ heval --help
 
 You should see the list of available commands.
 
-## Step 2: Build the Docker image
+## Step 2: Get the Docker image
 
-The runner executes harnesses inside a Docker container. Build the image (contains all 5 harnesses + Python + Git):
+The runner executes harnesses inside a Docker container. The image contains all 5 harnesses + Python + Git.
+
+You have two options: pull the pre-built image from GHCR (fastest) or build it locally.
+
+### Option A: Pull the pre-built image from GHCR (recommended)
+
+A pre-built image is published to the GitHub Container Registry on every push to `main`:
+
+```bash
+docker pull ghcr.io/yorch/heval-runner:latest
+```
+
+Then reference it in your run config:
+
+```yaml
+docker_image: "ghcr.io/yorch/heval-runner:latest"
+```
+
+Available tags:
+
+| Tag | Description |
+|-----|-------------|
+| `latest` | Most recent build from `main` |
+| `sha-<short-hash>` | Pinned to a specific commit |
+| `main` | Alias for the latest `main` build |
+
+> **Note**: The GHCR image is currently public. If the repository is private or the package visibility changes, you may need to authenticate first:
+> ```bash
+> echo "$GITHUB_TOKEN" | docker login ghcr.io -u <username> --password-stdin
+> ```
+
+### Option B: Build the image locally
 
 ```bash
 docker build -t heval-runner:latest .
@@ -47,10 +78,12 @@ docker build -t heval-runner:latest .
 
 This takes ~5 minutes. The image is ~1.2 GB because it carries all five harnesses.
 
-Verify the image:
+The default `docker_image` in run config is `heval-runner:latest`, so local builds work without any config change.
+
+### Verify the image
 
 ```bash
-docker run --rm heval-runner:latest bash -c '
+docker run --rm ghcr.io/yorch/heval-runner:latest bash -c '
   echo "=== Harnesses ===" &&
   claude --version &&
   codex --version &&
@@ -299,7 +332,14 @@ This means the harness is not routing through the gateway proxy. Common with min
 docker run failed (exit 1): Unable to find image 'heval-runner:latest' locally
 ```
 
-Build the image: `docker build -t heval-runner:latest .`
+Either pull the pre-built image or build it locally:
+
+```bash
+docker pull ghcr.io/yorch/heval-runner:latest   # pre-built
+docker build -t heval-runner:latest .            # local build
+```
+
+If using the GHCR image, set `docker_image: "ghcr.io/yorch/heval-runner:latest"` in your run config.
 
 ### No pricing found for model
 

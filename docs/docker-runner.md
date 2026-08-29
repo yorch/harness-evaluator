@@ -9,11 +9,31 @@ The Docker runner (`src/heval/runner/docker.py`) executes each eval cell in an i
 
 ## Container image
 
-The runner image (`heval-runner:latest`) is built from the project's `Dockerfile`:
+The runner image contains all five harnesses, Node.js 22, Python 3, Git, and Bun. You can either pull the pre-built image from GHCR or build it locally.
+
+### Pull the pre-built image (recommended)
+
+A pre-built image is published to the GitHub Container Registry on every push to `main`:
+
+```bash
+docker pull ghcr.io/yorch/heval-runner:latest
+```
+
+Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), and `main`.
+
+Reference it in your run config:
+
+```yaml
+docker_image: "ghcr.io/yorch/heval-runner:latest"
+```
+
+### Build locally
 
 ```bash
 docker build -t heval-runner:latest .
 ```
+
+The default `docker_image` in run config is `heval-runner:latest`, so local builds work without any config change.
 
 ### Image contents
 

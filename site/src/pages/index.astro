@@ -882,8 +882,9 @@ const base = import.meta.env.BASE_URL;
           <span class="line"><span class="comment"># 1. Install dependencies</span></span>
           <span class="line"><span class="cmd">uv</span> sync --extra dev</span>
           <span class="line"> </span>
-          <span class="line"><span class="comment"># 2. Build the Docker image (all 5 harnesses + Python + Git)</span></span>
-          <span class="line"><span class="cmd">docker</span> build -t heval-runner:latest .</span>
+          <span class="line"><span class="comment"># 2. Pull the pre-built Docker image (or build locally)</span></span>
+          <span class="line"><span class="cmd">docker</span> pull ghcr.io/yorch/heval-runner:latest</span>
+          <span class="line"><span class="comment">#    docker build -t heval-runner:latest .  # alternative</span></span>
           <span class="line"> </span>
           <span class="line"><span class="comment"># 3. Set API keys</span></span>
           <span class="line"><span class="cmd">export</span> ANTHROPIC_API_KEY=<span class="str">sk-ant-…</span></span>
