@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme: dark;">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>heval — Harness Evaluator</title>
+  <meta name="theme-color" content="#0d1117">
   <meta name="description" content="Compare agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.">
+  <title>heval — Harness Evaluator</title>
   <style>
     :root {
       --bg: #0d1117;
@@ -18,6 +19,7 @@
       --yellow: #d29922;
       --red: #f85149;
       --code-bg: #1c2128;
+      --focus-ring: #58a6ff;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -27,10 +29,36 @@
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
+      -webkit-tap-highlight-color: transparent;
     }
 
-    a { color: var(--accent); text-decoration: none; }
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
     a:hover { color: var(--accent-hover); text-decoration: underline; }
+    a:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    /* Skip link for keyboard navigation */
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 0;
+      background: var(--accent);
+      color: var(--bg);
+      padding: 0.5rem 1rem;
+      z-index: 100;
+      border-radius: 0 0 8px 0;
+      font-weight: 600;
+    }
+    .skip-link:focus {
+      top: 0;
+      text-decoration: none;
+    }
 
     /* Hero */
     .hero {
@@ -45,6 +73,7 @@
       font-weight: 800;
       letter-spacing: -0.03em;
       margin-bottom: 0.5rem;
+      text-wrap: balance;
     }
 
     .hero h1 .accent { color: var(--accent); }
@@ -53,6 +82,7 @@
       font-size: 1.25rem;
       color: var(--muted);
       margin-bottom: 2rem;
+      text-wrap: balance;
     }
 
     .badges {
@@ -63,7 +93,7 @@
       margin-bottom: 2rem;
     }
 
-    .badges img { height: 20px; }
+    .badges img { height: 20px; width: auto; }
 
     .cta-group {
       display: flex;
@@ -79,7 +109,13 @@
       font-weight: 600;
       font-size: 1rem;
       border: 1px solid var(--border);
-      transition: all 0.15s;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      touch-action: manipulation;
+    }
+
+    .btn:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
     }
 
     .btn-primary {
@@ -118,6 +154,8 @@
       margin-bottom: 1rem;
       padding-bottom: 0.5rem;
       border-bottom: 1px solid var(--border);
+      scroll-margin-top: 2rem;
+      text-wrap: balance;
     }
 
     .section h3 {
@@ -126,6 +164,7 @@
       margin-top: 1.5rem;
       margin-bottom: 0.5rem;
       color: var(--accent);
+      scroll-margin-top: 2rem;
     }
 
     .section p { margin-bottom: 1rem; color: var(--muted); }
@@ -195,6 +234,7 @@
       border-radius: 8px;
       padding: 1rem 1.25rem;
       overflow-x: auto;
+      overscroll-behavior: contain;
       margin: 1rem 0;
       font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
       font-size: 0.875rem;
@@ -237,33 +277,44 @@
       .hero .tagline { font-size: 1rem; }
       .feature-grid { grid-template-columns: 1fr; }
     }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
   </style>
 </head>
 <body>
 
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <main id="main">
+
   <!-- Hero -->
-  <div class="hero">
+  <section class="hero">
     <h1><span class="accent">heval</span></h1>
     <p class="tagline">
-      Compare agentic coding harnesses on token efficiency,<br>
-      task effectiveness, and time efficiency.
+      Compare agentic coding harnesses on token efficiency, task effectiveness, and time efficiency.
     </p>
     <div class="badges">
-      <img src="https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg" alt="CI">
-      <img src="https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg" alt="Docker">
-      <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+      <img src="https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg" alt="CI status" width="auto" height="20">
+      <img src="https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg" alt="Docker build status" width="auto" height="20">
+      <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" width="auto" height="20">
     </div>
-    <div class="cta-group">
+    <nav class="cta-group" aria-label="Project links">
       <a href="https://github.com/yorch/heval" class="btn btn-primary">View on GitHub</a>
       <a href="https://github.com/yorch/heval/blob/main/DESIGN.md" class="btn btn-secondary">Design Doc</a>
       <a href="https://github.com/yorch/heval/blob/main/README.md" class="btn btn-secondary">README</a>
-    </div>
-  </div>
+    </nav>
+  </section>
 
   <!-- Quick Start -->
-  <div class="section">
+  <section class="section">
     <h2>Quick Start</h2>
-    <div class="code-block">
+    <div class="code-block" role="region" aria-label="Quick start commands">
 <span class="comment"># 1. Install dependencies</span>
 <span class="cmd">uv</span> sync --extra dev
 
@@ -271,8 +322,8 @@
 <span class="cmd">docker</span> build -t heval-runner:latest .
 
 <span class="comment"># 3. Set API keys</span>
-<span class="cmd">export</span> ANTHROPIC_API_KEY=sk-ant-...
-<span class="cmd">export</span> OPENAI_API_KEY=sk-...
+<span class="cmd">export</span> ANTHROPIC_API_KEY=sk-ant-…
+<span class="cmd">export</span> OPENAI_API_KEY=sk-…
 
 <span class="comment"># 4. Start the gateway proxy (separate terminal)</span>
 <span class="cmd">heval</span> gateway --port 8877
@@ -283,18 +334,18 @@
 <span class="comment"># Or dry-run to see the matrix without executing</span>
 <span class="cmd">heval</span> run runs/sample-minimal.yaml --dry-run
     </div>
-  </div>
+  </section>
 
   <!-- Supported Harnesses -->
-  <div class="section">
+  <section class="section">
     <h2>Supported Harnesses</h2>
     <table class="harness-table">
       <thead>
         <tr>
-          <th>Harness</th>
-          <th>Adapter</th>
-          <th>Observability</th>
-          <th>Notes</th>
+          <th scope="col">Harness</th>
+          <th scope="col">Adapter</th>
+          <th scope="col">Observability</th>
+          <th scope="col">Notes</th>
         </tr>
       </thead>
       <tbody>
@@ -330,47 +381,47 @@
         </tr>
       </tbody>
     </table>
-  </div>
+  </section>
 
   <!-- Features -->
-  <div class="section">
+  <section class="section">
     <h2>Features</h2>
     <div class="feature-grid">
       <div class="feature-card">
-        <span class="icon">&#128279;</span>
+        <span class="icon" aria-hidden="true">&#128279;</span>
         <h3>Gateway Proxy</h3>
         <p>Custom HTTP/SSE proxy intercepts every provider call, capturing token usage, cost, and latency with full request/response logging.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">&#128202;</span>
+        <span class="icon" aria-hidden="true">&#128202;</span>
         <h3>Token Accounting</h3>
         <p>Input, output, cache-read, cache-write, and reasoning tokens tracked per call. Cost calculated from a per-model pricing table.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">&#128737;</span>
+        <span class="icon" aria-hidden="true">&#128737;</span>
         <h3>Docker Isolation</h3>
         <p>Each harness runs in its own container with <code>--cap-drop=ALL</code>, non-root user, and network policy enforcement.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">&#128260;</span>
+        <span class="icon" aria-hidden="true">&#128260;</span>
         <h3>Resumability &amp; Budgets</h3>
         <p>Cell-level resumability skips completed cells on re-run. Budget caps stop the run when spend exceeds the configured limit.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">&#129504;</span>
+        <span class="icon" aria-hidden="true">&#129504;</span>
         <h3>Frozen LLM Judge</h3>
         <p>Open-ended tasks evaluated by a versioned, immutable-prompt judge with structured rubric and anchor-set calibration for drift detection.</p>
       </div>
       <div class="feature-card">
-        <span class="icon">&#128200;</span>
+        <span class="icon" aria-hidden="true">&#128200;</span>
         <h3>Statistics &amp; Reporting</h3>
         <p>Mixed-effects modeling, variance decomposition, bootstrap CIs, HTML/JSON/CSV reports, and an interactive FastAPI dashboard.</p>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- Architecture -->
-  <div class="section">
+  <section class="section">
     <h2>Architecture</h2>
     <ul class="arch-list">
       <li><strong>Gateway</strong> — Custom HTTP/SSE proxy (aiohttp) that intercepts provider calls and captures token usage, cost, and latency.</li>
@@ -381,7 +432,9 @@
       <li><strong>Reporting</strong> — CLI reports, static HTML/JSON/CSV, and an interactive web dashboard.</li>
       <li><strong>Statistics</strong> — Mixed-effects models, variance decomposition, and bootstrap confidence intervals.</li>
     </ul>
-  </div>
+  </section>
+
+  </main>
 
   <!-- Footer -->
   <footer>
