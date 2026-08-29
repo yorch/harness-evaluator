@@ -1,5 +1,9 @@
 # heval
 
+[![CI](https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/ci.yml)
+[![Docker](https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/docker.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Harness evaluator: compare agentic coding harnesses (Claude Code, Codex, Pi,
 OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.
 
@@ -10,6 +14,15 @@ See [DESIGN.md](DESIGN.md) for the full design specification.
 ```bash
 uv sync --extra dev
 heval --help
+```
+
+## Docker image
+
+The runner executes harnesses inside an isolated Docker container. Build the
+image (contains all 5 harnesses + Python + Git):
+
+```bash
+docker build -t heval-runner:latest .
 ```
 
 ## M1: Gateway Proxy (completed)

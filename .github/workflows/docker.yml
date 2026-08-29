@@ -1,0 +1,54 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: heval-runner:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify harnesses
+        run: |
+          docker run --rm heval-runner:latest bash -c '
+            echo "=== Harnesses ===" &&
+            claude --version &&
+            codex --version &&
+            opencode --version &&
+            pi --version &&
+            omp --version &&
+            echo "=== Python ===" &&
+            python --version &&
+            python -m pytest --version &&
+            echo "=== Git ===" &&
+            git --version &&
+            echo "=== All harnesses ready ==="
+          '
