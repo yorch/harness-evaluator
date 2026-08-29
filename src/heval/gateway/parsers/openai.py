@@ -45,9 +45,13 @@ def parse_non_streaming_usage(body: dict[str, Any]) -> TokenUsage:
 def parse_sse_chunk(data: dict[str, Any], accumulated: TokenUsage) -> TokenUsage:
     """Update accumulated usage from an OpenAI streaming chunk.
 
-    The final chunk (when include_usage is set) contains the full usage.
+    Handles both Chat Completions (top-level ``usage`` in the final chunk when
+    include_usage is set) and the Responses API (``response.completed`` events
+    carry ``usage`` nested under a ``response`` object).
     """
     usage = data.get("usage")
+    if usage is None and isinstance(data.get("response"), dict):
+        usage = data["response"].get("usage")
     if usage is not None:
         result = _usage_from_openai_dict(usage)
         # OpenAI streaming usage is cumulative/final, so we take the max
@@ -66,18 +70,35 @@ def parse_sse_chunk(data: dict[str, Any], accumulated: TokenUsage) -> TokenUsage
 
 
 def _usage_from_openai_dict(usage: dict[str, Any]) -> TokenUsage:
-    """Convert OpenAI usage dict to TokenUsage."""
-    prompt_tokens = usage.get("prompt_tokens", 0)
-    completion_tokens = usage.get("completion_tokens", 0)
+    """Convert an OpenAI usage dict to TokenUsage.
 
-    # OpenAI breaks down prompt tokens into cached and non-cached
-    prompt_details = usage.get("prompt_tokens_details", {})
-    cached_tokens = prompt_details.get("cached_tokens", 0)
+    Supports both the Chat Completions shape
+    (``prompt_tokens``/``completion_tokens`` + ``*_tokens_details``) and the
+    Responses API shape (``input_tokens``/``output_tokens`` +
+    ``input_tokens_details``/``output_tokens_details``).
+    """
+    # Prompt / input tokens (prefer Responses key, fall back to Chat key).
+    prompt_tokens = usage.get("input_tokens")
+    if prompt_tokens is None:
+        prompt_tokens = usage.get("prompt_tokens", 0)
+
+    # Completion / output tokens.
+    completion_tokens = usage.get("output_tokens")
+    if completion_tokens is None:
+        completion_tokens = usage.get("completion_tokens", 0)
+
+    # Cached input tokens live under prompt_tokens_details (Chat) or
+    # input_tokens_details (Responses).
+    input_details = usage.get("input_tokens_details") or usage.get("prompt_tokens_details") or {}
+    cached_tokens = input_details.get("cached_tokens", 0)
     non_cached_input = prompt_tokens - cached_tokens
 
-    # Reasoning tokens (for o1/o3 models)
-    completion_details = usage.get("completion_tokens_details", {})
-    reasoning = completion_details.get("reasoning_tokens", 0)
+    # Reasoning tokens (o1/o3): completion_tokens_details (Chat) or
+    # output_tokens_details (Responses).
+    output_details = (
+        usage.get("output_tokens_details") or usage.get("completion_tokens_details") or {}
+    )
+    reasoning = output_details.get("reasoning_tokens", 0)
 
     return TokenUsage(
         input_tokens=non_cached_input,

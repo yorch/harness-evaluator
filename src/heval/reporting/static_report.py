@@ -13,10 +13,13 @@ from jinja2 import Environment
 
 from heval.orchestrator.results_store import ResultsStore
 
-# Strict identifier allow-list for run names, cell IDs, and other
-# identifiers used in file paths. Prevents path traversal via "../"
-# or absolute paths in user-supplied YAML/CLI input.
-_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+# Matches any character NOT in the safe set [A-Za-z0-9._-].
+_UNSAFE_CHAR_RE = re.compile(r"[^A-Za-z0-9._-]")
+
+# Leading characters that trigger formula evaluation in spreadsheet apps.
+# Fields starting with these are prefixed with a single quote in CSV output
+# to neutralize CSV injection.
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 def sanitize_id(value: str) -> str:
@@ -31,8 +34,16 @@ def sanitize_id(value: str) -> str:
     return _UNSAFE_CHAR_RE.sub("_", value)
 
 
-# Matches any character NOT in the safe set [A-Za-z0-9._-].
-_UNSAFE_CHAR_RE = re.compile(r"[^A-Za-z0-9._-]")
+def sanitize_csv_field(value: Any) -> Any:
+    """Neutralize CSV/formula-injection payloads in string fields.
+
+    A harness-produced value like ``=cmd|'/C calc'!A0`` could execute when
+    the CSV is opened in a spreadsheet. Prefix such values with a single
+    quote so they are treated as text.
+    """
+    if isinstance(value, str) and value and value[0] in _CSV_FORMULA_PREFIXES:
+        return "'" + value
+    return value
 
 
 def assert_safe_path(base: Path, target: Path) -> Path:
@@ -42,7 +53,7 @@ def assert_safe_path(base: Path, target: Path) -> Path:
     """
     base_resolved = base.resolve()
     target_resolved = target.resolve()
-    if not str(target_resolved).startswith(str(base_resolved)):
+    if not target_resolved.is_relative_to(base_resolved):
         raise ValueError(
             f"Path traversal detected: {target} escapes {base}"
         )
@@ -216,8 +227,10 @@ class ReportGenerator:
         with open(csv_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=csv_fieldnames, extrasaction="ignore")
             writer.writeheader()
-            if results:
-                writer.writerows(results)
+            for row in results:
+                writer.writerow(
+                    {k: sanitize_csv_field(v) for k, v in row.items()}
+                )
 
         # Generate HTML
         html_path = assert_safe_path(output_dir, output_dir / f"{safe_name}_report.html")

@@ -97,6 +97,40 @@ UPSTREAM_URLS: dict[Provider, str] = {
     Provider.OPENAI: "https://api.openai.com",
 }
 
+# Spoofable routing headers that must never be forwarded upstream (a harness
+# could otherwise set x-forwarded-* / via to influence the provider or an
+# intermediary). Auth and SDK headers are still forwarded normally.
+_FORWARD_DENY_HEADERS = frozenset(
+    {
+        "x-forwarded-for",
+        "x-forwarded-host",
+        "x-forwarded-proto",
+        "x-forwarded-port",
+        "x-real-ip",
+        "forwarded",
+        "via",
+    }
+)
+
+
+def _validate_upstream_url(url: str) -> str:
+    """Validate an upstream override URL to prevent SSRF/proxy abuse.
+
+    ``upstream_overrides`` is a programmatic/testing hook (not exposed on the
+    CLI), so http + loopback are permitted for local mock servers. What is
+    always rejected is a non-http(s) scheme and the cloud metadata / link-local
+    endpoints that are the classic SSRF targets.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Upstream URL must use http(s): {url!r}")
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValueError(f"Upstream URL has no host: {url!r}")
+    if host == "metadata.google.internal" or host.startswith("169.254."):
+        raise ValueError(f"Upstream URL host is not allowed (metadata/link-local): {host!r}")
+    return url
+
 # Maximum request/response body size to store (10 MB)
 MAX_STORED_BODY_SIZE = 10 * 1024 * 1024
 
@@ -133,7 +167,11 @@ class GatewayProxy:
         verify_ssl: bool = True,
     ) -> None:
         self.store = store
-        self.upstreams = {**UPSTREAM_URLS, **(upstream_overrides or {})}
+        validated_overrides = {
+            provider: _validate_upstream_url(url)
+            for provider, url in (upstream_overrides or {}).items()
+        }
+        self.upstreams = {**UPSTREAM_URLS, **validated_overrides}
         self.verify_ssl = verify_ssl
         self._session: aiohttp.ClientSession | None = None
         self._session_lock = asyncio.Lock()
@@ -217,7 +255,10 @@ class GatewayProxy:
         request_body: dict[str, Any] | None = None
         if body_bytes:
             try:
-                request_body = json.loads(body_bytes)
+                parsed = json.loads(body_bytes)
+                # Only treat JSON objects as the request body; arrays/scalars
+                # would break the later ``.get(...)`` calls with AttributeError.
+                request_body = parsed if isinstance(parsed, dict) else None
             except json.JSONDecodeError:
                 request_body = None
 
@@ -246,7 +287,11 @@ class GatewayProxy:
         forward_headers: dict[str, str] = {}
         for key, value in request.headers.items():
             lower = key.lower()
-            if lower not in HOP_BY_HOP and lower not in INTERNAL_TRACE_HEADERS:
+            if (
+                lower not in HOP_BY_HOP
+                and lower not in INTERNAL_TRACE_HEADERS
+                and lower not in _FORWARD_DENY_HEADERS
+            ):
                 forward_headers[key] = value
         forward_headers["Host"] = urlparse(upstream).netloc
 

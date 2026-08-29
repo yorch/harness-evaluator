@@ -22,6 +22,7 @@ from pathlib import Path
 from string import Template
 from typing import Any
 
+from heval.evaluator.utils import get_workdir_diff
 from heval.orchestrator.config import TaskSpec
 
 
@@ -762,83 +763,5 @@ class OpenEndedEvaluator:
         )
 
     def _get_diff(self, workdir: Path) -> str:
-        """Get the git diff of changes made by the harness.
-
-        Tries multiple strategies:
-        1. ``git diff HEAD`` — uncommitted changes (staged + unstaged)
-        2. ``git diff HEAD~1`` — changes in the last commit
-        3. Check for untracked files via ``git status`` and generate real
-           content diffs for them (``git diff --no-index /dev/null <file>``)
-
-        This handles harnesses that commit, stage, or just modify files.
-        """
-        try:
-            # Check for uncommitted changes (staged + unstaged) against HEAD
-            result = subprocess.run(
-                ["git", "diff", "HEAD"],
-                cwd=workdir,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                timeout=10,
-            )
-            if result.stdout.strip():
-                return result.stdout
-
-            # Fall back to last commit's changes
-            result = subprocess.run(
-                ["git", "diff", "HEAD~1"],
-                cwd=workdir,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                timeout=10,
-            )
-            if result.stdout.strip():
-                return result.stdout
-
-            # Check for untracked files and generate real content diffs
-            status_result = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=workdir,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                timeout=10,
-            )
-            if status_result.stdout.strip():
-                # Parse porcelain output and generate real diffs for
-                # untracked files (?? prefix) that git diff HEAD misses.
-                diffs: list[str] = []
-                for line in status_result.stdout.strip().splitlines():
-                    if not line.strip():
-                        continue
-                    # Porcelain format: "XY <path>" (2-char status + space + path)
-                    if line[:2] == "??":
-                        file_path = line[3:]
-                        full_path = workdir / file_path
-                        if full_path.is_file():
-                            diff_result = subprocess.run(
-                                [
-                                    "git", "diff", "--no-index",
-                                    "/dev/null", str(full_path),
-                                ],
-                                cwd=workdir,
-                                capture_output=True,
-                                text=True,
-                                errors="replace",
-                                timeout=10,
-                            )
-                            # --no-index exits 1 when files differ (expected)
-                            if diff_result.stdout.strip():
-                                diffs.append(diff_result.stdout)
-
-                if diffs:
-                    return "\n".join(diffs)
-
-                # No untracked files with content diffs; fall back to status
-                return f"--- untracked changes ---\n{status_result.stdout}"
-
-            return ""
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return ""
+        """Get the git diff of changes made by the harness."""
+        return get_workdir_diff(workdir)

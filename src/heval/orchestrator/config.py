@@ -10,10 +10,28 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+# Re-exported from the gateway models module to keep a single source of truth.
+from heval.gateway.models import ObservabilityTier
+
+__all__ = [
+    "ObservabilityTier",
+    "TaskTrack",
+    "TaskDifficulty",
+    "TaskSpec",
+    "TaskLibrary",
+    "HarnessSpec",
+    "ModelSpec",
+    "RunConfig",
+    "RunCell",
+]
+
 # Strict allow-list for identifiers used in file paths, container names,
 # and database keys. Prevents path traversal and shell injection from
 # user-supplied YAML/CLI input.
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+# Git ref / SHA charset. Must not start with '-' (would be read as an option
+# by git checkout) and disallows shell metacharacters and whitespace.
+_SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 
 class TaskTrack(StrEnum):
@@ -26,14 +44,6 @@ class TaskDifficulty(StrEnum):
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
-
-
-class ObservabilityTier(StrEnum):
-    """Expected observability level from a harness."""
-
-    FULL = "full"
-    PARTIAL = "partial"
-    MINIMAL = "minimal"
 
 
 class TaskSpec(BaseModel):
@@ -61,6 +71,35 @@ class TaskSpec(BaseModel):
     timeout_seconds: int = 600
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: str) -> str:
+        # ``id`` becomes part of the cell_id and, in turn, an on-disk
+        # workdir path and container name. Restrict it to a safe charset
+        # to prevent path traversal (e.g. ``../../etc``) and shell/Docker
+        # injection.
+        if not _SAFE_ID_RE.match(v):
+            raise ValueError(
+                f"Task id '{v}' contains invalid characters. "
+                f"Only [A-Za-z0-9._-] are allowed."
+            )
+        return v
+
+    @field_validator("repo_commit")
+    @classmethod
+    def validate_repo_commit(cls, v: str | None) -> str | None:
+        # ``repo_commit`` is passed to ``git checkout``. Restrict it to a
+        # git ref / SHA charset so it cannot be interpreted as an option
+        # (e.g. ``-b``) or inject additional arguments.
+        if v is None:
+            return v
+        if not _SAFE_REF_RE.match(v):
+            raise ValueError(
+                f"Task repo_commit '{v}' is not a valid git ref/SHA. "
+                f"Only [A-Za-z0-9._/-] are allowed and it may not start with '-'."
+            )
+        return v
+
 
 class TaskLibrary(BaseModel):
     """A collection of tasks loaded from YAML."""
@@ -72,7 +111,12 @@ class TaskLibrary(BaseModel):
         """Load tasks from a YAML file."""
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
-        tasks = [TaskSpec(**t) for t in data.get("tasks", [])]
+        # An empty file yields None; a malformed file may yield a non-dict.
+        if not isinstance(data, dict):
+            if data is None:
+                return cls(tasks=[])
+            raise ValueError(f"Task file {path} must contain a mapping with a 'tasks' key.")
+        tasks = [TaskSpec(**t) for t in (data.get("tasks") or [])]
         return cls(tasks=tasks)
 
     @classmethod

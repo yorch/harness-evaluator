@@ -170,7 +170,18 @@ class DockerRunner:
         from heval.gateway.models import TokenUsage
         from heval.gateway.store import CallStore
 
-        cell_workdir = self.workdir_base / cell.cell_id
+        cell_workdir = (self.workdir_base / cell.cell_id).resolve()
+
+        # Defense in depth: cell_id is built from validated harness/model/task
+        # ids, but assert the resolved workdir stays under workdir_base before
+        # we rmtree it, so a bug or unvalidated path can never delete host
+        # files outside the workdir.
+        workdir_base_resolved = self.workdir_base.resolve()
+        if not cell_workdir.is_relative_to(workdir_base_resolved):
+            raise ValueError(
+                f"Cell workdir '{cell_workdir}' escapes workdir base "
+                f"'{workdir_base_resolved}' (cell_id='{cell.cell_id}')."
+            )
 
         # On re-runs (resumability), the workdir may contain stale state
         # from a previous attempt (partial git repo, dirty working tree,
@@ -345,9 +356,18 @@ class DockerRunner:
             return
 
         # Local path → resolve relative to project root
+        project_root = Path(__file__).resolve().parents[3]
         local_path = Path(repo_url)
         if not local_path.is_absolute():
-            local_path = Path(__file__).resolve().parents[3] / local_path
+            local_path = (project_root / local_path).resolve()
+            # Relative repo paths must stay within the project root — reject
+            # traversal like ``../../sensitive`` before copying the tree.
+            if not local_path.is_relative_to(project_root):
+                raise ValueError(
+                    f"Task repo_url '{repo_url}' escapes the project root."
+                )
+        else:
+            local_path = local_path.resolve()
         if not local_path.exists():
             raise FileNotFoundError(
                 f"Task repo not found: {repo_url} (resolved to "
@@ -378,13 +398,19 @@ class DockerRunner:
     async def _git_checkout(self, dest: Path, commit: str | None) -> None:
         if not commit:
             return
+        # ``--`` terminates option parsing so ``commit`` can never be read as
+        # a git flag (TaskSpec also validates it against a ref charset).
         proc = await asyncio.create_subprocess_exec(
-            "git", "checkout", commit,
+            "git", "checkout", commit, "--",
             cwd=dest,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        await proc.communicate()
+        _, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"git checkout '{commit}' failed: {stderr.decode(errors='replace')}"
+            )
 
     async def _git_init_fresh(self, dest: Path) -> None:
         """Init a fresh git repo and create an initial commit."""
@@ -535,13 +561,28 @@ class DockerRunner:
             )
 
     async def _stop_container(self, container_id: str) -> None:
-        """Stop and remove the container (best-effort; --rm handles removal)."""
+        """Stop and remove the container (best-effort; --rm handles removal).
+
+        Uses a short ``docker stop -t`` grace period and then force-removes
+        the container. Relying on the container's own ``--stop-timeout`` (set
+        to the task timeout, which may be many minutes) could otherwise let
+        the CLI's own timeout fire first and leave the container running
+        while evaluation begins.
+        """
         try:
+            # -t 5: give PID 1 five seconds to exit, then SIGKILL.
             await _run_subprocess(
-                [self.docker_bin, "stop", container_id], timeout=30
+                [self.docker_bin, "stop", "-t", "5", container_id], timeout=30
             )
-        except (subprocess.TimeoutExpired, Exception) as e:
+        except Exception as e:
             logger.warning("Failed to stop container %s: %s", container_id, e)
+            # Fall back to a forced removal so the container never lingers.
+            try:
+                await _run_subprocess(
+                    [self.docker_bin, "rm", "-f", container_id], timeout=30
+                )
+            except Exception as e2:
+                logger.warning("Failed to force-remove container %s: %s", container_id, e2)
 
     async def _run_harness(self, cell: RunCell, workdir: Path) -> RunResult:
         """Run the harness adapter for this cell inside a Docker container.

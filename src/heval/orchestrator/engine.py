@@ -118,6 +118,21 @@ class Orchestrator:
             docker_image=self.config.docker_image,
         )
 
+        # Initialize the remaining budget from the cap minus any cost already
+        # recorded for this run. Without this, a resumed run would let pending
+        # cells spend the full budget again on top of prior spend.
+        if self.config.budget_usd is not None:
+            already_spent = self.store.get_total_cost(self.config.name)
+            self._remaining_budget = max(self.config.budget_usd - already_spent, 0.0)
+            self.progress.total_cost = already_spent
+            logger.info(
+                "Run '%s': budget $%.4f, already spent $%.4f, $%.4f remaining",
+                self.config.name,
+                self.config.budget_usd,
+                already_spent,
+                self._remaining_budget,
+            )
+
         # Filter out already-completed cells (resumability)
         completed = self.store.get_completed_cells(self.config.name)
         pending_cells = [c for c in cells if c.cell_id not in completed]
@@ -135,10 +150,15 @@ class Orchestrator:
             for cell in pending_cells:
                 await self._run_cell_with_budget_check(cell)
         else:
-            # Parallel execution with semaphore
+            # Parallel execution with semaphore. return_exceptions=True so a
+            # single cell raising an unexpected error does not cancel its
+            # siblings mid-flight (each cell already records its own outcome).
             sem = asyncio.Semaphore(self.config.parallel_runs)
             tasks = [self._run_cell_with_budget_and_sem(sem, cell) for cell in pending_cells]
-            await asyncio.gather(*tasks)
+            gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+            for cell, outcome in zip(pending_cells, gather_results, strict=True):
+                if isinstance(outcome, BaseException):
+                    logger.error("Cell %s raised unexpectedly: %s", cell.cell_id, outcome)
 
         logger.info(
             "Run '%s' complete: %d passed, %d failed, %d skipped, $%.4f spent",
@@ -199,19 +219,57 @@ class Orchestrator:
         async with self._progress_lock:
             self.progress.running += 1
 
-        # Run with retry logic
-        retry_count = 0
-        while retry_count <= self.MAX_RETRIES:
-            try:
-                result = await self.run_cell_fn(cell)
-                exit_class = result.get("exit_class", ExitClass.FAIL.value)
-                success = result.get("success", 0.0)
-                cell_cost = result.get("total_cost", 0.0)
+        try:
+            # --- Phase 1: run the harness with retry (only run_cell_fn is
+            # retried; persistence is handled separately below so a store
+            # error can never masquerade as a harness failure). ---
+            result: dict[str, Any] | None = None
+            retry_count = 0
+            while True:
+                try:
+                    result = await self.run_cell_fn(cell)
+                    break
+                except RetryableError as e:
+                    if retry_count < self.MAX_RETRIES:
+                        retry_count += 1
+                        delay = self.RETRY_BASE_DELAY * (2 ** (retry_count - 1))
+                        logger.warning(
+                            "Cell %s failed (retryable, attempt %d/%d): %s. "
+                            "Retrying in %.1fs",
+                            cell.cell_id,
+                            retry_count,
+                            self.MAX_RETRIES,
+                            e,
+                            delay,
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    logger.error(
+                        "Cell %s exhausted retries (%d): %s",
+                        cell.cell_id,
+                        self.MAX_RETRIES,
+                        e,
+                    )
+                    async with self._budget_lock:
+                        self._release_reservation(cell.cell_id)
+                        self._save_failure(
+                            cell, ExitClass.RETRYABLE_KILL.value,
+                            "retry_exhausted", str(e), retry_count,
+                        )
+                    async with self._progress_lock:
+                        self.progress.failed += 1
+                        self.progress.errors.append(f"{cell.cell_id}: {e}")
+                    return
 
-                # RECONCILE: adjust remaining budget and save under the lock
+            # --- Phase 2: persist the harness result. The harness completed,
+            # so persistence errors are logged but never reclassified as a
+            # harness failure (which would lose the real result). ---
+            exit_class = result.get("exit_class", ExitClass.FAIL.value)
+            success = result.get("success", 0.0)
+            cell_cost = result.get("total_cost", 0.0)
+            try:
                 async with self._budget_lock:
                     self._reconcile_reservation(cell.cell_id, cell_cost)
-
                     self.store.save_result(
                         cell=cell,
                         exit_class=exit_class,
@@ -231,94 +289,81 @@ class Orchestrator:
                         harness_metadata=result.get("harness_metadata"),
                         retry_count=retry_count,
                     )
-                    self.store.set_cell_state(
-                        cell.cell_id, cell.run_name, "completed"
-                    )
-
-                    # Post-update: warn if this cell pushed us over budget
+                    self.store.set_cell_state(cell.cell_id, cell.run_name, "completed")
                     if self.config.budget_usd is not None:
                         total = self.store.get_total_cost(self.config.name)
                         if total > self.config.budget_usd:
                             logger.warning(
-                                "Budget exceeded after cell %s "
-                                "($%.4f > $%.4f)",
+                                "Budget exceeded after cell %s ($%.4f > $%.4f)",
                                 cell.cell_id,
                                 total,
                                 self.config.budget_usd,
                             )
-
                 async with self._progress_lock:
-                    self.progress.running -= 1
                     self.progress.total_cost += cell_cost
-
                     if exit_class == ExitClass.PASS.value:
                         self.progress.completed += 1
                     else:
                         self.progress.failed += 1
-
-                return
-
-            except RetryableError as e:
-                retry_count += 1
-                if retry_count <= self.MAX_RETRIES:
-                    delay = self.RETRY_BASE_DELAY * (2 ** (retry_count - 1))
-                    logger.warning(
-                        "Cell %s failed (retryable, attempt %d/%d): %s. "
-                        "Retrying in %.1fs",
-                        cell.cell_id,
-                        retry_count,
-                        self.MAX_RETRIES,
-                        e,
-                        delay,
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(
-                        "Cell %s exhausted retries (%d): %s",
-                        cell.cell_id,
-                        self.MAX_RETRIES,
-                        e,
-                    )
-                    async with self._budget_lock:
-                        self._release_reservation(cell.cell_id)
-                        self.store.save_result(
-                            cell=cell,
-                            exit_class=ExitClass.RETRYABLE_KILL.value,
-                            success=0.0,
-                            error_class="retry_exhausted",
-                            error_message=str(e),
-                            retry_count=retry_count,
-                        )
-                        self.store.set_cell_state(
-                            cell.cell_id, cell.run_name, "failed", str(e)
-                        )
-                    async with self._progress_lock:
-                        self.progress.running -= 1
-                        self.progress.failed += 1
-                        self.progress.errors.append(f"{cell.cell_id}: {e}")
-                    return
-
-            except Exception as e:
+            except Exception as persist_err:
                 logger.error(
-                    "Cell %s failed (non-retryable): %s", cell.cell_id, e
+                    "Failed to persist result for cell %s (harness completed): %s",
+                    cell.cell_id,
+                    persist_err,
                 )
-                async with self._budget_lock:
-                    self._release_reservation(cell.cell_id)
-                    self.store.save_result(
-                        cell=cell,
-                        exit_class=ExitClass.NON_RETRYABLE_KILL.value,
-                        success=0.0,
-                        error_class="non_retryable",
-                        error_message=str(e),
-                    )
-                    self.store.set_cell_state(
-                        cell.cell_id, cell.run_name, "failed", str(e)
-                    )
-                async with self._progress_lock:
-                    self.progress.running -= 1
-                    self.progress.failed += 1
-                    self.progress.errors.append(f"{cell.cell_id}: {e}")
-                return
+            return
+
+        except asyncio.CancelledError:
+            logger.warning("Cell %s cancelled", cell.cell_id)
+            raise
+        except Exception as e:
+            # Non-retryable error raised by the harness (run_cell_fn).
+            logger.error("Cell %s failed (non-retryable): %s", cell.cell_id, e)
+            async with self._budget_lock:
+                self._release_reservation(cell.cell_id)
+                self._save_failure(
+                    cell, ExitClass.NON_RETRYABLE_KILL.value,
+                    "non_retryable", str(e), 0,
+                )
+            async with self._progress_lock:
+                self.progress.failed += 1
+                self.progress.errors.append(f"{cell.cell_id}: {e}")
+            return
+        finally:
+            # Guarantee cleanup on every path (including cancellation):
+            # release any dangling reservation (idempotent — a no-op once
+            # reconciled/released) and decrement the running counter once.
+            async with self._budget_lock:
+                self._release_reservation(cell.cell_id)
+            async with self._progress_lock:
+                self.progress.running -= 1
+
+    def _save_failure(
+        self,
+        cell: RunCell,
+        exit_class: str,
+        error_class: str,
+        error_message: str,
+        retry_count: int,
+    ) -> None:
+        """Persist a failed cell result, swallowing store errors.
+
+        A persistence failure here must not propagate and abort the run.
+        """
+        try:
+            self.store.save_result(
+                cell=cell,
+                exit_class=exit_class,
+                success=0.0,
+                error_class=error_class,
+                error_message=error_message,
+                retry_count=retry_count,
+            )
+            self.store.set_cell_state(cell.cell_id, cell.run_name, "failed", error_message)
+        except Exception as persist_err:
+            logger.error(
+                "Failed to persist failure for cell %s: %s", cell.cell_id, persist_err
+            )
 
     def _estimate_cell_cost(self, cell: RunCell) -> float:
         """Estimate the cost of a cell for budget reservation.
