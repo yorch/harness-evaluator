@@ -1,0 +1,32 @@
+# Minimal run configuration for heval — safe first run.
+# Uses one harness, one model, one task, one repeat.
+# Requires: heval-runner:latest Docker image and ANTHROPIC_API_KEY env var.
+name: "minimal-first-run"
+description: "Minimal first run: one harness, one model, one task"
+
+harnesses:
+  - name: opencode
+    adapter: opencode
+    observability_tier: full
+    config:
+      mode: agent
+
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    config:
+      max_tokens: 16384
+
+tasks:
+  - "swe-bugfix-001"
+
+task_library_path: "./tasks"
+repeats: 1
+budget_usd: 5.0
+gateway_port: 8877
+gateway_db: "heval_gateway.db"
+results_db: "heval_results.db"
+workdir: "./heval_workdir"
+docker_image: "heval-runner:latest"
+parallel_runs: 1

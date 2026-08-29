@@ -421,10 +421,12 @@ class TestRunHarness:
             _make_completed(returncode=0),
         ]
 
-        result = await runner._run_harness(cell, workdir)
+        # A harness timeout now raises RetryableError so the orchestrator
+        # can retry with backoff instead of silently scoring as NO_CHANGE.
+        from heval.orchestrator.engine import RetryableError
 
-        assert result.timed_out is True
-        assert result.exit_code == -1
+        with pytest.raises(RetryableError, match="timed out"):
+            await runner._run_harness(cell, workdir)
 
         # Ensure docker stop was still called
         stop_cmds = [

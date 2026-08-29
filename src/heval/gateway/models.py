@@ -150,5 +150,33 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
 
 
 def get_pricing(model: str) -> PricingTable:
-    """Get pricing for a model, falling back to a zero-cost default."""
+    """Get pricing for a model, falling back to a zero-cost default.
+
+    .. deprecated::
+       Unknown models silently receive a zero-cost PricingTable, which
+       means their token usage will not count against the budget. Call
+       :func:`get_pricing_strict` to get a clear signal (warning log)
+       when a model is not in the pricing table.
+    """
     return DEFAULT_PRICING.get(model, PricingTable())
+
+
+def get_pricing_strict(model: str) -> PricingTable:
+    """Get pricing for a model, warning on unknown models.
+
+    Logs a hard warning when the model is not in the pricing table,
+    since a zero-cost fallback means token usage will not count against
+    the budget — a silent budget bypass.
+    """
+    import logging
+
+    pricing = DEFAULT_PRICING.get(model)
+    if pricing is None:
+        logging.getLogger(__name__).warning(
+            "No pricing found for model '%s'; cost will be $0 and "
+            "token usage will NOT count against the budget. "
+            "Add the model to DEFAULT_PRICING to fix this.",
+            model,
+        )
+        return PricingTable()
+    return pricing

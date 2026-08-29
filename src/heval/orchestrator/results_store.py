@@ -5,6 +5,7 @@ Uses SQLite for structured storage of run results.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from datetime import UTC, datetime
@@ -58,6 +59,14 @@ CREATE TABLE IF NOT EXISTS run_state (
 );
 
 CREATE INDEX IF NOT EXISTS idx_run_state_name ON run_state(run_name);
+
+CREATE TABLE IF NOT EXISTS run_metadata (
+    run_name TEXT PRIMARY KEY,
+    config_json TEXT NOT NULL,
+    heval_version TEXT,
+    docker_image TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -70,7 +79,7 @@ class ResultsStore:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.executescript(SCHEMA)
             conn.commit()
 
@@ -93,7 +102,7 @@ class ResultsStore:
         retry_count: int = 0,
     ) -> None:
         usage = usage or TokenUsage()
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO run_results
                    (cell_id, run_name, harness, model, task_id, track, repeat,
@@ -135,7 +144,7 @@ class ResultsStore:
             conn.commit()
 
     def get_result(self, cell_id: str) -> dict[str, Any] | None:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM run_results WHERE cell_id = ?", (cell_id,)
@@ -143,7 +152,7 @@ class ResultsStore:
             return dict(row) if row else None
 
     def get_all_results(self, run_name: str | None = None) -> list[dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             if run_name:
                 rows = conn.execute(
@@ -165,7 +174,7 @@ class ResultsStore:
         error: str | None = None,
     ) -> None:
         now = datetime.now(UTC).isoformat()
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             if status == "running":
                 conn.execute(
                     """INSERT OR REPLACE INTO run_state
@@ -185,7 +194,7 @@ class ResultsStore:
             conn.commit()
 
     def get_cell_state(self, cell_id: str) -> str | None:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             row = conn.execute(
                 "SELECT status FROM run_state WHERE cell_id = ?", (cell_id,)
             ).fetchone()
@@ -193,7 +202,7 @@ class ResultsStore:
 
     def get_completed_cells(self, run_name: str) -> set[str]:
         """Get set of cell IDs that have been completed (for resumability)."""
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             rows = conn.execute(
                 "SELECT cell_id FROM run_state WHERE run_name = ? AND status = 'completed'",
                 (run_name,),
@@ -201,9 +210,40 @@ class ResultsStore:
             return {row[0] for row in rows}
 
     def get_total_cost(self, run_name: str) -> float:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             row = conn.execute(
                 "SELECT COALESCE(SUM(total_cost), 0) FROM run_results WHERE run_name = ?",
                 (run_name,),
             ).fetchone()
             return float(row[0]) if row[0] else 0.0
+
+    def save_run_metadata(
+        self,
+        run_name: str,
+        config_json: str,
+        heval_version: str | None = None,
+        docker_image: str | None = None,
+    ) -> None:
+        """Save run metadata for reproducibility.
+
+        Stores the full run config, heval version, and Docker image
+        so a run can be reproduced exactly.
+        """
+        now = datetime.now(UTC).isoformat()
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO run_metadata
+                   (run_name, config_json, heval_version, docker_image, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (run_name, config_json, heval_version, docker_image, now),
+            )
+            conn.commit()
+
+    def get_run_metadata(self, run_name: str) -> dict[str, Any] | None:
+        """Get run metadata for reproducibility."""
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM run_metadata WHERE run_name = ?", (run_name,)
+            ).fetchone()
+            return dict(row) if row else None

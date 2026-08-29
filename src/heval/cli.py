@@ -38,12 +38,15 @@ def gateway(
 @app.command()
 def canary(
     db: str = typer.Option("heval_gateway.db", help="SQLite DB path"),
-    tolerance: float = typer.Option(1.0, help="Max allowed discrepancy percentage"),
+    tolerance_pct: float = typer.Option(
+        1.0, "--tolerance-pct", "--tolerance",
+        help="Max allowed discrepancy percentage (1.0 = 1%)",
+    ),
 ) -> None:
     """Run the proxy canary: verify token capture accuracy."""
     from heval.gateway.canary import run_canary
 
-    result = asyncio.run(run_canary(db_path=db, tolerance_pct=tolerance))
+    result = asyncio.run(run_canary(db_path=db, tolerance_pct=tolerance_pct))
     if result.passed:
         console.print("[bold green]Canary PASSED[/bold green]")
         console.print(result.summary)
@@ -57,11 +60,21 @@ def canary(
 def run(
     config: str = typer.Argument(..., help="Path to run config YAML file"),
     dry_run: bool = typer.Option(False, help="Print the matrix without executing"),
+    check_gateway: bool = typer.Option(
+        True, help="Preflight: check that the gateway is reachable before running"
+    ),
 ) -> None:
     """Execute an evaluation run from a config file."""
+    from pathlib import Path
+
     from heval.orchestrator.config import RunConfig
     from heval.orchestrator.engine import Orchestrator
     from heval.orchestrator.results_store import ResultsStore
+
+    config_path = Path(config)
+    if not config_path.exists():
+        console.print(f"[red]Config file not found: {config}[/red]")
+        raise typer.Exit(1)
 
     cfg = RunConfig.from_yaml(config)
     console.print(f"[bold]Run:[/bold] {cfg.name}")
@@ -88,6 +101,28 @@ def run(
         console.print(table)
         return
 
+    # Preflight: check that the gateway is reachable on the configured port.
+    if check_gateway:
+        import socket
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        try:
+            sock.connect(("127.0.0.1", cfg.gateway_port))
+            sock.close()
+            console.print(
+                f"[green]Gateway reachable on port {cfg.gateway_port}[/green]"
+            )
+        except (ConnectionRefusedError, TimeoutError, OSError):
+            sock.close()
+            console.print(
+                f"[red]Gateway is NOT reachable on 127.0.0.1:{cfg.gateway_port}.[/red]\n"
+                f"Start it in another terminal with:\n"
+                f"  heval gateway --port {cfg.gateway_port}\n"
+                f"Then re-run this command."
+            )
+            raise typer.Exit(1) from None
+
     store = ResultsStore(cfg.results_db)
 
     # Wire up the Docker runner
@@ -96,6 +131,7 @@ def run(
     runner = DockerRunner(
         image=cfg.docker_image,
         workdir_base=cfg.workdir,
+        gateway_host=cfg.gateway_host,
         gateway_port=cfg.gateway_port,
         gateway_db=cfg.gateway_db,
     )
@@ -107,6 +143,12 @@ def run(
     console.print(f"  Failed: {progress.failed}")
     console.print(f"  Skipped: {progress.skipped}")
     console.print(f"  Cost: ${progress.total_cost:.4f}")
+
+    # Show first few failures if any
+    if progress.errors:
+        console.print(f"\n[red]First {min(5, len(progress.errors))} errors:[/red]")
+        for err in progress.errors[:5]:
+            console.print(f"  {err}")
 
 
 @app.command()
@@ -380,7 +422,7 @@ def calibrate(
     )
 
     console.print("[bold]Running calibration...[/bold]")
-    result = cal.calibrate(judge, task, DEFAULT_RUBRIC)
+    result = asyncio.run(cal.calibrate(judge, task, DEFAULT_RUBRIC))
 
     console.print(f"\nJudge version: {result['judge_version']}")
     console.print(f"Anchors: {result['num_anchors']}")

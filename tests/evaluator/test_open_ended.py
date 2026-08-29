@@ -227,10 +227,10 @@ class TestCalibrationSet:
         assert len(cal.anchors) == 1
         assert cal.anchors[0]["name"] == "test"
 
-    def test_calibrate_no_anchors(self, open_ended_task):
+    async def test_calibrate_no_anchors(self, open_ended_task):
         cal = CalibrationSet()
         judge = FrozenJudge(api_key=None)
-        result = cal.calibrate(judge, open_ended_task, DEFAULT_RUBRIC)
+        result = await cal.calibrate(judge, open_ended_task, DEFAULT_RUBRIC)
         assert result["num_anchors"] == 0
         assert result["mean_absolute_error"] == 0.0
         assert result["reliable"] is False  # Unknown, not reliable
@@ -276,11 +276,11 @@ class TestCalibrationSet:
         loaded = CalibrationSet.load_from_file(path)
         assert len(loaded.anchors) == 0
 
-    def test_save_results_after_calibrate(self, tmp_path, open_ended_task):
+    async def test_save_results_after_calibrate(self, tmp_path, open_ended_task):
         """Test that calibration results can be persisted to disk."""
         cal = CalibrationSet()
         judge = FrozenJudge(api_key=None)
-        cal.calibrate(judge, open_ended_task, DEFAULT_RUBRIC)
+        await cal.calibrate(judge, open_ended_task, DEFAULT_RUBRIC)
 
         results_path = tmp_path / "calibration_results.json"
         cal.save_results(results_path)

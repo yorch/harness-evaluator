@@ -5,6 +5,7 @@ Uses SQLite for structured queryability and JSON for raw request/response bodies
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from pathlib import Path
@@ -49,12 +50,12 @@ class CallStore:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.executescript(SCHEMA)
             conn.commit()
 
     def save(self, call: CapturedCall) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO captured_calls
                    (id, trace_id, parent_id, provider, model, method, path,
@@ -86,13 +87,13 @@ class CallStore:
             conn.commit()
 
     def get_all(self) -> list[CapturedCall]:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("SELECT * FROM captured_calls ORDER BY timestamp").fetchall()
             return [self._row_to_call(row) for row in rows]
 
     def get_by_id(self, call_id: str) -> CapturedCall | None:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM captured_calls WHERE id = ?", (call_id,)
@@ -100,13 +101,25 @@ class CallStore:
             return self._row_to_call(row) if row else None
 
     def get_by_trace(self, trace_id: str) -> list[CapturedCall]:
-        with sqlite3.connect(self.db_path) as conn:
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 "SELECT * FROM captured_calls WHERE trace_id = ? ORDER BY timestamp",
                 (trace_id,),
             ).fetchall()
             return [self._row_to_call(row) for row in rows]
+
+    def delete_by_trace(self, trace_id: str) -> None:
+        """Delete all captured calls for a trace ID.
+
+        Used on re-runs to avoid double-counting tokens/cost from prior
+        attempts of the same cell.
+        """
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute(
+                "DELETE FROM captured_calls WHERE trace_id = ?", (trace_id,)
+            )
+            conn.commit()
 
     def _row_to_call(self, row: sqlite3.Row) -> CapturedCall:
         from heval.gateway.models import CostBreakdown, Provider, TokenUsage

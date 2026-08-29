@@ -84,6 +84,9 @@ class Orchestrator:
         self.run_cell_fn = run_cell_fn or _dry_run_cell
         self.progress = OrchestratorProgress()
         self._budget_lock = asyncio.Lock()
+        # Lock for progress counter mutations so concurrent cells do
+        # not lose updates to running/completed/failed/total_cost.
+        self._progress_lock = asyncio.Lock()
         # Remaining budget available for reservation (in-memory, guarded by
         # the budget lock). Initialized lazily on first use.
         self._remaining_budget: float | None = None
@@ -100,6 +103,20 @@ class Orchestrator:
         cells = self.config.build_matrix()
         self._total_cells = len(cells)
         self.progress.total_cells = len(cells)
+
+        # Save run metadata for reproducibility.
+        try:
+            import heval
+
+            heval_version = getattr(heval, "__version__", None)
+        except Exception:
+            heval_version = None
+        self.store.save_run_metadata(
+            run_name=self.config.name,
+            config_json=self.config.model_dump_json(indent=2),
+            heval_version=heval_version,
+            docker_image=self.config.docker_image,
+        )
 
         # Filter out already-completed cells (resumability)
         completed = self.store.get_completed_cells(self.config.name)
@@ -172,13 +189,15 @@ class Orchestrator:
                         cell.cell_id, cell.run_name, "skipped",
                         "Budget cap reached",
                     )
-                    self.progress.skipped += 1
+                    async with self._progress_lock:
+                        self.progress.skipped += 1
                     return
                 self._remaining_budget -= estimate
                 self._reservations[cell.cell_id] = estimate
 
         self.store.set_cell_state(cell.cell_id, cell.run_name, "running")
-        self.progress.running += 1
+        async with self._progress_lock:
+            self.progress.running += 1
 
         # Run with retry logic
         retry_count = 0
@@ -228,13 +247,14 @@ class Orchestrator:
                                 self.config.budget_usd,
                             )
 
-                self.progress.running -= 1
-                self.progress.total_cost += cell_cost
+                async with self._progress_lock:
+                    self.progress.running -= 1
+                    self.progress.total_cost += cell_cost
 
-                if exit_class == ExitClass.PASS.value:
-                    self.progress.completed += 1
-                else:
-                    self.progress.failed += 1
+                    if exit_class == ExitClass.PASS.value:
+                        self.progress.completed += 1
+                    else:
+                        self.progress.failed += 1
 
                 return
 
@@ -272,9 +292,10 @@ class Orchestrator:
                         self.store.set_cell_state(
                             cell.cell_id, cell.run_name, "failed", str(e)
                         )
-                    self.progress.running -= 1
-                    self.progress.failed += 1
-                    self.progress.errors.append(f"{cell.cell_id}: {e}")
+                    async with self._progress_lock:
+                        self.progress.running -= 1
+                        self.progress.failed += 1
+                        self.progress.errors.append(f"{cell.cell_id}: {e}")
                     return
 
             except Exception as e:
@@ -293,9 +314,10 @@ class Orchestrator:
                     self.store.set_cell_state(
                         cell.cell_id, cell.run_name, "failed", str(e)
                     )
-                self.progress.running -= 1
-                self.progress.failed += 1
-                self.progress.errors.append(f"{cell.cell_id}: {e}")
+                async with self._progress_lock:
+                    self.progress.running -= 1
+                    self.progress.failed += 1
+                    self.progress.errors.append(f"{cell.cell_id}: {e}")
                 return
 
     def _estimate_cell_cost(self, cell: RunCell) -> float:

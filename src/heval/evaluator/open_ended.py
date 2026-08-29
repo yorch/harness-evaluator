@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -54,14 +55,19 @@ class Rubric:
     def score_to_success(self, scores: dict[str, int]) -> float:
         """Convert criterion scores to a 0.0-1.0 success metric.
 
-        Weighted average normalized to [0, 1].
+        Weighted average normalized to [0, 1]. Per-criterion scores are
+        clamped to ``[0, max_score]`` to prevent over-scoring from a
+        malformed or over-generous LLM judge response.
         """
         if not self.criteria or self.total_weight == 0:
             return 0.0
         total = 0.0
         for criterion in self.criteria:
-            score = scores.get(criterion.name, 0)
-            normalized = score / criterion.max_score
+            raw_score = scores.get(criterion.name, 0)
+            # Clamp to [0, max_score] so a judge returning 6/5 does not
+            # produce success > 1.0.
+            clamped = max(0, min(raw_score, criterion.max_score))
+            normalized = clamped / criterion.max_score
             total += normalized * criterion.weight
         return total / self.total_weight
 
@@ -214,8 +220,7 @@ class StructuralChecker:
         if task.test_command:
             try:
                 result = subprocess.run(
-                    task.test_command,
-                    shell=True,
+                    shlex.split(task.test_command),
                     cwd=repo_dir,
                     capture_output=True,
                     text=True,
@@ -294,11 +299,18 @@ class FrozenJudge:
             f'"{c.name}": ""' for c in rubric.criteria
         )
 
-        # Use string.Template to avoid conflicts with code braces in diff
+        # Use string.Template to avoid conflicts with code braces in diff.
+        # Escape $ in user-supplied content (task description, diff) to
+        # prevent template injection: a diff containing "$task_description"
+        # would otherwise be substituted with the actual task description,
+        # leaking content or corrupting the prompt.
+        safe_task_desc = (task.description or task.task_prompt).replace("$", "$$")
+        safe_diff = diff[:8000].replace("$", "$$")  # Truncate very long diffs
+
         template = Template(template_str)
         return template.safe_substitute(
-            task_description=task.description or task.task_prompt,
-            diff=diff[:8000],  # Truncate very long diffs
+            task_description=safe_task_desc,
+            diff=safe_diff,
             criteria_descriptions=criteria_descriptions,
             score_keys=score_keys,
             score_keys_just=score_keys_just,
@@ -465,7 +477,7 @@ class CalibrationSet:
             }
         )
 
-    def calibrate(
+    async def calibrate(
         self, judge: FrozenJudge, task: TaskSpec, rubric: Rubric
     ) -> dict[str, Any]:
         """Run the judge against all anchors and check for drift.
@@ -474,12 +486,14 @@ class CalibrationSet:
         - per-anchor actual vs expected scores
         - mean absolute error
         - drift flag (MAE > threshold)
-        """
-        import asyncio
 
+        This is an async method because it calls the async judge. Use
+        ``asyncio.run(cal.calibrate(...))`` from sync code, or ``await``
+        it from an async context.
+        """
         results = []
         for anchor in self.anchors:
-            judge_result = asyncio.run(judge.judge(task, anchor["diff"], rubric))
+            judge_result = await judge.judge(task, anchor["diff"], rubric)
             actual_success = rubric.score_to_success(judge_result.scores)
 
             score_errors = {}
@@ -665,6 +679,9 @@ class OpenEndedEvaluator:
         else:
             composite_success = judge_success
             error_class = "success" if composite_success >= 0.7 else "partial"
+
+        # Clamp to [0, 1] to guard against any residual over-scoring.
+        composite_success = max(0.0, min(composite_success, 1.0))
 
         exit_class = "pass" if composite_success >= 0.7 else "fail"
 

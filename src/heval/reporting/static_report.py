@@ -4,13 +4,49 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Template
+from jinja2 import Environment
 
 from heval.orchestrator.results_store import ResultsStore
+
+# Strict identifier allow-list for run names, cell IDs, and other
+# identifiers used in file paths. Prevents path traversal via "../"
+# or absolute paths in user-supplied YAML/CLI input.
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def sanitize_id(value: str) -> str:
+    """Sanitize an identifier for safe use in file paths and container names.
+
+    Allows alphanumerics, dots, hyphens, and underscores. Any other
+    character (including path separators, spaces, and shell metacharacters)
+    is replaced with an underscore.
+    """
+    if not value:
+        return "unknown"
+    return _UNSAFE_CHAR_RE.sub("_", value)
+
+
+# Matches any character NOT in the safe set [A-Za-z0-9._-].
+_UNSAFE_CHAR_RE = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def assert_safe_path(base: Path, target: Path) -> Path:
+    """Assert that ``target`` is inside ``base`` after resolution.
+
+    Prevents path traversal from unsanitized identifiers.
+    """
+    base_resolved = base.resolve()
+    target_resolved = target.resolve()
+    if not str(target_resolved).startswith(str(base_resolved)):
+        raise ValueError(
+            f"Path traversal detected: {target} escapes {base}"
+        )
+    return target_resolved
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -143,12 +179,14 @@ class ReportGenerator:
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        # Sanitize run_name for use in filenames to prevent path traversal.
+        safe_name = sanitize_id(run_name)
 
         results = self.store.get_all_results(run_name)
         leaderboards = self._build_leaderboards(results)
 
         # Generate JSON
-        json_path = output_dir / f"{run_name}_report.json"
+        json_path = assert_safe_path(output_dir, output_dir / f"{safe_name}_report.json")
         with open(json_path, "w") as f:
             json.dump(
                 {
@@ -163,15 +201,26 @@ class ReportGenerator:
             )
 
         # Generate CSV
-        csv_path = output_dir / f"{run_name}_report.csv"
+        csv_path = assert_safe_path(output_dir, output_dir / f"{safe_name}_report.csv")
+        # Use explicit fieldnames so empty result sets still produce a
+        # valid CSV with headers (fragile when using results[0].keys()).
+        csv_fieldnames = [
+            "cell_id", "run_name", "harness", "model", "task_id", "track",
+            "repeat", "exit_class", "success", "error_class", "error_message",
+            "input_tokens", "output_tokens", "cache_read_tokens",
+            "cache_write_tokens", "reasoning_tokens", "total_cost",
+            "latency_ms", "time_to_first_attempt_ms", "num_api_calls",
+            "num_tool_calls", "diff", "test_output", "harness_metadata",
+            "timestamp", "retry_count",
+        ]
         with open(csv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=csv_fieldnames, extrasaction="ignore")
+            writer.writeheader()
             if results:
-                writer = csv.DictWriter(f, fieldnames=results[0].keys())
-                writer.writeheader()
                 writer.writerows(results)
 
         # Generate HTML
-        html_path = output_dir / f"{run_name}_report.html"
+        html_path = assert_safe_path(output_dir, output_dir / f"{safe_name}_report.html")
         html = self._generate_html(run_name, results, leaderboards)
         with open(html_path, "w") as f:
             f.write(html)
@@ -246,7 +295,7 @@ class ReportGenerator:
         results: list[dict[str, Any]],
         leaderboards: dict[str, list[dict[str, Any]]],
     ) -> str:
-        """Generate HTML report."""
+        """Generate HTML report with Jinja2 autoescaping enabled."""
         total = len(results)
         passed = sum(1 for r in results if r["exit_class"] == "pass")
         failed = total - passed
@@ -272,11 +321,15 @@ class ReportGenerator:
                     + r["reasoning_tokens"],
                     "cost": f"{r['total_cost']:.6f}",
                     "time_s": f"{r['latency_ms'] / 1000:.1f}",
-                    "error_class": r.get("error_class"),
+                    "error_class": r.get("error_class") or "",
                 }
             )
 
-        template = Template(HTML_TEMPLATE)
+        # Use Jinja2 with autoescaping to prevent stored XSS from
+        # user-supplied identifiers (run_name, cell_id, etc.) that are
+        # stored in the database and rendered into HTML.
+        env = Environment(autoescape=True)
+        template = env.from_string(HTML_TEMPLATE)
         html: str = template.render(
             run_name=run_name,
             timestamp=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC"),

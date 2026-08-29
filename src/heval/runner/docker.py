@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 import subprocess
 import time
@@ -34,6 +35,24 @@ CONTAINER_WORKSPACE = "/workspace"
 
 # Repo subdirectory inside the container workspace.
 CONTAINER_REPO = "/workspace/repo"
+
+# Strict allow-list for container name characters (Docker requires
+# [a-zA-Z0-9][a-zA-Z0-9_.-]*). We sanitize cell IDs to this charset.
+_SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def _sanitize_container_name(cell_id: str) -> str:
+    """Sanitize a cell ID for use as a Docker container name.
+
+    Docker container names must match ``[a-zA-Z0-9][a-zA-Z0-9_.-]*``.
+    Cell IDs contain ``__`` separators which are fine, but any other
+    unsafe character is replaced with ``-``.
+    """
+    name = _SAFE_NAME_RE.sub("-", cell_id)
+    # Docker names must start with an alphanumeric character.
+    if name and not name[0].isalnum():
+        name = "heval-" + name
+    return f"heval-{name}"
 
 
 @dataclass
@@ -152,7 +171,22 @@ class DockerRunner:
         from heval.gateway.store import CallStore
 
         cell_workdir = self.workdir_base / cell.cell_id
+
+        # On re-runs (resumability), the workdir may contain stale state
+        # from a previous attempt (partial git repo, dirty working tree,
+        # prior harness output). Clean it to avoid git clone failures,
+        # double-counted diffs, and hidden-test patch application errors.
+        if cell_workdir.exists():
+            shutil.rmtree(cell_workdir)
         cell_workdir.mkdir(parents=True, exist_ok=True)
+
+        # Also delete any prior gateway calls for this trace_id so
+        # token/cost aggregation does not double-count from a previous
+        # attempt of the same cell.
+        gateway_db_path = Path(self.gateway_db)
+        if gateway_db_path.exists():
+            store = CallStore(str(gateway_db_path))
+            store.delete_by_trace(cell.cell_id)
 
         start_time = time.monotonic()
 
@@ -176,7 +210,12 @@ class DockerRunner:
                     if (cell_workdir / "repo").exists()
                     else cell_workdir
                 )
-                eval_result = evaluator.evaluate(cell.task, repo_dir)
+                # SWEEvaluator.evaluate uses synchronous subprocess calls
+                # (git diff, git apply, pytest). Offload to a thread to
+                # avoid blocking the event loop when parallel_runs > 1.
+                eval_result = await asyncio.to_thread(
+                    evaluator.evaluate, cell.task, repo_dir
+                )
             else:
                 from heval.evaluator.open_ended import OpenEndedEvaluator
 
@@ -320,8 +359,10 @@ class DockerRunner:
             await self._git_clone(str(local_path), dest)
             await self._git_checkout(dest, cell.task.repo_commit)
         else:
-            # Plain directory → copy and init a fresh git repo
-            shutil.copytree(local_path, dest)
+            # Plain directory → copy and init a fresh git repo.
+            # shutil.copytree is blocking I/O — offload to a thread to
+            # avoid stalling the asyncio event loop.
+            await asyncio.to_thread(shutil.copytree, local_path, dest)
             await self._git_init_fresh(dest)
 
     async def _git_clone(self, src: str, dest: Path) -> None:
@@ -376,6 +417,11 @@ class DockerRunner:
 
         The container runs a long-lived ``sleep`` so we can ``docker exec``
         into it for setup and harness execution.
+
+        Security: containers are launched with ``--cap-drop=ALL`` to
+        remove all Linux capabilities. The harness only needs to write
+        files and make network requests to the gateway/provider — it
+        does not need ``SYS_PTRACE``, ``NET_ADMIN``, etc.
         """
         args = [
             self.docker_bin,
@@ -384,6 +430,10 @@ class DockerRunner:
             "--rm",
             "--name",
             container_name,
+            # Drop all Linux capabilities for isolation. The harness
+            # only needs file I/O and network access, not privileged
+            # kernel operations.
+            "--cap-drop=ALL",
             "-v",
             f"{workdir.resolve()}:{CONTAINER_WORKSPACE}",
             "-w",
@@ -571,7 +621,7 @@ class DockerRunner:
         exec_cwd = CONTAINER_REPO if cell.task.repo_url else CONTAINER_WORKSPACE
 
         # Launch the container
-        container_name = f"heval-{cell.cell_id}"
+        container_name = _sanitize_container_name(cell.cell_id)
         container_id: str | None = None
         try:
             container_id = await self._start_container(
@@ -610,7 +660,15 @@ class DockerRunner:
                 logger.warning("Adapter cleanup failed for %s: %s", cell.cell_id, e)
 
         # Ensure git tracks the changes on the host (for diff/evaluation)
-        self._commit_changes(repo_dir)
+        await self._commit_changes(repo_dir)
+
+        # Surface harness timeout as a retryable error so the orchestrator
+        # can retry with backoff instead of scoring it as NO_CHANGE or
+        # WRONG_APPROACH.
+        if result.timed_out:
+            raise RetryableError(
+                f"Harness command timed out after {cell.task.timeout_seconds}s"
+            )
 
         return RunResult(
             exit_code=result.exit_code,
@@ -621,8 +679,16 @@ class DockerRunner:
             duration_ms=(time.monotonic() - start) * 1000,
         )
 
-    def _commit_changes(self, repo_dir: Path) -> None:
-        """Stage and commit harness changes on the host for diff evaluation."""
+    async def _commit_changes(self, repo_dir: Path) -> None:
+        """Stage and commit harness changes on the host for diff evaluation.
+
+        Uses ``asyncio.to_thread`` to avoid blocking the event loop with
+        synchronous ``subprocess.run`` calls.
+        """
+        await asyncio.to_thread(self._commit_changes_sync, repo_dir)
+
+    def _commit_changes_sync(self, repo_dir: Path) -> None:
+        """Synchronous implementation of _commit_changes."""
         if not (repo_dir / ".git").exists():
             subprocess.run(["git", "init"], cwd=repo_dir, capture_output=True)
             commit_msg = "initial"

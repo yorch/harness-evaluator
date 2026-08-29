@@ -89,6 +89,13 @@ RUN echo "=== Installed harnesses ===" \
 # ---------------------------------------------------------------------------
 WORKDIR /workspace
 
+# Create a non-root user for the harness execution. The heval DockerRunner
+# mounts the host workdir at /workspace; the heval user needs write access.
+RUN groupadd -r heval && useradd -r -g heval -d /workspace -s /bin/bash heval \
+    && chown -R heval:heval /workspace
+
+USER heval
+
 # The heval DockerRunner launches the container with `sleep infinity`
 # and then uses `docker exec` for setup and harness execution.
 CMD ["sleep", "infinity"]

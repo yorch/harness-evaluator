@@ -15,6 +15,7 @@ proxy talks HTTPS to the real provider with full certificate verification.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -32,7 +33,7 @@ from heval.gateway.models import (
     CapturedCall,
     Provider,
     TokenUsage,
-    get_pricing,
+    get_pricing_strict,
 )
 from heval.gateway.parsers import anthropic as anthropic_parser
 from heval.gateway.parsers import openai as openai_parser
@@ -65,16 +66,30 @@ INTERNAL_TRACE_HEADERS = frozenset(
     }
 )
 
-# Headers that contain sensitive data and must be redacted before storage
+# Headers that contain sensitive data and must be redacted before storage.
+# Expanded to cover common auth/session/token headers across providers
+# and intermediaries.
 SENSITIVE_HEADERS = frozenset(
     {
         "authorization",
         "x-api-key",
+        "x-goog-api-key",
         "cookie",
         "set-cookie",
         "proxy-authorization",
+        "x-amz-security-token",
+        "x-auth-token",
+        "x-session-token",
+        "x-access-token",
+        "api-key",
+        "openai-organization",
+        "anthropic-organization",
     }
 )
+
+# Substrings that indicate a secret in a header name (case-insensitive).
+# Catches headers like "x-anthropic-api-key", "openai-api-key", etc.
+_SENSITIVE_HEADER_SUBSTRINGS = ("key", "token", "secret", "auth", "cookie", "password")
 
 # Real provider upstream URLs
 UPSTREAM_URLS: dict[Provider, str] = {
@@ -93,10 +108,15 @@ REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=300)
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
-    """Redact sensitive headers before storing to disk."""
+    """Redact sensitive headers before storing to disk.
+
+    Matches both an explicit allow-list (SENSITIVE_HEADERS) and a
+    substring heuristic for common secret-bearing header names.
+    """
     redacted: dict[str, str] = {}
     for key, value in headers.items():
-        if key.lower() in SENSITIVE_HEADERS:
+        lower = key.lower()
+        if lower in SENSITIVE_HEADERS or any(s in lower for s in _SENSITIVE_HEADER_SUBSTRINGS):
             redacted[key] = "[REDACTED]"
         else:
             redacted[key] = value
@@ -116,17 +136,25 @@ class GatewayProxy:
         self.upstreams = {**UPSTREAM_URLS, **(upstream_overrides or {})}
         self.verify_ssl = verify_ssl
         self._session: aiohttp.ClientSession | None = None
+        self._session_lock = asyncio.Lock()
 
     async def get_session(self) -> aiohttp.ClientSession:
-        if self._session is None or self._session.closed:
-            ssl_ctx: ssl_module.SSLContext | bool
-            ssl_ctx = ssl_module.create_default_context() if self.verify_ssl else False
-            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
-            self._session = aiohttp.ClientSession(
-                timeout=REQUEST_TIMEOUT,
-                connector=connector,
-            )
-        return self._session
+        # Guard against concurrent session creation. Without the lock,
+        # two coroutines could race and create overlapping sessions.
+        async with self._session_lock:
+            if self._session is None or self._session.closed:
+                ssl_ctx: ssl_module.SSLContext | bool
+                ssl_ctx = (
+                    ssl_module.create_default_context()
+                    if self.verify_ssl
+                    else False
+                )
+                connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+                self._session = aiohttp.ClientSession(
+                    timeout=REQUEST_TIMEOUT,
+                    connector=connector,
+                )
+            return self._session
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
@@ -286,8 +314,27 @@ class GatewayProxy:
                 is_streaming=is_streaming,
                 error=str(e),
             )
-            self.store.save(call)
+            await asyncio.to_thread(self.store.save, call)
             return web.Response(status=502, text=f"Gateway error: {e}")
+        except TimeoutError:
+            latency_ms = (time.monotonic() - start_time) * 1000
+            logger.error("Upstream timeout for call %s after %ss", call_id, REQUEST_TIMEOUT)
+            call = CapturedCall(
+                id=call_id,
+                trace_id=trace_id,
+                provider=provider,
+                model=model,
+                method=request.method,
+                path=request.path,
+                request_headers=redacted_request_headers,
+                request_body=request_body,
+                response_status=0,
+                latency_ms=latency_ms,
+                is_streaming=is_streaming,
+                error=f"Upstream timeout after {REQUEST_TIMEOUT.total}s",
+            )
+            await asyncio.to_thread(self.store.save, call)
+            return web.Response(status=504, text="Gateway timeout")
 
     async def _handle_non_streaming(
         self,
@@ -313,9 +360,7 @@ class GatewayProxy:
 
         # Parse usage
         usage = self._parse_non_streaming_usage(provider, response_body or {})
-        pricing = get_pricing(model)
-        if pricing.input_per_million == 0 and pricing.output_per_million == 0:
-            logger.warning("No pricing found for model %s, cost will be $0", model)
+        pricing = get_pricing_strict(model)
         cost = pricing.calculate(usage)
 
         # Redact response headers for storage
@@ -339,7 +384,7 @@ class GatewayProxy:
             latency_ms=latency_ms,
             is_streaming=False,
         )
-        self.store.save(call)
+        await asyncio.to_thread(self.store.save, call)
 
         logger.info(
             "Captured %s: %s tokens, $%.6f, %.0fms",
@@ -395,6 +440,9 @@ class GatewayProxy:
         sse_text_parts: list[str] = []
         sse_text_size = 0
         stream_error: str | None = None
+        # Per-stream SSE event state (NOT shared on the proxy instance,
+        # so concurrent streams do not overwrite each other).
+        current_event: str | None = None
 
         try:
             async for chunk in upstream_resp.content.iter_any():
@@ -413,16 +461,16 @@ class GatewayProxy:
                     line_bytes, byte_buffer = byte_buffer.split(b"\n", 1)
                     line = line_bytes.decode("utf-8", errors="replace").strip()
                     if line:
-                        accumulated_usage = self._process_sse_line(
-                            provider, line, accumulated_usage
+                        current_event, accumulated_usage = self._process_sse_line(
+                            provider, line, accumulated_usage, current_event
                         )
 
             # Process any remaining buffered data
             if byte_buffer:
                 line = byte_buffer.decode("utf-8", errors="replace").strip()
                 if line:
-                    accumulated_usage = self._process_sse_line(
-                        provider, line, accumulated_usage
+                    current_event, accumulated_usage = self._process_sse_line(
+                        provider, line, accumulated_usage, current_event
                     )
 
         except (aiohttp.ClientPayloadError, aiohttp.ServerDisconnectedError) as e:
@@ -438,9 +486,7 @@ class GatewayProxy:
         latency_ms = (time.monotonic() - start_time) * 1000
 
         # Calculate cost
-        pricing = get_pricing(model)
-        if pricing.input_per_million == 0 and pricing.output_per_million == 0:
-            logger.warning("No pricing found for model %s, cost will be $0", model)
+        pricing = get_pricing_strict(model)
         cost = pricing.calculate(accumulated_usage)
 
         # Build SSE summary for storage
@@ -474,7 +520,7 @@ class GatewayProxy:
             is_streaming=True,
             error=stream_error,
         )
-        self.store.save(call)
+        await asyncio.to_thread(self.store.save, call)
 
         logger.info(
             "Captured streaming %s: %s tokens, $%.6f, %.0fms%s",
@@ -492,29 +538,30 @@ class GatewayProxy:
         provider: Provider,
         line: str,
         accumulated: TokenUsage,
-    ) -> TokenUsage:
+        current_event: str | None,
+    ) -> tuple[str | None, TokenUsage]:
         """Process a single complete SSE line and update accumulated usage.
 
         This processes one line at a time (no splitting) to avoid the
-        byte-boundary corruption issue.
+        byte-boundary corruption issue. The current Anthropic event type
+        is passed in and returned so per-stream state stays local to the
+        caller (concurrent streams do not share event state).
         """
         if provider == Provider.ANTHROPIC:
             event_type, data = anthropic_parser.parse_sse_line(line)
             if event_type:
-                # Store event type for next data line
-                self._sse_current_event = event_type
-            if data:
-                current_event = getattr(self, "_sse_current_event", None)
-                if current_event:
-                    accumulated = anthropic_parser.parse_sse_event(
-                        current_event, data, accumulated
-                    )
+                # Remember event type for the next data line
+                current_event = event_type
+            if data and current_event:
+                accumulated = anthropic_parser.parse_sse_event(
+                    current_event, data, accumulated
+                )
         elif provider == Provider.OPENAI:
             _, data = openai_parser.parse_sse_line(line)
             if data:
                 accumulated = openai_parser.parse_sse_chunk(data, accumulated)
 
-        return accumulated
+        return current_event, accumulated
 
     def _parse_non_streaming_usage(
         self, provider: Provider, body: dict[str, Any]

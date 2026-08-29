@@ -1,4 +1,6 @@
 # Sample run configuration for heval
+# Full sweep: all 5 harnesses, 2 providers, both task tracks.
+# For a minimal first run, see sample-minimal.yaml.
 name: "broad-first-pass"
 description: "Broad first pass: all 5 harnesses, 2 providers, both task tracks"
 
@@ -53,6 +55,5 @@ gateway_port: 8877
 gateway_db: "heval_gateway.db"
 results_db: "heval_results.db"
 workdir: "./heval_workdir"
-docker_image: "python:3.12-slim"
-timeout_per_task: 600
+docker_image: "heval-runner:latest"
 parallel_runs: 1

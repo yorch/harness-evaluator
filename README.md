@@ -12,8 +12,27 @@ See [DESIGN.md](DESIGN.md) for the full design specification.
 ## Quick start
 
 ```bash
+# 1. Install dependencies
 uv sync --extra dev
-heval --help
+
+# 2. Build the Docker image (contains all 5 harnesses + Python + Git)
+docker build -t heval-runner:latest .
+
+# 3. Set API keys
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
+
+# 4. Start the gateway proxy (in a separate terminal)
+heval gateway --port 8877
+
+# 5. Run a minimal evaluation (1 harness, 1 model, 1 task, 1 repeat)
+heval run runs/sample-minimal.yaml
+
+# Or dry-run to see the matrix without executing
+heval run runs/sample-minimal.yaml --dry-run
+
+# Full sweep (all 5 harnesses, 2 providers, all tasks)
+heval run runs/sample-run.yaml
 ```
 
 ## Docker image
@@ -182,7 +201,8 @@ frozen LLM judge, structured rubric, and structural checks.
 ### Running calibration
 
 ```bash
-heval calibrate --api-key $ANTHROPIC_API_KEY
+export ANTHROPIC_API_KEY=sk-ant-...
+heval calibrate --model claude-sonnet-4-20250514
 ```
 
 ### Evaluation flow

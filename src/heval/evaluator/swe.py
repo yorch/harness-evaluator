@@ -9,6 +9,7 @@ Evaluates a harness's output against hidden tests with:
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -120,7 +121,23 @@ class SWEEvaluator:
 
         # Calculate partial credit
         if tests_total == 0:
-            success = 1.0 if returncode == 0 else 0.0
+            # No tests were parsed. A returncode of 0 with zero tests
+            # usually means the test runner collected nothing (e.g. a
+            # misconfigured pytest). Score as 0 with NO_TESTS rather
+            # than a perfect pass, which would silently inflate scores.
+            if returncode == 0:
+                return EvaluationResult(
+                    exit_class="fail",
+                    success=0.0,
+                    error_class=ErrorClass.CRASH,
+                    error_message="Test command ran but collected 0 tests",
+                    test_output=test_output,
+                    tests_passed=0,
+                    tests_total=0,
+                    test_results=test_results,
+                    diff=diff,
+                )
+            success = 0.0
         else:
             success = tests_passed / tests_total
 
@@ -259,11 +276,17 @@ class SWEEvaluator:
     def _run_tests(
         self, workdir: Path, command: str, timeout: int
     ) -> tuple[str, int, bool]:
-        """Run the test command and return (output, returncode, timed_out)."""
+        """Run the test command and return (output, returncode, timed_out).
+
+        Uses ``shlex.split`` to parse the command into an argument list
+        instead of ``shell=True``, avoiding shell injection from task
+        YAML. Commands that require shell features (pipes, redirects,
+        variable expansion) should be wrapped in ``bash -c "..."`` in
+        the task definition.
+        """
         try:
             result = subprocess.run(
-                command,
-                shell=True,
+                shlex.split(command),
                 cwd=workdir,
                 capture_output=True,
                 text=True,
@@ -332,10 +355,19 @@ class SWEEvaluator:
                 failed = len(fail_matches)
             return total - failed, total, results
 
-        # Fallback: use returncode
+        # Fallback: no parseable test output.
+        # Previously, returncode=0 returned (1, 1) — a perfect pass —
+        # which meant a test command like `true` (that runs zero tests)
+        # would score 100%. Now we return (0, 0) so the caller can
+        # distinguish "no tests collected" from "all tests passed".
         if returncode == 0:
-            return 1, 1, results
-        return 0, 1, results
+            return 0, 0, results
+        # Non-zero exit with no parseable test output: return (0, 0) so
+        # the caller can classify this as CRASH (tests_total == 0 with
+        # non-zero returncode). Returning (0, 1) here would make the
+        # CRASH branch unreachable and misclassify crashes as
+        # WRONG_APPROACH or OVERFIT.
+        return 0, 0, results
 
     def _looks_like_refusal(self, diff: str) -> bool:
         """Check if the diff looks like a refusal rather than a real attempt."""

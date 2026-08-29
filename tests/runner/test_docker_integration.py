@@ -285,14 +285,14 @@ class TestCodexCommandNoQuotes:
 
 
 class TestCommitChangesIdentity:
-    def test_commit_changes_sets_local_identity(self, runner: DockerRunner, tmp_path: Any):
+    async def test_commit_changes_sets_local_identity(self, runner: DockerRunner, tmp_path: Any):
         """_commit_changes should set user.email and user.name in the local repo."""
         repo_dir = tmp_path / "test-repo"
         repo_dir.mkdir()
         # Create a file so there's something to commit
         (repo_dir / "solution.py").write_text("print('hello')\n")
 
-        runner._commit_changes(repo_dir)
+        await runner._commit_changes(repo_dir)
 
         # Verify local git config has the heval identity
         email_result = subprocess.run(

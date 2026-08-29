@@ -13,6 +13,7 @@ Security: All HTML is rendered through Jinja2 with autoescaping enabled.
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -103,10 +104,10 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
     report_gen = ReportGenerator(store)
     db_path = Path(results_db)
 
-    def _get_db_conn() -> sqlite3.Connection:
+    def _get_db_conn() -> contextlib.closing[sqlite3.Connection]:
         conn = sqlite3.connect(str(db_path))
         conn.row_factory = sqlite3.Row
-        return conn
+        return contextlib.closing(conn)
 
     def _get_run_summaries() -> list[dict[str, Any]]:
         """Get aggregate summaries for all runs (SQL-level, no full table load)."""

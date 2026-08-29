@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Strict allow-list for identifiers used in file paths, container names,
+# and database keys. Prevents path traversal and shell injection from
+# user-supplied YAML/CLI input.
+_SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 class TaskTrack(StrEnum):
@@ -20,6 +26,14 @@ class TaskDifficulty(StrEnum):
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
+
+
+class ObservabilityTier(StrEnum):
+    """Expected observability level from a harness."""
+
+    FULL = "full"
+    PARTIAL = "partial"
+    MINIMAL = "minimal"
 
 
 class TaskSpec(BaseModel):
@@ -56,7 +70,7 @@ class TaskLibrary(BaseModel):
     @classmethod
     def from_yaml(cls, path: str | Path) -> TaskLibrary:
         """Load tasks from a YAML file."""
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         tasks = [TaskSpec(**t) for t in data.get("tasks", [])]
         return cls(tasks=tasks)
@@ -83,8 +97,18 @@ class HarnessSpec(BaseModel):
     """Adapter module name."""
     config: dict[str, Any] = Field(default_factory=dict)
     """Harness-specific configuration."""
-    observability_tier: str = "partial"
+    observability_tier: ObservabilityTier = ObservabilityTier.PARTIAL
     """Expected observability level."""
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not _SAFE_ID_RE.match(v):
+            raise ValueError(
+                f"Harness name '{v}' contains invalid characters. "
+                f"Only [A-Za-z0-9._-] are allowed."
+            )
+        return v
 
 
 class ModelSpec(BaseModel):
@@ -100,6 +124,16 @@ class ModelSpec(BaseModel):
     """Environment variable name for the API key."""
     config: dict[str, Any] = Field(default_factory=dict)
     """Model-specific configuration (temperature, max_tokens, etc.)."""
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not _SAFE_ID_RE.match(v):
+            raise ValueError(
+                f"Model name '{v}' contains invalid characters. "
+                f"Only [A-Za-z0-9._-] are allowed."
+            )
+        return v
 
 
 class RunConfig(BaseModel):
@@ -117,19 +151,30 @@ class RunConfig(BaseModel):
     repeats: int = 5
     budget_usd: float | None = None
     """Maximum total spend in USD. None = no cap."""
+    gateway_host: str = "host.docker.internal"
+    """Gateway host as seen from inside Docker containers."""
     gateway_port: int = 8877
     gateway_db: str = "heval_gateway.db"
     results_db: str = "heval_results.db"
     workdir: str = "./heval_workdir"
-    docker_image: str = "python:3.12-slim"
-    timeout_per_task: int = 600
+    docker_image: str = "heval-runner:latest"
     parallel_runs: int = 1
     """Number of parallel container runs (1 = sequential)."""
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not _SAFE_ID_RE.match(v):
+            raise ValueError(
+                f"Run name '{v}' contains invalid characters. "
+                f"Only [A-Za-z0-9._-] are allowed."
+            )
+        return v
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> RunConfig:
         """Load run config from a YAML file."""
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls(**data)
 
