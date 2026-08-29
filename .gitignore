@@ -35,3 +35,8 @@ heval_gateway.db
 # OS
 .DS_Store
 Thumbs.db
+
+# Astro site
+site/node_modules/
+site/dist/
+site/.astro/

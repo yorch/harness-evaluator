@@ -12,7 +12,7 @@ harnesses:
       mode: agent
 
   - name: claude-code
-    adapter: claude_code
+    adapter: claude-code
     observability_tier: partial
     config:
       max_turns: 50

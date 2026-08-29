@@ -182,8 +182,7 @@ class SWEEvaluator:
         Tries multiple strategies:
         1. `git diff HEAD` — uncommitted changes (staged + unstaged)
         2. `git diff HEAD~1` — changes in the last commit
-        3. `git diff --cached` — staged-only changes
-        4. Check for untracked files via `git status`
+        3. Check for untracked files via `git status`
 
         This handles harnesses that commit, stage, or just modify files.
         """

@@ -1,0 +1,11 @@
+# build output
+dist/
+
+# dependencies
+node_modules/
+
+# Astro
+.astro/
+
+# Generated docs (synced from ../docs by pre-build script)
+# src/content/docs/ — not needed since we use glob loader directly

@@ -1,0 +1,1013 @@
+---
+const base = import.meta.env.BASE_URL;
+---
+
+<!DOCTYPE html>
+<html lang="en" style="color-scheme: dark;">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0F172A" />
+  <meta
+    name="description"
+    content="heval — Compare agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency."
+  />
+  <title>heval — Harness Evaluator</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+  />
+
+  <style>
+    :root {
+      --bg: #0F172A;
+      --bg-alt: #131C31;
+      --card: #1B2336;
+      --card-hover: #1F293F;
+      --border: #334155;
+      --border-hover: #475569;
+      --text: #F8FAFC;
+      --muted: #94A3B8;
+      --muted-dim: #64748B;
+      --accent: #22C55E;
+      --accent-hover: #16A34A;
+      --accent-glow: rgba(34, 197, 94, 0.15);
+      --blue: #38BDF8;
+      --yellow: #FBBF24;
+      --red: #F87171;
+      --code-bg: #0D1424;
+      --focus-ring: #22C55E;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --space: 1rem;
+      --max-w: 1080px;
+      --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
+    }
+
+    *,
+    *::before,
+    *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      font-size: 16px;
+      -webkit-tap-highlight-color: transparent;
+      overflow-x: hidden;
+    }
+
+    /* Focus states */
+    a:focus-visible,
+    button:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 3px;
+      border-radius: var(--radius-sm);
+    }
+
+    /* Skip link */
+    .skip-link {
+      position: absolute;
+      top: -100%;
+      left: 1rem;
+      background: var(--accent);
+      color: var(--bg);
+      padding: 0.6rem 1.2rem;
+      z-index: 100;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.875rem;
+      transition: top 0.2s;
+    }
+    .skip-link:focus {
+      top: 1rem;
+      text-decoration: none;
+    }
+
+    /* Typography */
+    h1,
+    h2,
+    h3 {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      line-height: 1.2;
+      text-wrap: balance;
+      scroll-margin-top: 5rem;
+    }
+
+    h1 {
+      font-size: clamp(2.5rem, 6vw, 4rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    h2 {
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      letter-spacing: -0.02em;
+    }
+    h3 {
+      font-size: 1.125rem;
+      font-weight: 500;
+    }
+
+    p {
+      color: var(--muted);
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      background: var(--bg-alt);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      color: var(--blue);
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    a:hover {
+      color: var(--accent-hover);
+    }
+
+    /* Layout */
+    .container {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    section {
+      padding: 4rem 0;
+    }
+
+    /* Nav */
+    nav.top-nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    nav.top-nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 3.5rem;
+    }
+    .nav-brand {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 1.25rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .nav-brand .dot {
+      color: var(--accent);
+    }
+    .nav-links {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+    }
+    .nav-links a {
+      color: var(--muted);
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+    .nav-links a:hover {
+      color: var(--text);
+    }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 6rem 0 4rem;
+      position: relative;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 600px;
+      height: 400px;
+      transform: translateX(-50%);
+      background: radial-gradient(ellipse at center, var(--accent-glow), transparent 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+    .hero h1 .accent {
+      color: var(--accent);
+      text-shadow: 0 0 40px var(--accent-glow);
+    }
+    .hero .tagline {
+      font-size: 1.25rem;
+      color: var(--muted);
+      max-width: 560px;
+      margin: 1rem auto 2rem;
+      text-wrap: balance;
+    }
+    .badges {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 2.5rem;
+    }
+    .badges img {
+      height: 20px;
+      width: auto;
+    }
+    .cta-group {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.7rem 1.5rem;
+      border-radius: var(--radius-sm);
+      font-weight: 600;
+      font-size: 0.9375rem;
+      border: 1px solid transparent;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition:
+        background 0.2s,
+        border-color 0.2s,
+        color 0.2s,
+        box-shadow 0.2s;
+      text-decoration: none;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+      color: var(--bg);
+      box-shadow: 0 0 30px var(--accent-glow);
+      text-decoration: none;
+    }
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .btn-secondary:hover {
+      border-color: var(--border-hover);
+      background: var(--card-hover);
+      text-decoration: none;
+    }
+    .btn svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    /* Section header */
+    .section-header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+    .section-header h2 {
+      margin-bottom: 0.5rem;
+    }
+    .section-header p {
+      font-size: 1.0625rem;
+    }
+
+    /* Feature grid (bento-style) */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+    .feature-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+      transition:
+        border-color 0.2s,
+        background 0.2s;
+    }
+    .feature-card:hover {
+      border-color: var(--border-hover);
+      background: var(--card-hover);
+    }
+    .feature-card .icon-wrap {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 1rem;
+    }
+    .feature-card .icon-wrap svg {
+      width: 20px;
+      height: 20px;
+      color: var(--accent);
+      stroke: var(--accent);
+    }
+    .feature-card h3 {
+      color: var(--text);
+      margin-bottom: 0.5rem;
+      font-family: var(--font-sans);
+      font-weight: 600;
+    }
+    .feature-card p {
+      font-size: 0.875rem;
+      line-height: 1.5;
+      margin: 0;
+    }
+
+    /* Code block */
+    .code-block {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      overflow-x: auto;
+      overscroll-behavior: contain;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      line-height: 1.7;
+      text-align: left;
+      position: relative;
+    }
+    .code-block .line {
+      display: block;
+      white-space: pre;
+    }
+    .code-block .comment {
+      color: var(--muted-dim);
+    }
+    .code-block .cmd {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .code-block .flag {
+      color: var(--blue);
+    }
+    .code-block .str {
+      color: var(--yellow);
+    }
+
+    /* Harness table */
+    .harness-table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .harness-table th,
+    .harness-table td {
+      padding: 0.875rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .harness-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+    .harness-table thead {
+      background: var(--bg-alt);
+    }
+    .harness-table th {
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .harness-table tbody tr {
+      transition: background 0.15s;
+    }
+    .harness-table tbody tr:hover {
+      background: var(--card);
+    }
+    .tier-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.2rem 0.625rem;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .tier-full {
+      background: rgba(34, 197, 94, 0.12);
+      color: var(--accent);
+    }
+    .tier-partial {
+      background: rgba(251, 191, 36, 0.12);
+      color: var(--yellow);
+    }
+    .tier-minimal {
+      background: rgba(248, 113, 113, 0.12);
+      color: var(--red);
+    }
+
+    /* Architecture list */
+    .arch-list {
+      list-style: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .arch-list li {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 0.75rem;
+      align-items: baseline;
+    }
+    .arch-list li:last-child {
+      border-bottom: none;
+    }
+    .arch-list strong {
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-weight: 600;
+      min-width: 120px;
+      flex-shrink: 0;
+    }
+    .arch-list span {
+      color: var(--muted);
+      font-size: 0.9375rem;
+    }
+
+    /* Stats row */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin: 2rem 0;
+    }
+    .stat-card {
+      text-align: center;
+      padding: 1.5rem 1rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .stat-card .num {
+      font-family: var(--font-mono);
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-card .label {
+      font-size: 0.8125rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.25rem;
+    }
+
+    /* CTA section */
+    .cta-section {
+      text-align: center;
+      padding: 4rem 0;
+    }
+    .cta-section h2 {
+      margin-bottom: 1rem;
+    }
+    .cta-section p {
+      margin-bottom: 2rem;
+      font-size: 1.0625rem;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2.5rem 0;
+      text-align: center;
+    }
+    footer .container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    footer .footer-links {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    footer a {
+      color: var(--muted);
+      font-size: 0.875rem;
+    }
+    footer a:hover {
+      color: var(--text);
+    }
+    footer .copyright {
+      color: var(--muted-dim);
+      font-size: 0.8125rem;
+    }
+
+    /* Scroll reveal */
+    .reveal {
+      opacity: 0;
+      transform: translateY(12px);
+      transition:
+        opacity 0.35s ease-out,
+        transform 0.35s ease-out;
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+      .stats-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .nav-links {
+        gap: 1rem;
+      }
+      .nav-links .nav-hide-sm {
+        display: none;
+      }
+      section {
+        padding: 3rem 0;
+      }
+      .hero {
+        padding: 4rem 0 2rem;
+      }
+      .arch-list li {
+        flex-direction: column;
+        gap: 0.25rem;
+      }
+      .arch-list strong {
+        min-width: auto;
+      }
+    }
+
+    @media (max-width: 375px) {
+      .stats-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+      .reveal {
+        opacity: 1;
+        transform: none;
+      }
+      .hero::before {
+        display: none;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <a href="#main" class="skip-link">Skip to main content</a>
+
+  <!-- Navigation -->
+  <nav class="top-nav" aria-label="Main navigation">
+    <div class="container">
+      <a href={`${base}`} class="nav-brand" aria-label="heval home">
+        heval<span class="dot">.</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features" class="nav-hide-sm">Features</a>
+        <a href="#harnesses" class="nav-hide-sm">Harnesses</a>
+        <a href="#quick-start" class="nav-hide-sm">Quick Start</a>
+        <a href={`${base}docs/getting-started/`} class="nav-hide-sm">Docs</a>
+        <a href="https://github.com/yorch/heval" aria-label="View on GitHub">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+            style="color: var(--muted);">
+            <path
+              d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"
+            ></path>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <h1><span class="accent">heval</span></h1>
+        <p class="tagline">
+          Compare agentic coding harnesses on token efficiency, task effectiveness, and time
+          efficiency.
+        </p>
+        <div class="badges">
+          <img
+            src="https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg"
+            alt="CI status"
+            height="20" />
+          <img
+            src="https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg"
+            alt="Docker build status"
+            height="20" />
+          <img
+            src="https://img.shields.io/badge/License-MIT-yellow.svg"
+            alt="MIT License"
+            height="20" />
+        </div>
+        <div class="cta-group">
+          <a href="#quick-start" class="btn btn-primary">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"><polyline points="4 17 10 11 4 5"></polyline><line
+                x1="12"
+                y1="19"
+                x2="20"
+                y2="19"></line></svg>
+            Get Started
+          </a>
+          <a href={`${base}docs/getting-started/`} class="btn btn-secondary">Read the Docs</a>
+          <a href="https://github.com/yorch/heval" class="btn btn-secondary">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"><path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" /></svg>
+            View on GitHub
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section style="padding-top: 0;">
+      <div class="container">
+        <div class="stats-row reveal">
+          <div class="stat-card">
+            <div class="num">5</div>
+            <div class="label">Harnesses</div>
+          </div>
+          <div class="stat-card">
+            <div class="num">2</div>
+            <div class="label">Providers</div>
+          </div>
+          <div class="stat-card">
+            <div class="num">2</div>
+            <div class="label">Task Tracks</div>
+          </div>
+          <div class="stat-card">
+            <div class="num">271</div>
+            <div class="label">Tests Passing</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features">
+      <div class="container">
+        <div class="section-header reveal">
+          <h2>Features</h2>
+          <p>Everything you need to benchmark agentic coding harnesses.</p>
+        </div>
+        <div class="feature-grid">
+          <div class="feature-card reveal">
+            <div class="icon-wrap" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path
+                  d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" /></svg>
+            </div>
+            <h3>Gateway Proxy</h3>
+            <p>
+              Custom HTTP/SSE proxy intercepts every provider call, capturing token usage, cost, and
+              latency with full request/response logging.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="icon-wrap" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="M3 3v18h18" /><path d="M7 14l4-4 4 4 5-5" /></svg>
+            </div>
+            <h3>Token Accounting</h3>
+            <p>
+              Input, output, cache-read, cache-write, and reasoning tokens tracked per call. Cost
+              calculated from a per-model pricing table.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="icon-wrap" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+            </div>
+            <h3>Docker Isolation</h3>
+            <p>
+              Each harness runs in its own container with <code>--cap-drop=ALL</code>, non-root user,
+              and network policy enforcement.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="icon-wrap" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><polyline points="23 4 23 10 17 10" /><polyline
+                  points="1 20 1 14 7 14" /><path
+                  d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" /></svg>
+            </div>
+            <h3>Resumability &amp; Budgets</h3>
+            <p>
+              Cell-level resumability skips completed cells on re-run. Budget caps stop the run when
+              spend exceeds the configured limit.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="icon-wrap" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z" /><path
+                  d="M12 6v6l4 2" /></svg>
+            </div>
+            <h3>Frozen LLM Judge</h3>
+            <p>
+              Open-ended tasks evaluated by a versioned, immutable-prompt judge with structured rubric
+              and anchor-set calibration for drift detection.
+            </p>
+          </div>
+          <div class="feature-card reveal">
+            <div class="icon-wrap" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"><path d="M3 3v18h18" /><rect x="7" y="10" width="3"
+                  height="8" /><rect x="12" y="6" width="3" height="12" /><rect x="17" y="13"
+                  width="3" height="5" /></svg>
+            </div>
+            <h3>Statistics &amp; Reporting</h3>
+            <p>
+              Mixed-effects modeling, variance decomposition, bootstrap CIs, HTML/JSON/CSV reports,
+              and an interactive FastAPI dashboard.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Supported Harnesses -->
+    <section id="harnesses" style="background: var(--bg-alt);">
+      <div class="container">
+        <div class="section-header reveal">
+          <h2>Supported Harnesses</h2>
+          <p>Five harnesses across three observability tiers.</p>
+        </div>
+        <table class="harness-table reveal">
+          <thead>
+            <tr>
+              <th scope="col">Harness</th>
+              <th scope="col">Adapter</th>
+              <th scope="col">Observability</th>
+              <th scope="col">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>OpenCode</td>
+              <td><code>opencode</code></td>
+              <td><span class="tier-badge tier-full">full</span></td>
+              <td>Open-source, system prompt visible</td>
+            </tr>
+            <tr>
+              <td>Claude Code</td>
+              <td><code>claude_code</code></td>
+              <td><span class="tier-badge tier-partial">partial</span></td>
+              <td>Closed, proxy captures traffic</td>
+            </tr>
+            <tr>
+              <td>Codex</td>
+              <td><code>codex</code></td>
+              <td><span class="tier-badge tier-partial">partial</span></td>
+              <td>Closed, proxy captures traffic</td>
+            </tr>
+            <tr>
+              <td>Pi</td>
+              <td><code>pi</code></td>
+              <td><span class="tier-badge tier-minimal">minimal</span></td>
+              <td>May bypass proxy</td>
+            </tr>
+            <tr>
+              <td>OMP</td>
+              <td><code>omp</code></td>
+              <td><span class="tier-badge tier-minimal">minimal</span></td>
+              <td>May bypass proxy</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section id="quick-start">
+      <div class="container">
+        <div class="section-header reveal">
+          <h2>Quick Start</h2>
+          <p>Up and running in five commands.</p>
+        </div>
+        <div class="code-block reveal" role="region" aria-label="Quick start commands">
+          <span class="line"><span class="comment"># 1. Install dependencies</span></span>
+          <span class="line"><span class="cmd">uv</span> sync --extra dev</span>
+          <span class="line"> </span>
+          <span class="line"><span class="comment"># 2. Build the Docker image (all 5 harnesses + Python + Git)</span></span>
+          <span class="line"><span class="cmd">docker</span> build -t heval-runner:latest .</span>
+          <span class="line"> </span>
+          <span class="line"><span class="comment"># 3. Set API keys</span></span>
+          <span class="line"><span class="cmd">export</span> ANTHROPIC_API_KEY=<span class="str">sk-ant-…</span></span>
+          <span class="line"><span class="cmd">export</span> OPENAI_API_KEY=<span class="str">sk-…</span></span>
+          <span class="line"> </span>
+          <span class="line"><span class="comment"># 4. Start the gateway proxy (separate terminal)</span></span>
+          <span class="line"><span class="cmd">heval</span> gateway <span class="flag">--port</span> 8877</span>
+          <span class="line"> </span>
+          <span class="line"><span class="comment"># 5. Run a minimal evaluation</span></span>
+          <span class="line"><span class="cmd">heval</span> run runs/sample-minimal.yaml</span>
+          <span class="line"> </span>
+          <span class="line"><span class="comment"># Or dry-run to see the matrix without executing</span></span>
+          <span class="line"><span class="cmd">heval</span> run runs/sample-minimal.yaml <span class="flag">--dry-run</span></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture -->
+    <section id="architecture" style="background: var(--bg-alt);">
+      <div class="container">
+        <div class="section-header reveal">
+          <h2>Architecture</h2>
+          <p>How the pieces fit together.</p>
+        </div>
+        <ul class="arch-list reveal">
+          <li>
+            <strong>Gateway</strong><span>Custom HTTP/SSE proxy (aiohttp) that intercepts provider calls and captures token usage, cost, and latency.</span>
+          </li>
+          <li>
+            <strong>Orchestrator</strong><span>Builds the eval matrix (harness &times; model &times; task &times; repeats), manages budget caps, and handles cell-level resumability.</span>
+          </li>
+          <li>
+            <strong>Runner</strong><span>Docker-based isolation, one container per run with capability dropping and non-root execution.</span>
+          </li>
+          <li>
+            <strong>Adapters</strong><span>Per-harness integration (Python core + TS shims where needed) with a uniform prepare/run/cleanup interface.</span>
+          </li>
+          <li>
+            <strong>Evaluator</strong><span>SWE-bench-style (hidden tests) and open-ended (LLM judge) tracks with partial credit and error classification.</span>
+          </li>
+          <li>
+            <strong>Reporting</strong><span>CLI reports, static HTML/JSON/CSV, and an interactive web dashboard.</span>
+          </li>
+          <li>
+            <strong>Statistics</strong><span>Mixed-effects models, variance decomposition, and bootstrap confidence intervals.</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section">
+      <div class="container reveal">
+        <h2>Start Evaluating</h2>
+        <p>Clone the repo, build the image, and run your first evaluation in minutes.</p>
+        <div class="cta-group">
+          <a href={`${base}docs/getting-started/`} class="btn btn-primary">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            Read the Docs
+          </a>
+          <a href="https://github.com/yorch/heval" class="btn btn-secondary">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"><path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" /></svg>
+            View on GitHub
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-links">
+        <a href={`${base}docs/getting-started/`}>Docs</a>
+        <a href="https://github.com/yorch/heval">GitHub</a>
+        <a href="https://github.com/yorch/heval/blob/main/DESIGN.md">Design Doc</a>
+        <a href="https://github.com/yorch/heval/blob/main/README.md">README</a>
+        <a href="https://github.com/yorch/heval/blob/main/LICENSE">MIT License</a>
+      </div>
+      <p class="copyright">yorch/heval &middot; MIT License</p>
+    </div>
+  </footer>
+
+  <!-- Scroll reveal (no framework, respects reduced-motion) -->
+  <script>
+    (function () {
+      var prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var elements = document.querySelectorAll('.reveal');
+      if (prefersReduced || !('IntersectionObserver' in window)) {
+        elements.forEach(function (el) {
+          el.classList.add('visible');
+        });
+        return;
+      }
+      var observer = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+              observer.unobserve(entry.target);
+            }
+          });
+        },
+        { threshold: 0.1, rootMargin: '0px 0px -50px 0px' }
+      );
+      elements.forEach(function (el) {
+        observer.observe(el);
+      });
+    })();
+  </script>
+</body>
+</html>

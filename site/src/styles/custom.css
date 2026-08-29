@@ -1,0 +1,89 @@
+/* heval custom theme — overrides Starlight's CSS variables */
+
+/* Fonts */
+:root {
+  --sl-font: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --sl-font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', Consolas, monospace;
+}
+
+/* Dark mode (Starlight's :root defaults are dark) */
+:root {
+  /* Gray scale mapped to heval's palette */
+  --sl-color-white: #F8FAFC;
+  --sl-color-gray-1: #F8FAFC;
+  --sl-color-gray-2: #F8FAFC;
+  --sl-color-gray-3: #94A3B8;
+  --sl-color-gray-4: #64748B;
+  --sl-color-gray-5: #334155;
+  --sl-color-gray-6: #1B2336;
+  --sl-color-black: #0F172A;
+
+  /* Accent — green */
+  --sl-color-accent-low: #0D3B1E;
+  --sl-color-accent: #22C55E;
+  --sl-color-accent-high: #4ADE80;
+
+  /* Text */
+  --sl-color-text: #F8FAFC;
+  --sl-color-text-accent: #22C55E;
+  --sl-color-text-invert: #0F172A;
+
+  /* Backgrounds */
+  --sl-color-bg: #0F172A;
+  --sl-color-bg-nav: #131C31;
+  --sl-color-bg-sidebar: #131C31;
+  --sl-color-bg-inline-code: #1B2336;
+  --sl-color-bg-accent: #22C55E;
+
+  /* Borders / hairlines */
+  --sl-color-hairline-light: #334155;
+  --sl-color-hairline: #334155;
+  --sl-color-hairline-shade: #0F172A;
+
+  /* Backdrop overlay */
+  --sl-color-backdrop-overlay: hsla(222, 47%, 11%, 0.8);
+}
+
+/* Light mode — use the same dark palette so the site is always dark */
+:root[data-theme='light'],
+[data-theme='light'] ::backdrop {
+  --sl-color-white: #F8FAFC;
+  --sl-color-gray-1: #F8FAFC;
+  --sl-color-gray-2: #F8FAFC;
+  --sl-color-gray-3: #94A3B8;
+  --sl-color-gray-4: #64748B;
+  --sl-color-gray-5: #334155;
+  --sl-color-gray-6: #1B2336;
+  --sl-color-black: #0F172A;
+
+  --sl-color-accent-high: #4ADE80;
+  --sl-color-accent: #22C55E;
+  --sl-color-accent-low: #0D3B1E;
+
+  --sl-color-text-accent: #22C55E;
+  --sl-color-text-invert: #0F172A;
+  --sl-color-bg: #0F172A;
+  --sl-color-bg-nav: #131C31;
+  --sl-color-bg-sidebar: #131C31;
+  --sl-color-bg-inline-code: #1B2336;
+  --sl-color-bg-accent: #22C55E;
+  --sl-color-hairline-light: #334155;
+  --sl-color-hairline: #334155;
+  --sl-color-hairline-shade: #334155;
+}
+
+/* Headings use JetBrains Mono */
+main h1,
+main h2,
+main h3,
+main h4,
+main h5,
+main h6 {
+  font-family: var(--sl-font-mono);
+}
+
+/* Code blocks use JetBrains Mono */
+code,
+pre {
+  font-family: var(--sl-font-mono);
+}

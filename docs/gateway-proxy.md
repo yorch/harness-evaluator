@@ -228,8 +228,12 @@ harness routes through the proxy instead of the real provider:
 ```bash
 # Inside the Docker container
 ANTHROPIC_BASE_URL=http://host.docker.internal:8877
-OPENAI_BASE_URL=http://host.docker.internal:8877
+OPENAI_BASE_URL=http://host.docker.internal:8877/v1
 ```
+
+For OpenAI, the adapter appends `/v1` to the path so the base URL ends with
+`/v1` (the proxy routes `/v1/chat/completions` and `/v1/responses`).
+A `trace_id` query parameter is also appended for trace propagation.
 
 The harness then makes normal API calls, which hit the proxy. The proxy
 forwards them to the real provider with the original API key (passed through
@@ -273,13 +277,17 @@ Discrepancies are flagged as a transparency metric in the final report.
 
 ## Configuration reference
 
-| Parameter           | Default              | Description                        |
-|---------------------|----------------------|------------------------------------|
-| `--host`            | `127.0.0.1`          | Bind address                       |
-| `--port`            | `8877`               | Listen port                        |
-| `--db`              | `heval_gateway.db`   | SQLite database path               |
-| `--verify-ssl`      | `true`               | Verify upstream TLS certificates   |
-| `--upstream-*`      | provider defaults    | Override upstream API URLs         |
+CLI options for `heval gateway`:
+
+| Parameter  | Default            | Description                |
+|------------|--------------------|----------------------------|
+| `--host`   | `127.0.0.1`        | Bind address               |
+| `--port`   | `8877`             | Listen port                |
+| `--db`     | `heval_gateway.db` | SQLite database path       |
+
+The proxy also accepts `verify_ssl` and `upstream_overrides` as keyword
+arguments to `run_proxy()` (used programmatically by the orchestrator), but
+these are not exposed as CLI flags.
 
 ## Key source files
 
