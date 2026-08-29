@@ -1,0 +1,59 @@
+tasks:
+- id: open-design-003
+  name: Design a priority queue with a binary heap
+  track: open_ended
+  difficulty: medium
+  description: Design and implement a priority queue backed by a binary heap with push,
+    pop, and peek operations. Include comprehensive tests.
+  task_prompt: 'Design and implement a priority queue in src/priority_queue.py backed
+    by a binary heap.
+
+
+    Requirements:
+
+    - A `PriorityQueue` class with the following methods:
+
+    - `push(item, priority)` — add an item with the given priority
+
+    - `pop()` — remove and return the highest priority item (lowest priority number)
+
+    - `peek()` — return the highest priority item without removing it
+
+    - `__len__()` — return the number of items in the queue
+
+    - `is_empty()` — return True if the queue is empty
+
+    - Lower priority number means higher priority (e.g., priority 1 is dequeued before
+    priority 5)
+
+    - Must use a binary heap internally (not just sorting a list on every operation)
+
+    - `pop()` and `peek()` on an empty queue should raise an appropriate exception
+
+    - Items with the same priority may be returned in any order
+
+
+    Add comprehensive tests in tests/test_priority_queue.py covering:
+
+    - Push and pop ordering (items come out in priority order)
+
+    - Peek returns the highest priority item without removing it
+
+    - Duplicate priorities are handled correctly
+
+    - Empty queue behavior (pop/peek raise exceptions)
+
+    - __len__ and is_empty behave correctly
+
+    - Interleaved push and pop operations
+
+
+    Run tests with: python -m pytest tests/'
+  test_command: python -m pytest tests/
+  expected_files:
+  - src/priority_queue.py
+  - tests/test_priority_queue.py
+  timeout_seconds: 600
+  metadata:
+    design_type: priority_queue
+    language: python

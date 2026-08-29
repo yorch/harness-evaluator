@@ -1,0 +1,76 @@
+tasks:
+- id: swe-bugfix-004
+  name: Fix race condition in async RateLimiter.acquire
+  track: swe
+  difficulty: hard
+  description: The async `RateLimiter` in src/solution.py reads and updates `self._tokens` without
+    holding a lock. Because `acquire()` yields control between the availability check and the
+    token decrement, concurrent callers can all observe enough tokens and over-spend the bucket.
+    Protect the check-then-decrement with an `asyncio.Lock` so concurrent acquires never
+    over-spend.
+  repo_url: tasks/repos/swe-bugfix-004
+  repo_commit: 2b8e7f1a4c9d3065e8a1b7f4c2d9e6a3b8f1c5d7
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Fix the race condition in the `RateLimiter.acquire` method in src/solution.py.
+
+    The method checks `self._tokens >= n` and then, after an `await`, decrements
+    `self._tokens -= n`. Because the check and the decrement are not protected by a lock,
+    concurrent callers can all pass the check before any of them decrements, causing the
+    bucket to be over-spent (tokens go negative).
+
+    Wrap the check-then-decrement (and the refill) in an `asyncio.Lock` so that at most one
+    caller mutates the bucket at a time. The public API (`RateLimiter(rate, capacity)` and
+    `await acquire(n=1)`) must stay the same.
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..5c3d4e2
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,35 @@
+    +"""Hidden tests for RateLimiter — verify the race condition is fixed."""
+    +
+    +import asyncio
+    +import time
+    +
+    +import pytest
+    +
+    +from src.solution import RateLimiter
+    +
+    +
+    +@pytest.mark.asyncio
+    +async def test_concurrent_acquire_no_overspend():
+    +    rl = RateLimiter(rate=0.01, capacity=5)
+    +
+    +    async def try_acquire():
+    +        await asyncio.wait_for(rl.acquire(1), timeout=0.5)
+    +        return True
+    +
+    +    results = await asyncio.gather(
+    +        *[try_acquire() for _ in range(10)], return_exceptions=True
+    +    )
+    +    succeeded = sum(1 for r in results if r is True)
+    +    assert succeeded <= 5
+    +
+    +
+    +@pytest.mark.asyncio
+    +async def test_acquire_waits_for_refill_under_concurrency():
+    +    rl = RateLimiter(rate=10, capacity=2)
+    +    await rl.acquire(2)
+    +    start = time.monotonic()
+    +    await asyncio.gather(*[rl.acquire(1) for _ in range(3)])
+    +    elapsed = time.monotonic() - start
+    +    # rate=10/s, 3 tokens needed after capacity is exhausted -> ~0.3s minimum.
+    +    # The racy version returns in ~0.1s because all three over-spend at once.
+    +    assert elapsed >= 0.25
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    bug_type: race_condition
+    language: python
+    test_count: 4

@@ -1,0 +1,82 @@
+tasks:
+- id: open-design-008
+  name: Design a finite state machine with guards
+  track: open_ended
+  difficulty: hard
+  description: Design and implement a finite state machine with transitions, guard
+    functions, and event triggering in TypeScript. Include comprehensive tests.
+  task_prompt: 'Design and implement a finite state machine (FSM) with transitions
+    and guards in src/state_machine.ts.
+
+
+    Requirements:
+
+    - A `StateMachine` class with the following API:
+
+    - `addState(name)` — register a state in the machine
+
+    - `addTransition(from, to, event, guard?)` — register a transition from one state
+    to another triggered by an event, with an optional guard function
+
+    - `start(initialState)` — set the initial current state
+
+    - `trigger(event) -> boolean` — attempt to trigger an event; returns true if a
+    transition occurred, false otherwise
+
+    - `getCurrentState() -> string` — return the current state name
+
+    - `canTrigger(event) -> boolean` — return true if the event can be triggered from
+    the current state (guard must pass if present)
+
+    - Guard functions are optional predicates `() => boolean` that must return true
+    for the transition to occur
+
+    - Invalid transitions (no matching transition, or guard returns false) should return
+    false, not throw
+
+    - Triggering an event before `start` is called should return false
+
+    - Multiple transitions from the same state on the same event: the first registered
+    transition whose guard passes (or has no guard) is taken
+
+
+    Add comprehensive tests in tests/test_state_machine.test.ts using Bun''s built-in
+    test runner. Use this import syntax:
+
+    ```typescript
+
+    import { describe, it, expect } from ''bun:test'';
+
+    ```
+
+
+    Tests should cover:
+
+    - Basic state transitions via trigger
+
+    - trigger returns true on successful transition, false on invalid event
+
+    - canTrigger correctly reports whether an event can fire
+
+    - Guard functions that pass and fail
+
+    - Multiple transitions from the same state with guards (first passing guard wins)
+
+    - getCurrentState reflects the current state
+
+    - trigger before start returns false
+
+    - Chained transitions through multiple states
+
+    - Invalid transitions do not throw
+
+
+    Run tests with: bun test'
+  test_command: bun test
+  expected_files:
+  - src/state_machine.ts
+  - tests/test_state_machine.test.ts
+  timeout_seconds: 600
+  metadata:
+    design_type: state_machine
+    language: typescript

@@ -1,0 +1,57 @@
+tasks:
+- id: open-design-004
+  name: Design a circular buffer (ring buffer)
+  track: open_ended
+  difficulty: easy
+  description: Design and implement a fixed-capacity circular buffer with put, get,
+    and capacity checks. Include comprehensive tests.
+  task_prompt: 'Design and implement a circular buffer (ring buffer) in src/circular_buffer.py.
+
+
+    Requirements:
+
+    - A `CircularBuffer` class with the following API:
+
+    - `__init__(capacity)` — create a buffer with the given fixed capacity
+
+    - `put(item)` — add an item to the buffer
+
+    - `get()` — remove and return the oldest item (FIFO order)
+
+    - `__len__()` — return the number of items currently in the buffer
+
+    - `is_empty()` — return True if the buffer has no items
+
+    - `is_full()` — return True if the buffer is at capacity
+
+    - When the buffer is full, `put` should overwrite the oldest item
+
+    - `get()` on an empty buffer should raise an appropriate exception
+
+
+    Add comprehensive tests in tests/test_circular_buffer.py covering:
+
+    - Basic put and get in FIFO order
+
+    - Wrap-around behavior when the buffer cycles past the end
+
+    - Overwrite of the oldest item when the buffer is full
+
+    - is_empty and is_full checks at various states
+
+    - __len__ reflects the current number of items
+
+    - get on an empty buffer raises an exception
+
+    - Edge case: capacity of 1
+
+
+    Run tests with: python -m pytest tests/'
+  test_command: python -m pytest tests/
+  expected_files:
+  - src/circular_buffer.py
+  - tests/test_circular_buffer.py
+  timeout_seconds: 300
+  metadata:
+    design_type: circular_buffer
+    language: python

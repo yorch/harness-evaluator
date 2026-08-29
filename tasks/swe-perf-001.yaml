@@ -1,0 +1,62 @@
+tasks:
+- id: swe-perf-001
+  name: Optimize duplicate-finding from O(n^2) to O(n)
+  track: swe
+  difficulty: hard
+  description: The `find_duplicates` function in src/solution.py uses nested loops to detect
+    duplicates, giving O(n^2) time complexity. Refactor it to O(n) using a set to track seen
+    items. The output (each duplicated value once, in first-occurrence order) must stay identical.
+  repo_url: tasks/repos/swe-perf-001
+  repo_commit: 6a2b9c4e1f8d7305b6c3a9e2f5d8b1a7c4e6d9f3
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Optimize the `find_duplicates` function in src/solution.py.
+
+    It currently uses nested loops (`for i ... for j ...`) which is O(n^2). Refactor it to run
+    in O(n) time using a `set` to track which items have already been seen.
+
+    Requirements:
+    - Each duplicated value is reported exactly once.
+    - Duplicates are returned in order of first occurrence in the input.
+    - Behavior must stay identical to the current implementation for all inputs.
+    - The function must complete in well under 1 second for 10000 items (the current O(n^2)
+      version is far too slow for inputs of that size).
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..8b6c7d5
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,22 @@
+    +"""Hidden tests for find_duplicates — verify O(n) performance and correctness."""
+    +
+    +import time
+    +
+    +from src.solution import find_duplicates
+    +
+    +
+    +def test_large_input_performance():
+    +    items = list(range(10000))
+    +    start = time.monotonic()
+    +    result = find_duplicates(items)
+    +    elapsed = time.monotonic() - start
+    +    assert elapsed < 1.0
+    +    assert result == []
+    +
+    +
+    +def test_preserves_order_of_first_occurrence():
+    +    assert find_duplicates([3, 1, 2, 1, 3, 2]) == [3, 1, 2]
+    +
+    +
+    +def test_handles_mixed_types():
+    +    assert find_duplicates([1, "a", 2, "a", 1]) == [1, "a"]
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    perf_type: quadratic_to_linear
+    language: python
+    test_count: 5

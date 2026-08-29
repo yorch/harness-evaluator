@@ -1,0 +1,61 @@
+tasks:
+- id: open-design-005
+  name: Design a trie-based autocomplete system
+  track: open_ended
+  difficulty: hard
+  description: Design and implement a trie data structure supporting insert, search,
+    prefix matching, and autocomplete with a result limit. Include comprehensive tests.
+  task_prompt: 'Design and implement a trie-based autocomplete system in src/autocomplete.py.
+
+
+    Requirements:
+
+    - A `Trie` class with the following methods:
+
+    - `insert(word)` — insert a word into the trie
+
+    - `search(word) -> bool` — return True if the exact word was inserted
+
+    - `starts_with(prefix) -> bool` — return True if any inserted word starts with
+    the given prefix
+
+    - `autocomplete(prefix, limit=10) -> list[str]` — return up to `limit` words that
+    start with the given prefix, sorted alphabetically
+
+    - Words are case-sensitive
+
+    - Inserting the same word twice should not create duplicate results in autocomplete
+
+    - autocomplete on a prefix with no matches returns an empty list
+
+    - autocomplete should respect the limit parameter
+
+
+    Add comprehensive tests in tests/test_autocomplete.py covering:
+
+    - Insert and search for exact words
+
+    - starts_with with matching and non-matching prefixes
+
+    - autocomplete returns correct words for various prefixes
+
+    - autocomplete respects the limit parameter
+
+    - autocomplete on an empty trie returns an empty list
+
+    - Duplicate insertions do not produce duplicate autocomplete results
+
+    - autocomplete results are sorted alphabetically
+
+    - Edge cases: empty string prefix, single-character words
+
+
+    Run tests with: python -m pytest tests/'
+  test_command: python -m pytest tests/
+  expected_files:
+  - src/autocomplete.py
+  - tests/test_autocomplete.py
+  timeout_seconds: 600
+  metadata:
+    design_type: trie_autocomplete
+    language: python

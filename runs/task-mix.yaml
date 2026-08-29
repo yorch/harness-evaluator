@@ -1,0 +1,92 @@
+# Curated task mix: 20 tasks (12 SWE + 8 open-ended) across Python and TypeScript.
+# Designed to exercise harnesses on bug fixes, feature additions, refactors,
+# performance optimizations, and open-ended design tasks.
+#
+# This config uses the pre-built GHCR image. To use a locally built image,
+# replace the docker_image value with "heval-runner:latest".
+#
+# Usage:
+#   heval run runs/task-mix.yaml --dry-run   # preview the matrix
+#   heval run runs/task-mix.yaml             # execute (needs API keys + Docker)
+name: "task-mix-v1"
+description: "Curated 20-task mix: 12 SWE (Python + TypeScript) + 8 open-ended (Python + TypeScript)"
+
+harnesses:
+  - name: opencode
+    adapter: opencode
+    observability_tier: full
+    config:
+      mode: agent
+
+  - name: claude-code
+    adapter: claude-code
+    observability_tier: partial
+    config:
+      max_turns: 50
+
+  - name: codex
+    adapter: codex
+    observability_tier: partial
+    config: {}
+
+  - name: pi
+    adapter: pi
+    observability_tier: minimal
+    config: {}
+
+  - name: omp
+    adapter: omp
+    observability_tier: minimal
+    config: {}
+
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    config:
+      max_tokens: 16384
+
+  - name: gpt-4o
+    provider: openai
+    api_key_env: OPENAI_API_KEY
+    config:
+      max_tokens: 16384
+
+tasks:
+  # --- SWE: Python ---
+  - swe-bugfix-001        # easy — off-by-one in pagination
+  - swe-bugfix-003        # easy — deep_get KeyError on missing intermediate key
+  - swe-bugfix-004        # hard — async RateLimiter race condition
+  - swe-feature-001       # medium — LRU eviction for cache
+  - swe-feature-002       # medium — HTTP client retry with exponential backoff
+  - swe-refactor-001      # easy — extract duplicated validation
+  - swe-refactor-002      # easy — extract repeated type checking
+  - swe-perf-001          # hard — O(n²) to O(n) duplicate finding
+  - swe-bugfix-002        # medium — CSV parser quoted fields
+
+  # --- SWE: TypeScript ---
+  - swe-bugfix-005        # easy — sumPositive excludes zeros, NaN on empty
+  - swe-feature-003       # medium — debounce implementation
+  - swe-perf-002          # medium — O(n²) CSV builder to array.join
+
+  # --- Open-ended: Python ---
+  - open-design-001       # medium — token bucket rate limiter
+  - open-design-002       # hard — multi-source config loader
+  - open-design-003       # medium — priority queue with binary heap
+  - open-design-004       # easy — circular buffer
+  - open-design-005       # hard — trie-based autocomplete
+
+  # --- Open-ended: TypeScript ---
+  - open-design-006       # medium — HTTP router with middleware
+  - open-design-007       # medium — pub/sub event emitter
+  - open-design-008       # hard — finite state machine with guards
+
+task_library_path: "./tasks"
+repeats: 3
+budget_usd: 50.0
+gateway_port: 8877
+gateway_db: "heval_gateway.db"
+results_db: "heval_results.db"
+workdir: "./heval_workdir"
+docker_image: "ghcr.io/yorch/heval-runner:latest"
+parallel_runs: 1

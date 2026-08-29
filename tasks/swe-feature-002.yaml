@@ -1,0 +1,91 @@
+tasks:
+- id: swe-feature-002
+  name: Add retry with exponential backoff to HttpClient
+  track: swe
+  difficulty: medium
+  description: The `HttpClient` in src/solution.py performs no retrying. Add a `max_retries`
+    parameter (default 3) and retry requests with exponential backoff (1s, 2s, 4s, ...) on
+    connection errors or 5xx responses. After exhausting retries, raise the last error (a
+    `requests.HTTPError` for 5xx, or the original connection error).
+  repo_url: tasks/repos/swe-feature-002
+  repo_commit: 9d4e2a6b8c1f7305e9d3a6f1b7e2c8d4a9b6e3f1
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Add retry with exponential backoff to the `HttpClient` class in src/solution.py.
+
+    Currently `get` and `post` perform a single request with no retrying. Add a `max_retries`
+    parameter to `__init__` (default 3) and retry on:
+    - `requests.ConnectionError` (including timeouts)
+    - 5xx responses (status code >= 500)
+
+    Requirements:
+    - Retry with exponential backoff: sleep 1s before the 1st retry, 2s before the 2nd, 4s
+      before the 3rd, i.e. `2 ** attempt` seconds.
+    - A successful (non-5xx) response is returned immediately with no retry.
+    - After exhausting `max_retries` attempts, raise: a `requests.HTTPError` for 5xx responses,
+      or re-raise the original `requests.ConnectionError`.
+    - The `get`/`post` public signatures must stay compatible (still accept `path` and `**kwargs`).
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..6e4f5a3
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,47 @@
+    +"""Hidden tests for HttpClient — verify retry with exponential backoff."""
+    +
+    +from unittest.mock import MagicMock, patch
+    +
+    +import pytest
+    +import requests
+    +
+    +from src.solution import HttpClient
+    +
+    +
+    +def test_retry_on_500_then_success():
+    +    client = HttpClient("http://example.com", max_retries=3)
+    +    err = MagicMock(status_code=500)
+    +    ok = MagicMock(status_code=200)
+    +    with patch("src.solution.time.sleep"):
+    +        with patch("src.solution.requests.get", side_effect=[err, ok]):
+    +            resp = client.get("/users")
+    +    assert resp.status_code == 200
+    +
+    +
+    +def test_retry_on_connection_error_then_success():
+    +    client = HttpClient("http://example.com", max_retries=3)
+    +    ok = MagicMock(status_code=200)
+    +    with patch("src.solution.time.sleep"):
+    +        with patch("src.solution.requests.get", side_effect=[requests.ConnectionError(), ok]):
+    +            resp = client.get("/users")
+    +    assert resp.status_code == 200
+    +
+    +
+    +def test_max_retries_exhausted_raises():
+    +    client = HttpClient("http://example.com", max_retries=2)
+    +    err = MagicMock(status_code=500)
+    +    with patch("src.solution.time.sleep"):
+    +        with patch("src.solution.requests.get", return_value=err):
+    +            with pytest.raises(requests.HTTPError):
+    +                client.get("/users")
+    +
+    +
+    +def test_backoff_delays_exponential():
+    +    client = HttpClient("http://example.com", max_retries=3)
+    +    err = MagicMock(status_code=500)
+    +    with patch("src.solution.time.sleep") as mock_sleep:
+    +        with patch("src.solution.requests.get", return_value=err):
+    +            with pytest.raises(requests.HTTPError):
+    +                client.get("/users")
+    +    sleeps = [c.args[0] for c in mock_sleep.call_args_list]
+    +    assert sleeps == [1, 2, 4]
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    feature_type: retry_with_backoff
+    language: python
+    test_count: 6

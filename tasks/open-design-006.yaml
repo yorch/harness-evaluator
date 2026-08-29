@@ -1,0 +1,72 @@
+tasks:
+- id: open-design-006
+  name: Design an HTTP router with middleware
+  track: open_ended
+  difficulty: medium
+  description: Design and implement a simple HTTP router with middleware support and
+    path parameters in TypeScript. Include comprehensive tests.
+  task_prompt: 'Design and implement a simple HTTP router with middleware support
+    in src/router.ts.
+
+
+    Requirements:
+
+    - A `Router` class with the following API:
+
+    - `get(path, handler)` — register a GET route handler
+
+    - `post(path, handler)` — register a POST route handler
+
+    - `use(middleware)` — register a middleware function
+
+    - `handle(method, path) -> { status: number, body: string }` — match the route
+    and return the response
+
+    - Middleware are functions with the signature `(req, next) => response` that can
+    modify the request or short-circuit by returning a response without calling `next`
+
+    - Routes should support simple path parameters like `/users/:id` (extract `id`
+    into the request params)
+
+    - If no route matches, return `{ status: 404, body: ''Not Found'' }`
+
+    - Handlers receive a request object with `method`, `path`, and `params` and return
+    `{ status: number, body: string }`
+
+    - Middleware run in registration order before route matching
+
+
+    Add comprehensive tests in tests/test_router.test.ts using Bun''s built-in test
+    runner. Use this import syntax:
+
+    ```typescript
+
+    import { describe, it, expect } from ''bun:test'';
+
+    ```
+
+
+    Tests should cover:
+
+    - Basic GET and POST route matching
+
+    - Path parameter extraction (e.g., /users/:id)
+
+    - Middleware that modifies the request
+
+    - Middleware that short-circuits the request
+
+    - 404 for unmatched routes
+
+    - Multiple middleware execution order
+
+
+    Run tests with: bun test'
+  test_command: bun test
+  expected_files:
+  - src/router.ts
+  - tests/test_router.test.ts
+  timeout_seconds: 600
+  metadata:
+    design_type: http_router
+    language: typescript

@@ -1,0 +1,98 @@
+tasks:
+- id: swe-refactor-002
+  name: Refactor duplicated operand validation in Calculator
+  track: swe
+  difficulty: easy
+  description: The `Calculator` class in src/solution.py repeats the same `isinstance` operand
+    validation in every method. Extract the shared validation into a single helper (e.g. a
+    `_validate_numbers` method or decorator) so the duplication is removed. The public API and
+    behavior must remain identical.
+  repo_url: tasks/repos/swe-refactor-002
+  repo_commit: 4f1c8b3e7a2d6095c4b8e1f6a3d7c2b9e5f4a1d8
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Refactor the `Calculator` class in src/solution.py to remove code duplication.
+
+    The same operand validation check is duplicated across all four methods (`add`, `subtract`,
+    `multiply`, `divide`):
+    ```
+    if not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+        raise TypeError("operands must be numbers")
+    ```
+
+    Extract the shared validation into a single helper (e.g. a `_validate_numbers` method or a
+    decorator) so the check is defined once and reused by all four methods.
+
+    The public API and behavior must remain identical: same method signatures, same return
+    values, same exceptions (TypeError for non-number operands, ValueError for divide-by-zero).
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..7a5b6c4
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,54 @@
+    +"""Hidden tests for Calculator — verify validation still works after refactor."""
+    +
+    +import pytest
+    +
+    +from src.solution import Calculator
+    +
+    +
+    +def test_type_error_add_strings():
+    +    c = Calculator()
+    +    with pytest.raises(TypeError):
+    +        c.add("a", 1)
+    +    with pytest.raises(TypeError):
+    +        c.add(1, "b")
+    +
+    +
+    +def test_type_error_subtract_strings():
+    +    c = Calculator()
+    +    with pytest.raises(TypeError):
+    +        c.subtract("a", 1)
+    +    with pytest.raises(TypeError):
+    +        c.subtract(1, "b")
+    +
+    +
+    +def test_type_error_multiply_strings():
+    +    c = Calculator()
+    +    with pytest.raises(TypeError):
+    +        c.multiply("a", 1)
+    +    with pytest.raises(TypeError):
+    +        c.multiply(1, "b")
+    +
+    +
+    +def test_type_error_divide_strings():
+    +    c = Calculator()
+    +    with pytest.raises(TypeError):
+    +        c.divide("a", 1)
+    +    with pytest.raises(TypeError):
+    +        c.divide(1, "b")
+    +
+    +
+    +def test_none_args_raise_type_error():
+    +    c = Calculator()
+    +    with pytest.raises(TypeError):
+    +        c.add(None, 1)
+    +    with pytest.raises(TypeError):
+    +        c.multiply(1, None)
+    +    with pytest.raises(TypeError):
+    +        c.divide(None, None)
+    +
+    +
+    +def test_bool_args_work():
+    +    c = Calculator()
+    +    assert c.add(True, False) == 1
+    +    assert c.multiply(True, 3) == 3
+    +    assert c.subtract(False, True) == -1
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    refactor_type: extract_validation
+    language: python
+    test_count: 8

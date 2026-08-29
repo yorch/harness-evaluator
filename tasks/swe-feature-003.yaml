@@ -1,0 +1,92 @@
+tasks:
+- id: swe-feature-003
+  name: Implement debounce function with proper delay handling
+  track: swe
+  difficulty: medium
+  description: The `debounce` function in src/solution.ts is a stub that calls the wrapped function
+    immediately on every invocation, ignoring the `delayMs` parameter entirely. Implement proper
+    debouncing so that the function only executes after the caller stops invoking it for the
+    specified delay, and rapid successive calls reset the timer so only the last call executes.
+  repo_url: tasks/repos/swe-feature-003
+  repo_commit: 3b8e1a7c4d6f0258e9c1a3b5d7f9e2c4a6b8d0f2
+  setup_script: bun install
+  task_prompt: |-
+    Implement the `debounce` function in src/solution.ts.
+
+    Currently it is a stub that calls `fn` immediately on every invocation, completely
+    ignoring the `delayMs` parameter. A proper debounce function should:
+
+    1. Not call `fn` immediately when invoked.
+    2. Wait for `delayMs` milliseconds after the last invocation before calling `fn`.
+    3. If called again before the delay elapses, reset the timer so only the last
+       invocation's arguments are used.
+    4. Pass through all arguments from the last invocation to `fn`.
+
+    Example behavior:
+      const debounced = debounce(fn, 100);
+      debounced(1);  // fn not called yet
+      debounced(2);  // timer reset, fn not called yet
+      // after 100ms of no calls -> fn(2) is called
+
+    Run tests with: bun test
+  test_command: bun test
+  test_patch: |
+    diff --git a/tests/test_hidden.test.ts b/tests/test_hidden.test.ts
+    new file mode 100644
+    index 0000000..b4c5d6e
+    --- /dev/null
+    +++ b/tests/test_hidden.test.ts
+    @@ -0,0 +1,46 @@
+    +import { describe, it, expect } from 'bun:test';
+    +import { debounce } from '../src/solution';
+    +
+    +describe('debounce hidden tests', () => {
+    +  it('should only execute the last call when called rapidly', async () => {
+    +    let callCount = 0;
+    +    let lastArg = 0;
+    +    const debounced = debounce((n: number) => {
+    +      callCount++;
+    +      lastArg = n;
+    +    }, 50);
+    +    debounced(1);
+    +    debounced(2);
+    +    debounced(3);
+    +    expect(callCount).toBe(0);
+    +    await new Promise((resolve) => setTimeout(resolve, 100));
+    +    expect(callCount).toBe(1);
+    +    expect(lastArg).toBe(3);
+    +  });
+    +
+    +  it('should not call the function before the delay elapses', async () => {
+    +    let called = false;
+    +    const debounced = debounce(() => {
+    +      called = true;
+    +    }, 80);
+    +    debounced();
+    +    await new Promise((resolve) => setTimeout(resolve, 40));
+    +    expect(called).toBe(false);
+    +    await new Promise((resolve) => setTimeout(resolve, 60));
+    +    expect(called).toBe(true);
+    +  });
+    +
+    +  it('should reset the timer on each subsequent call', async () => {
+    +    let callCount = 0;
+    +    const debounced = debounce(() => {
+    +      callCount++;
+    +    }, 60);
+    +    debounced();
+    +    await new Promise((resolve) => setTimeout(resolve, 30));
+    +    debounced();
+    +    await new Promise((resolve) => setTimeout(resolve, 30));
+    +    expect(callCount).toBe(0);
+    +    await new Promise((resolve) => setTimeout(resolve, 40));
+    +    expect(callCount).toBe(1);
+    +  });
+    +});
+  expected_files:
+  - src/solution.ts
+  timeout_seconds: 300
+  metadata:
+    bug_type: incomplete_implementation
+    language: typescript
+    test_count: 5

@@ -1,0 +1,74 @@
+tasks:
+- id: open-design-007
+  name: Design a pub/sub event emitter
+  track: open_ended
+  difficulty: medium
+  description: Design and implement a pub/sub event emitter with on, off, emit, once,
+    and wildcard support in TypeScript. Include comprehensive tests.
+  task_prompt: 'Design and implement a pub/sub event emitter in src/event_emitter.ts.
+
+
+    Requirements:
+
+    - An `EventEmitter` class with the following API:
+
+    - `on(event, callback)` — subscribe a callback to an event; returns an unsubscribe
+    function
+
+    - `off(event, callback)` — unsubscribe a specific callback from an event
+
+    - `emit(event, ...args)` — emit an event, calling all subscribed callbacks with
+    the given arguments
+
+    - `once(event, callback)` — subscribe a callback that is automatically removed
+    after the first invocation
+
+    - `removeAllListeners(event?)` — remove all listeners for a specific event, or
+    all listeners for all events if no event is given
+
+    - Support wildcard events: subscribing to `*` matches all emitted events
+
+    - Callbacks for wildcard listeners receive the event name as the first argument,
+    followed by the emitted arguments
+
+    - Emitting an event with no listeners should not throw
+
+
+    Add comprehensive tests in tests/test_event_emitter.test.ts using Bun''s built-in
+    test runner. Use this import syntax:
+
+    ```typescript
+
+    import { describe, it, expect } from ''bun:test'';
+
+    ```
+
+
+    Tests should cover:
+
+    - Basic on/emit subscription and invocation
+
+    - off removes a specific callback
+
+    - once callbacks are invoked only once
+
+    - removeAllListeners for a specific event and for all events
+
+    - Wildcard (`*`) listeners receive all events with the event name as first argument
+
+    - The unsubscribe function returned by `on` removes the listener
+
+    - Emitting an event with no listeners does not throw
+
+    - Multiple listeners on the same event are all called
+
+
+    Run tests with: bun test'
+  test_command: bun test
+  expected_files:
+  - src/event_emitter.ts
+  - tests/test_event_emitter.test.ts
+  timeout_seconds: 600
+  metadata:
+    design_type: event_emitter
+    language: typescript

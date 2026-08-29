@@ -426,13 +426,27 @@ docker_image: "my-custom-runner:latest"
 
 ```
 tasks/
-├── swe-bugfix-001.yaml          # Task definition
+├── swe-bugfix-001.yaml          # Task definitions (20 total)
 ├── swe-bugfix-002.yaml
+├── swe-bugfix-003.yaml
+├── swe-bugfix-004.yaml
+├── swe-bugfix-005.yaml
 ├── swe-feature-001.yaml
+├── swe-feature-002.yaml
+├── swe-feature-003.yaml
+├── swe-perf-001.yaml
+├── swe-perf-002.yaml
 ├── swe-refactor-001.yaml
+├── swe-refactor-002.yaml
 ├── open-design-001.yaml
 ├── open-design-002.yaml
-└── repos/                       # Task repo fixtures
+├── open-design-003.yaml
+├── open-design-004.yaml
+├── open-design-005.yaml
+├── open-design-006.yaml
+├── open-design-007.yaml
+├── open-design-008.yaml
+└── repos/                       # Task repo fixtures (SWE only)
     ├── swe-bugfix-001/
     │   ├── src/
     │   │   ├── __init__.py
@@ -443,5 +457,46 @@ tasks/
     ├── swe-bugfix-002/
     └── ...
 ```
+
+### Task mix overview
+
+The library contains 20 tasks across two tracks and two languages:
+
+| Track | Count | Python | TypeScript | Difficulties |
+|-------|-------|--------|------------|--------------|
+| SWE | 12 | 9 | 3 | easy, medium, hard |
+| Open-ended | 8 | 5 | 3 | easy, medium, hard |
+
+**SWE tasks** (bug fixes, features, refactors, performance):
+
+| ID | Type | Difficulty | Language | Description |
+|----|------|-----------|----------|-------------|
+| swe-bugfix-001 | bugfix | easy | Python | Off-by-one in list pagination |
+| swe-bugfix-002 | bugfix | medium | Python | CSV parser quoted fields |
+| swe-bugfix-003 | bugfix | easy | Python | `deep_get` KeyError on missing key |
+| swe-bugfix-004 | bugfix | hard | Python | Async rate limiter race condition |
+| swe-bugfix-005 | bugfix | easy | TypeScript | `sumPositive` excludes zeros |
+| swe-feature-001 | feature | medium | Python | LRU eviction for cache |
+| swe-feature-002 | feature | medium | Python | HTTP client retry with backoff |
+| swe-feature-003 | feature | medium | TypeScript | Debounce implementation |
+| swe-refactor-001 | refactor | easy | Python | Extract duplicated validation |
+| swe-refactor-002 | refactor | easy | Python | Extract repeated type checking |
+| swe-perf-001 | performance | hard | Python | O(n²) to O(n) duplicate finding |
+| swe-perf-002 | performance | medium | TypeScript | O(n²) CSV builder to `join` |
+
+**Open-ended tasks** (design from scratch):
+
+| ID | Difficulty | Language | Design type |
+|----|-----------|----------|-------------|
+| open-design-001 | medium | Python | Token bucket rate limiter |
+| open-design-002 | hard | Python | Multi-source config loader |
+| open-design-003 | medium | Python | Priority queue (binary heap) |
+| open-design-004 | easy | Python | Circular buffer |
+| open-design-005 | hard | Python | Trie-based autocomplete |
+| open-design-006 | medium | TypeScript | HTTP router with middleware |
+| open-design-007 | medium | TypeScript | Pub/sub event emitter |
+| open-design-008 | hard | TypeScript | Finite state machine with guards |
+
+A curated run config that uses all 20 tasks is at `runs/task-mix.yaml`.
 
 > **Note**: Do not edit `tasks/repos/*/` contents directly — they are task fixtures. Change the source and re-init via the runner's `_git_init_fresh`.

@@ -1,0 +1,67 @@
+tasks:
+- id: swe-bugfix-003
+  name: Fix deep_get to return default on missing intermediate key
+  track: swe
+  difficulty: easy
+  description: The `deep_get` function in src/solution.py traverses nested dicts using subscript
+    access (`data[key]`). When an intermediate key is missing this raises KeyError instead of
+    returning the supplied default. Fix the traversal so any missing key or non-dict intermediate
+    value returns the default.
+  repo_url: tasks/repos/swe-bugfix-003
+  repo_commit: 7c4a1f9b2e3d5860a1c7e9b4d2f8a1e6c3b5d7e9
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Fix the `deep_get` function in src/solution.py.
+
+    It traverses a nested dict following a list of keys, but currently uses `data[key]` which
+    raises KeyError when an intermediate key is missing instead of returning the `default`.
+
+    The function should:
+    - Return the leaf value when the full key path exists.
+    - Return `default` when any key along the path is missing.
+    - Return `default` when an intermediate value is not a dict (so the path cannot continue).
+    - Return `default` when the keys list is empty.
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..4a2b3c1
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,27 @@
+    +"""Hidden tests for deep_get — verify graceful handling of missing keys."""
+    +
+    +from src.solution import deep_get
+    +
+    +
+    +def test_missing_intermediate_key_returns_default():
+    +    data = {"a": {}}
+    +    assert deep_get(data, ["a", "b", "c"], default="missing") == "missing"
+    +
+    +
+    +def test_missing_final_key_returns_default():
+    +    data = {"a": {"b": {}}}
+    +    assert deep_get(data, ["a", "b", "c"], default="missing") == "missing"
+    +
+    +
+    +def test_empty_keys_returns_default():
+    +    assert deep_get({"a": 1}, [], default="missing") == "missing"
+    +
+    +
+    +def test_non_dict_intermediate_returns_default():
+    +    data = {"a": 5}
+    +    assert deep_get(data, ["a", "b"], default="missing") == "missing"
+    +
+    +
+    +def test_default_is_none_by_default():
+    +    data = {"a": {"b": {}}}
+    +    assert deep_get(data, ["a", "b", "c"]) is None
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    bug_type: missing_default_handling
+    language: python
+    test_count: 8

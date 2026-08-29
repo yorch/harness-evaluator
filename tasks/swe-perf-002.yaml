@@ -1,0 +1,83 @@
+tasks:
+- id: swe-perf-002
+  name: Optimize O(n²) CSV builder to use single array join
+  track: swe
+  difficulty: medium
+  description: The `buildCsv` function in src/solution.ts rebuilds the entire CSV string on
+    every loop iteration by calling `lines.join('\n')` inside the loop. This makes the
+    function O(n²) — each iteration copies all previously accumulated content into a new
+    string. Refactor to call `join` once after the loop completes, reducing complexity to
+    O(n) while preserving identical output.
+  repo_url: tasks/repos/swe-perf-002
+  repo_commit: 5c2f8a1d3e7b9406f8a2c4e6d0b2f4a6c8e0d2b4
+  setup_script: bun install
+  task_prompt: |-
+    Optimize the `buildCsv` function in src/solution.ts.
+
+    Currently the function accumulates row lines in an array but rebuilds the entire
+    CSV string on every iteration by calling `lines.join('\n')` inside the loop:
+
+      const lines: string[] = [];
+      let csv = '';
+      for (const row of rows) {
+        lines.push(row.join(','));
+        csv = lines.join('\n') + '\n';  // O(n²) — rebuilds everything each time
+      }
+      return csv;
+
+    This is O(n²) because each `lines.join('\n')` call creates a brand new string
+    from scratch, copying all previously accumulated content.
+
+    Refactor so that `join` is called only once, after the loop finishes. The output
+    must remain identical:
+    - Each row's cells are joined with commas
+    - Rows are separated by '\n'
+    - The result ends with a trailing '\n' when there is at least one row
+    - An empty input returns an empty string
+
+    Run tests with: bun test
+  test_command: bun test
+  test_patch: |
+    diff --git a/tests/test_hidden.test.ts b/tests/test_hidden.test.ts
+    new file mode 100644
+    index 0000000..c5d6e7f
+    --- /dev/null
+    +++ b/tests/test_hidden.test.ts
+    @@ -0,0 +1,30 @@
+    +import { describe, it, expect } from 'bun:test';
+    +import { buildCsv } from '../src/solution';
+    +
+    +describe('buildCsv hidden tests', () => {
+    +  it('should handle a large input efficiently', () => {
+    +    const rows: string[][] = [];
+    +    for (let i = 0; i < 10000; i++) {
+    +      rows.push([`name_${i}`, `value_${i}`, `desc_${i}`]);
+    +    }
+    +    const start = performance.now();
+    +    const result = buildCsv(rows);
+    +    const elapsed = performance.now() - start;
+    +    expect(result.length).toBeGreaterThan(0);
+    +    expect(elapsed).toBeLessThan(500);
+    +  });
+    +
+    +  it('should return an empty string for an empty rows array', () => {
+    +    expect(buildCsv([])).toBe('');
+    +  });
+    +
+    +  it('should handle rows with special characters', () => {
+    +    expect(buildCsv([['hello world', 'foo,bar']])).toBe('hello world,foo,bar\n');
+    +  });
+    +
+    +  it('should use proper newline handling between rows', () => {
+    +    const result = buildCsv([['a', 'b'], ['c', 'd'], ['e', 'f']]);
+    +    expect(result).toBe('a,b\nc,d\ne,f\n');
+    +    expect(result.split('\n').filter((l) => l.length > 0)).toEqual(['a,b', 'c,d', 'e,f']);
+    +  });
+    +});
+  expected_files:
+  - src/solution.ts
+  timeout_seconds: 300
+  metadata:
+    bug_type: performance
+    language: typescript
+    test_count: 6
