@@ -1,0 +1,67 @@
+tasks:
+- id: swe-bugfix-001
+  name: Fix off-by-one in list pagination function
+  track: swe
+  difficulty: easy
+  description: The `get_page` function in src/solution.py has an off-by-one bug. It calculates the end
+    index as `page_number * page_size - 1` instead of `page_number * page_size`, causing the last item
+    of each full page to be dropped. Fix the bug so that all tests pass.
+  repo_url: tasks/repos/swe-bugfix-001
+  repo_commit: 38776ebf76a8d753e9dbca21f10836ab558fc997
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Fix the off-by-one bug in the `get_page` function in src/solution.py.
+    The function should return the correct slice of items for a given page.
+    Currently the end index is calculated as `page_number * page_size - 1` which drops the last item of each full page.
+    The correct end index should be `page_number * page_size`.
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..307a8ad
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,34 @@
+    +"""Hidden tests for pagination — verify the off-by-one fix."""
+    +
+    +from src.solution import get_page
+    +
+    +
+    +def test_full_first_page():
+    +    items = list(range(1, 21))
+    +    assert get_page(items, 1, 10) == list(range(1, 11))
+    +
+    +
+    +def test_full_second_page():
+    +    items = list(range(1, 21))
+    +    assert get_page(items, 2, 10) == list(range(11, 21))
+    +
+    +
+    +def test_custom_page_size_first():
+    +    items = list(range(1, 7))
+    +    assert get_page(items, 1, 3) == [1, 2, 3]
+    +
+    +
+    +def test_custom_page_size_second():
+    +    items = list(range(1, 7))
+    +    assert get_page(items, 2, 3) == [4, 5, 6]
+    +
+    +
+    +def test_last_page_partial():
+    +    items = list(range(1, 26))
+    +    assert get_page(items, 3, 10) == list(range(21, 26))
+    +
+    +
+    +def test_page_size_one():
+    +    items = [10, 20, 30]
+    +    assert get_page(items, 2, 1) == [20]
+    +    assert get_page(items, 3, 1) == [30]
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    bug_type: off-by-one
+    language: python
+    test_count: 10

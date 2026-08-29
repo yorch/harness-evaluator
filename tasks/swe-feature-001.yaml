@@ -1,0 +1,93 @@
+tasks:
+- id: swe-feature-001
+  name: Add LRU eviction to cache class
+  track: swe
+  difficulty: medium
+  description: The `Cache` class in src/solution.py silently drops new entries when the cache is full.
+    Add least-recently-used (LRU) eviction so that when the cache is at capacity and a new key is inserted,
+    the least recently accessed entry is removed. Both `get` and `put` should update recency.
+  repo_url: tasks/repos/swe-feature-001
+  repo_commit: 286cf87fc3a3580848fa56da592ba49c0511cabd
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Add LRU (least-recently-used) eviction to the `Cache` class in src/solution.py.
+
+    Currently, when the cache is full and a new key is inserted, the entry is silently dropped. Instead, the least recently used entry should be evicted.
+
+    Requirements:
+    - `get(key)` should update the recency of the accessed key
+    - `put(key, value)` should update recency for existing keys
+    - When inserting a new key into a full cache, evict the LRU entry
+    - The cache size should never exceed `max_size`
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..8dd981c
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,55 @@
+    +"""Hidden tests for Cache — verify LRU eviction behavior."""
+    +
+    +from src.solution import Cache
+    +
+    +
+    +def test_eviction_removes_lru():
+    +    cache = Cache(max_size=2)
+    +    cache.put("a", 1)
+    +    cache.put("b", 2)
+    +    cache.get("a")  # access "a", making "b" the LRU
+    +    cache.put("c", 3)  # should evict "b"
+    +    assert cache.get("a") == 1
+    +    assert cache.get("b") is None
+    +    assert cache.get("c") == 3
+    +
+    +
+    +def test_put_updates_recency():
+    +    cache = Cache(max_size=2)
+    +    cache.put("a", 1)
+    +    cache.put("b", 2)
+    +    cache.put("a", 10)  # update "a", making "b" the LRU
+    +    cache.put("c", 3)  # should evict "b"
+    +    assert cache.get("a") == 10
+    +    assert cache.get("b") is None
+    +    assert cache.get("c") == 3
+    +
+    +
+    +def test_size_never_exceeds_max():
+    +    cache = Cache(max_size=3)
+    +    for i in range(10):
+    +        cache.put(f"key{i}", i)
+    +    assert len(cache) == 3
+    +
+    +
+    +def test_get_updates_recency():
+    +    cache = Cache(max_size=2)
+    +    cache.put("a", 1)
+    +    cache.put("b", 2)
+    +    cache.get("a")  # "a" is now most recently used
+    +    cache.put("c", 3)  # should evict "b"
+    +    assert "a" in cache
+    +    assert "b" not in cache
+    +    assert "c" in cache
+    +
+    +
+    +def test_fifo_when_no_access():
+    +    cache = Cache(max_size=3)
+    +    cache.put("a", 1)
+    +    cache.put("b", 2)
+    +    cache.put("c", 3)
+    +    cache.put("d", 4)  # should evict "a" (oldest without any get)
+    +    assert cache.get("a") is None
+    +    assert cache.get("b") == 2
+    +    assert cache.get("c") == 3
+    +    assert cache.get("d") == 4
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    feature_type: lru_eviction
+    language: python
+    test_count: 11

@@ -29,7 +29,12 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
-from heval.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
+from heval.adapters.base import (
+    AdapterInfo,
+    AdapterNotInstalledError,
+    AdapterResult,
+    BaseAdapter,
+)
 from heval.adapters.registry import register_adapter
 from heval.adapters.utils import run_command
 
@@ -62,8 +67,12 @@ class CodexAdapter(BaseAdapter):
         )
 
     async def prepare(self) -> None:
-        """Check that codex is installed."""
-        pass  # Checked at run time
+        """Verify that codex is installed and on PATH."""
+        if not shutil.which("codex"):
+            raise AdapterNotInstalledError(
+                "codex not found on PATH. "
+                "Install with: npm install -g @openai/codex"
+            )
 
     async def run(self, task_prompt: str, timeout: int = 600) -> Any:
         """Run Codex with the given task prompt using `codex exec`."""
@@ -80,6 +89,15 @@ class CodexAdapter(BaseAdapter):
                 duration_ms=0,
             )
 
+        cmd = self.get_command(task_prompt)
+
+        return await run_command(cmd, workdir, env, timeout)
+
+    def get_command(self, task_prompt: str) -> list[str]:
+        """Return the codex command list for execution inside a container."""
+        # When running inside Docker, the binary is on the container PATH.
+        codex_bin = "codex"
+
         # Use `codex exec` for non-interactive execution
         cmd = [
             codex_bin,
@@ -92,9 +110,11 @@ class CodexAdapter(BaseAdapter):
         cmd.extend(["--sandbox", sandbox_mode])
 
         # If we have a gateway URL, pass it via config override
-        # since OPENAI_BASE_URL may be ignored by current Codex
-        if self.gateway_url:
-            cmd.extend(["-c", f"openai_base_url=\"{self.gateway_url}\""])
+        # since OPENAI_BASE_URL may be ignored by current Codex.
+        # Use _gateway_url_with_trace() to propagate trace_id and /v1.
+        gateway_url = self._gateway_url_with_trace()
+        if gateway_url:
+            cmd.extend(["-c", f"openai_base_url={gateway_url}"])
 
         # Add any extra config overrides
         extra_config = self.config.get("config_overrides", {})
@@ -104,7 +124,7 @@ class CodexAdapter(BaseAdapter):
         # The task prompt is passed as the last argument
         cmd.append(task_prompt)
 
-        return await run_command(cmd, workdir, env, timeout)
+        return cmd
 
 
 register_adapter("codex", CodexAdapter)

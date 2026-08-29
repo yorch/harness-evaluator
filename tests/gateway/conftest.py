@@ -75,7 +75,13 @@ async def mock_anthropic_server(tmp_path):
     async def handle_messages(request: web.Request) -> web.StreamResponse:
         body = await request.json()
         is_streaming = body.get("stream", False)
-        call_records.append({"path": request.path, "body": body})
+        call_records.append(
+            {
+                "path": request.path,
+                "query_string": request.query_string,
+                "body": body,
+            }
+        )
 
         if is_streaming:
             resp = web.StreamResponse(
@@ -193,7 +199,13 @@ async def mock_openai_server(tmp_path):
     async def handle_chat(request: web.Request) -> web.StreamResponse:
         body = await request.json()
         is_streaming = body.get("stream", False)
-        call_records.append({"path": request.path, "body": body})
+        call_records.append(
+            {
+                "path": request.path,
+                "query_string": request.query_string,
+                "body": body,
+            }
+        )
 
         if is_streaming:
             resp = web.StreamResponse(

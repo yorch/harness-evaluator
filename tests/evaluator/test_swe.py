@@ -142,6 +142,27 @@ class TestSWEEvaluator:
         assert result.error_class == ErrorClass.REFUSAL
         assert result.success == 0.0
 
+    def test_untracked_file_diff_returns_real_content(
+        self, swe_evaluator, mock_repo, swe_task
+    ):
+        """Test that untracked files produce a real content diff, not status."""
+        # Create a new untracked file (not staged or committed)
+        (mock_repo / "src" / "new_module.py").write_text(
+            "def new_function():\n"
+            "    return 42\n"
+        )
+
+        diff = swe_evaluator._get_diff(mock_repo)
+
+        # The diff should contain real file content, not a status pseudo-diff
+        assert diff
+        assert "--- untracked changes ---" not in diff
+        assert "new_function" in diff
+        assert "def new_function" in diff
+        assert "return 42" in diff
+        # Should look like a proper diff with diff headers
+        assert "diff --git" in diff or "---" in diff
+
 
 class TestSWEEvaluatorTestParsing:
     def test_parse_pytest_output_pass(self, swe_evaluator):

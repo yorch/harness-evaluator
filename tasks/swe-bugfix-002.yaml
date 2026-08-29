@@ -1,0 +1,71 @@
+tasks:
+- id: swe-bugfix-002
+  name: Fix CSV parser to handle quoted fields
+  track: swe
+  difficulty: medium
+  description: The `parse_csv_line` function in src/solution.py uses a naive `str.split` to parse CSV
+    lines. This breaks when fields are quoted and contain delimiters or escaped quotes. Fix the parser
+    to properly handle RFC 4180 style quoted fields, including escaped double-quotes ("").
+  repo_url: tasks/repos/swe-bugfix-002
+  repo_commit: 151eb51fbc7a14890d97a6091342ef3009151725
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Fix the `parse_csv_line` function in src/solution.py to handle quoted fields.
+
+    Currently it uses a naive `line.split(delimiter)` which breaks on:
+    - Fields wrapped in double quotes containing the delimiter
+    - Escaped double-quotes within a quoted field (represented as "")
+    - Quoted empty fields
+
+    The parser should correctly handle:
+      parse_csv_line('"hello,world",b') -> ["hello,world", "b"]
+      parse_csv_line('a,"b,c",d') -> ["a", "b,c", "d"]
+      parse_csv_line('"she said \"\"hi\"\"",b') -> ['she said "hi"', "b"]
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..1ebf6fa
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,31 @@
+    +"""Hidden tests for CSV parser — verify quoted field handling."""
+    +
+    +from src.solution import parse_csv_line
+    +
+    +
+    +def test_quoted_field_with_delimiter():
+    +    assert parse_csv_line('"hello,world",b') == ["hello,world", "b"]
+    +
+    +
+    +def test_quoted_field_in_middle():
+    +    assert parse_csv_line('a,"b,c",d') == ["a", "b,c", "d"]
+    +
+    +
+    +def test_escaped_quotes():
+    +    assert parse_csv_line('"she said ""hi""",b') == ['she said "hi"', "b"]
+    +
+    +
+    +def test_quoted_empty_field():
+    +    assert parse_csv_line('"",b') == ["", "b"]
+    +
+    +
+    +def test_all_quoted_fields():
+    +    assert parse_csv_line('"a","b","c"') == ["a", "b", "c"]
+    +
+    +
+    +def test_quoted_field_at_end():
+    +    assert parse_csv_line('a,"b,c"') == ["a", "b,c"]
+    +
+    +
+    +def test_single_quoted_field():
+    +    assert parse_csv_line('"hello"') == ["hello"]
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    bug_type: incomplete_implementation
+    language: python
+    test_count: 12

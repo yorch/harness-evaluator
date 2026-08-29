@@ -195,7 +195,7 @@ class SWEEvaluator:
             if result.stdout.strip():
                 return result.stdout
 
-            # Check for untracked files
+            # Check for untracked files and generate real content diffs
             status_result = subprocess.run(
                 ["git", "status", "--porcelain"],
                 cwd=workdir,
@@ -205,18 +205,36 @@ class SWEEvaluator:
                 timeout=10,
             )
             if status_result.stdout.strip():
-                # There are changes (untracked or otherwise) not captured by diff
-                # Generate a diff including untracked files
-                result = subprocess.run(
-                    ["git", "diff", "--no-index", "/dev/null", "-"],
-                    cwd=workdir,
-                    input=status_result.stdout,
-                    capture_output=True,
-                    text=True,
-                    errors="replace",
-                    timeout=10,
-                )
-                # If that fails, just return the status as a pseudo-diff
+                # Parse porcelain output and generate real diffs for
+                # untracked files (?? prefix) that git diff HEAD misses.
+                diffs: list[str] = []
+                for line in status_result.stdout.strip().splitlines():
+                    if not line.strip():
+                        continue
+                    # Porcelain format: "XY <path>" (2-char status + space + path)
+                    if line[:2] == "??":
+                        file_path = line[3:]
+                        full_path = workdir / file_path
+                        if full_path.is_file():
+                            diff_result = subprocess.run(
+                                [
+                                    "git", "diff", "--no-index",
+                                    "/dev/null", str(full_path),
+                                ],
+                                cwd=workdir,
+                                capture_output=True,
+                                text=True,
+                                errors="replace",
+                                timeout=10,
+                            )
+                            # --no-index exits 1 when files differ (expected)
+                            if diff_result.stdout.strip():
+                                diffs.append(diff_result.stdout)
+
+                if diffs:
+                    return "\n".join(diffs)
+
+                # No untracked files with content diffs; fall back to status
                 return f"--- untracked changes ---\n{status_result.stdout}"
 
             return ""

@@ -21,8 +21,9 @@ import logging
 import ssl as ssl_module
 import time
 import uuid
+from collections.abc import Mapping
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
 from aiohttp import web
@@ -52,6 +53,15 @@ HOP_BY_HOP = frozenset(
         "upgrade",
         "host",
         "content-length",
+    }
+)
+
+# Internal heval trace headers — extracted for attribution but never
+# forwarded to the real upstream provider API.
+INTERNAL_TRACE_HEADERS = frozenset(
+    {
+        "x-heval-trace-id",
+        "x-trace-id",
     }
 )
 
@@ -138,9 +148,24 @@ class GatewayProxy:
         model = body.get("model", "unknown")
         return str(model)
 
-    def _extract_trace_id(self, headers: dict[str, str]) -> str | None:
-        """Extract trace ID from request headers if the harness injected one."""
-        return headers.get("x-heval-trace-id") or headers.get("x-trace-id")
+    def _extract_trace_id(
+        self, headers: Mapping[str, str], query_string: str = ""
+    ) -> str | None:
+        """Extract trace ID from request headers or query string.
+
+        The harness subprocesses append ``?trace_id=xxx`` to the gateway
+        URL (via the adapter's ``get_env()``), so we check the query
+        string in addition to the explicit ``x-heval-trace-id`` header.
+        """
+        trace_id = headers.get("x-heval-trace-id") or headers.get("x-trace-id")
+        if trace_id:
+            return trace_id
+        if query_string:
+            params = parse_qs(query_string)
+            trace_ids = params.get("trace_id")
+            if trace_ids:
+                return trace_ids[0]
+        return None
 
     async def handle(self, request: web.Request) -> web.StreamResponse:
         """Handle all incoming requests — forward to upstream and capture."""
@@ -170,18 +195,30 @@ class GatewayProxy:
 
         model = self._extract_model(provider, request_body or {})
         is_streaming = bool(request_body and request_body.get("stream", False))
-        trace_id = self._extract_trace_id(dict(request.headers))
+        trace_id = self._extract_trace_id(
+            request.headers, request.query_string
+        )
         call_id = str(uuid.uuid4())
 
-        # Build upstream URL
+        # Build upstream URL, stripping the trace_id query param so it
+        # is not forwarded to the real provider API.
         upstream_url = f"{upstream}{request.path}"
         if request.query_string:
-            upstream_url += f"?{request.query_string}"
+            upstream_params = parse_qs(request.query_string)
+            upstream_params.pop("trace_id", None)
+            if upstream_params:
+                # Re-encode without trace_id
+                filtered = urlencode(
+                    {k: v[0] for k, v in upstream_params.items()}
+                )
+                upstream_url += f"?{filtered}"
 
-        # Forward headers (strip hop-by-hop, keep auth and content-type)
+        # Forward headers (strip hop-by-hop and internal trace headers,
+        # keep auth and content-type)
         forward_headers: dict[str, str] = {}
         for key, value in request.headers.items():
-            if key.lower() not in HOP_BY_HOP:
+            lower = key.lower()
+            if lower not in HOP_BY_HOP and lower not in INTERNAL_TRACE_HEADERS:
                 forward_headers[key] = value
         forward_headers["Host"] = urlparse(upstream).netloc
 

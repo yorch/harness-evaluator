@@ -211,6 +211,129 @@ class TestProxyErrorHandling:
             await runner.cleanup()
 
 
+class TestProxyTraceIdExtraction:
+    """Tests for trace ID propagation via query string and headers."""
+
+    async def test_trace_id_from_query_param(self, proxy_app):
+        """Test that trace_id is extracted from the ?trace_id= query param."""
+        proxy_url, store, _ = proxy_app
+
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{proxy_url}/v1/messages?trace_id=my-cell-123",
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
+        ) as resp:
+            assert resp.status == 200
+
+        calls = store.get_all()
+        assert len(calls) == 1
+        assert calls[0].trace_id == "my-cell-123"
+
+    async def test_trace_id_from_header(self, proxy_app):
+        """Test that trace_id is still extracted from the x-heval-trace-id header."""
+        proxy_url, store, _ = proxy_app
+
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{proxy_url}/v1/messages",
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
+            headers={"x-heval-trace-id": "header-cell-456"},
+        ) as resp:
+            assert resp.status == 200
+
+        calls = store.get_all()
+        assert len(calls) == 1
+        assert calls[0].trace_id == "header-cell-456"
+
+    async def test_trace_id_header_takes_precedence(self, proxy_app):
+        """Header trace_id takes precedence over query param."""
+        proxy_url, store, _ = proxy_app
+
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{proxy_url}/v1/messages?trace_id=query-id",
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
+            headers={"x-heval-trace-id": "header-id"},
+        ) as resp:
+            assert resp.status == 200
+
+        calls = store.get_all()
+        assert len(calls) == 1
+        assert calls[0].trace_id == "header-id"
+
+    async def test_no_trace_id(self, proxy_app):
+        """Test that trace_id is None when neither header nor query param present."""
+        proxy_url, store, _ = proxy_app
+
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{proxy_url}/v1/messages",
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
+        ) as resp:
+            assert resp.status == 200
+
+        calls = store.get_all()
+        assert len(calls) == 1
+        assert calls[0].trace_id is None
+
+    async def test_trace_id_not_forwarded_to_upstream(self, proxy_app):
+        """Test that the trace_id query param is stripped before forwarding upstream."""
+        proxy_url, store, _ = proxy_app
+
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{proxy_url}/v1/messages?trace_id=secret-cell",
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
+        ) as resp:
+            assert resp.status == 200
+
+        # The call should still succeed (200) and be captured with the
+        # correct trace_id, even though trace_id is stripped from the
+        # upstream URL.
+        calls = store.get_all()
+        assert len(calls) == 1
+        assert calls[0].trace_id == "secret-cell"
+
+    def test_extract_trace_id_unit(self, tmp_db):
+        """Unit test for _extract_trace_id with various inputs."""
+        from heval.gateway.proxy import GatewayProxy
+
+        store = CallStore(tmp_db)
+        proxy = GatewayProxy(store)
+
+        # Header takes precedence
+        assert proxy._extract_trace_id(
+            {"x-heval-trace-id": "abc"}, "trace_id=xyz"
+        ) == "abc"
+
+        # Fallback to x-trace-id header
+        assert proxy._extract_trace_id(
+            {"x-trace-id": "def"}, "trace_id=xyz"
+        ) == "def"
+
+        # Query param fallback
+        assert proxy._extract_trace_id({}, "trace_id=qry123") == "qry123"
+
+        # No trace id
+        assert proxy._extract_trace_id({}, "") is None
+        assert proxy._extract_trace_id({}, "other_param=foo") is None
+
+
 class TestProxyCanaryIntegration:
     async def test_canary_passes_with_mock(self, proxy_app):
         """Test that the canary passes when proxy usage matches upstream."""
@@ -258,3 +381,134 @@ class TestProxyCanaryIntegration:
         assert result.passed  # Streaming: single source, should pass
         assert result.proxy_usage is not None
         assert result.proxy_usage.total_tokens > 0
+
+
+class TestProxyTraceParamStripped:
+    """Verify the trace_id query param is stripped before reaching upstream."""
+
+    async def test_trace_id_stripped_before_upstream(
+        self, tmp_db, mock_anthropic_server
+    ):
+        """A request with ?trace_id=abc123 must not forward trace_id upstream."""
+        upstream_url, call_records = mock_anthropic_server
+
+        store = CallStore(tmp_db)
+        app, proxy = create_proxy_app(
+            store,
+            upstream_overrides={Provider.ANTHROPIC: upstream_url},
+            verify_ssl=False,
+        )
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        proxy_url = f"http://127.0.0.1:{port}"
+
+        try:
+            async with aiohttp.ClientSession() as session, session.post(
+                f"{proxy_url}/v1/messages?trace_id=abc123",
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 100,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            ) as resp:
+                assert resp.status == 200
+
+            # The mock upstream records the query string it received.
+            assert len(call_records) == 1
+            received_qs = call_records[0].get("query_string", "")
+            assert "trace_id" not in received_qs
+            assert "abc123" not in received_qs
+
+            # The captured call should still carry the trace_id.
+            calls = store.get_all()
+            assert len(calls) == 1
+            assert calls[0].trace_id == "abc123"
+        finally:
+            await proxy.close()
+            await runner.cleanup()
+
+    async def test_other_query_params_preserved_upstream(
+        self, tmp_db, mock_anthropic_server
+    ):
+        """Non-trace query params must still be forwarded to the upstream."""
+        upstream_url, call_records = mock_anthropic_server
+
+        store = CallStore(tmp_db)
+        app, proxy = create_proxy_app(
+            store,
+            upstream_overrides={Provider.ANTHROPIC: upstream_url},
+            verify_ssl=False,
+        )
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        proxy_url = f"http://127.0.0.1:{port}"
+
+        try:
+            async with aiohttp.ClientSession() as session, session.post(
+                f"{proxy_url}/v1/messages?trace_id=abc123&beta=true",
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 100,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            ) as resp:
+                assert resp.status == 200
+
+            assert len(call_records) == 1
+            received_qs = call_records[0].get("query_string", "")
+            assert "trace_id" not in received_qs
+            assert "beta=true" in received_qs
+        finally:
+            await proxy.close()
+            await runner.cleanup()
+
+
+class TestProxyOpenAIV1Routing:
+    """Verify /v1/chat/completions is routed to the OpenAI upstream."""
+
+    async def test_v1_chat_completions_routed_to_openai(
+        self, tmp_db, mock_openai_server
+    ):
+        """A request to /v1/chat/completions reaches the OpenAI upstream path."""
+        upstream_url, call_records = mock_openai_server
+
+        store = CallStore(tmp_db)
+        app, proxy = create_proxy_app(
+            store,
+            upstream_overrides={Provider.OPENAI: upstream_url},
+            verify_ssl=False,
+        )
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+        proxy_url = f"http://127.0.0.1:{port}"
+
+        try:
+            async with aiohttp.ClientSession() as session, session.post(
+                f"{proxy_url}/v1/chat/completions",
+                json={
+                    "model": "gpt-4o",
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            ) as resp:
+                assert resp.status == 200
+
+            # The upstream must receive the request at /v1/chat/completions.
+            assert len(call_records) == 1
+            assert call_records[0]["path"] == "/v1/chat/completions"
+
+            # The captured call is attributed to the OpenAI provider.
+            calls = store.get_all()
+            assert len(calls) == 1
+            assert calls[0].provider == Provider.OPENAI
+        finally:
+            await proxy.close()
+            await runner.cleanup()

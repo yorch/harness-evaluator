@@ -24,7 +24,7 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
-from heval.adapters.base import AdapterInfo, BaseAdapter
+from heval.adapters.base import AdapterInfo, AdapterNotInstalledError, BaseAdapter
 from heval.adapters.registry import register_adapter
 from heval.adapters.utils import run_command
 
@@ -56,8 +56,11 @@ class PiAdapter(BaseAdapter):
         )
 
     async def prepare(self) -> None:
-        """Check that pi is installed."""
-        pass
+        """Verify that pi is installed and on PATH."""
+        if not shutil.which("pi"):
+            raise AdapterNotInstalledError(
+                "pi not found on PATH. Install with: pip install pi"
+            )
 
     async def run(self, task_prompt: str, timeout: int = 600) -> Any:
         """Run Pi with the given task prompt."""
@@ -76,6 +79,16 @@ class PiAdapter(BaseAdapter):
                 duration_ms=0,
             )
 
+        cmd = self.get_command(task_prompt)
+
+        return await run_command(cmd, workdir, env, timeout)
+
+    def get_command(self, task_prompt: str) -> list[str]:
+        """Return the pi command list for execution inside a container."""
+        # When running inside Docker, the binary is on the container PATH.
+        # Use the bare name so it resolves inside the container, not on the host.
+        pi_bin = "pi"
+
         # Pi command structure: use -p/--print for one-shot mode
         cmd = [
             pi_bin,
@@ -86,7 +99,7 @@ class PiAdapter(BaseAdapter):
         if self.config.get("model_flag"):
             cmd.extend(["--model", self.config["model_flag"]])
 
-        return await run_command(cmd, workdir, env, timeout)
+        return cmd
 
 
 register_adapter("pi", PiAdapter)

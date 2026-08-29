@@ -1,24 +1,43 @@
-# Sample task: open-ended design task
 tasks:
-  - id: open-design-001
-    name: "Design and implement a caching decorator"
-    track: open_ended
-    difficulty: medium
-    description: |
-      Design and implement a small caching decorator in Python.
-      Add tests and write a short README explaining the design.
-    task_prompt: |
-      Design and implement a `@cached` decorator in src/cache.py that:
-      - Caches function results based on arguments
-      - Has a max_size parameter (default 128)
-      - Uses LRU eviction when cache is full
-      - Is thread-safe
+- id: open-design-001
+  name: Design a token bucket rate limiter
+  track: open_ended
+  difficulty: medium
+  description: Design and implement a token bucket rate limiter with configurable rate and burst capacity.
+    Include comprehensive tests.
+  task_prompt: 'Design and implement a token bucket rate limiter in src/rate_limiter.py.
 
-      Add comprehensive tests in tests/test_cache.py.
-      Write a short README.md explaining your design choices.
-    test_command: "python -m pytest tests/test_cache.py -v"
-    expected_files:
-      - src/cache.py
-      - tests/test_cache.py
-      - README.md
-    timeout_seconds: 300
+
+    Requirements:
+
+    - Configurable rate (tokens per second) and burst capacity (max tokens)
+
+    - `allow(n=1)` method that returns True if n tokens are available, consuming them; returns False otherwise
+
+    - Tokens refill at the configured rate, up to the burst capacity
+
+    - Thread-safe implementation
+
+    - Reasonable edge case handling (zero rate, zero burst, etc.)
+
+
+    Add comprehensive tests in tests/test_rate_limiter.py covering:
+
+    - Basic allow/deny behavior
+
+    - Token refill over time
+
+    - Burst capacity limits
+
+    - Edge cases
+
+
+    Run tests with: python -m pytest tests/'
+  test_command: python -m pytest tests/
+  expected_files:
+  - src/rate_limiter.py
+  - tests/test_rate_limiter.py
+  timeout_seconds: 600
+  metadata:
+    design_type: rate_limiter
+    language: python

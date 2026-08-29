@@ -172,6 +172,12 @@ class RunCell(BaseModel):
     model: ModelSpec
     task: TaskSpec
     repeat: int
+    budget: float | None = None
+    """Per-cell budget estimate (USD) used for atomic reservation.
+
+    If None, the orchestrator derives a reasonable estimate from the
+    run-level ``budget_usd`` divided equally across all matrix cells.
+    """
 
     @property
     def cell_id(self) -> str:

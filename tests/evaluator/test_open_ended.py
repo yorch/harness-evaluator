@@ -236,6 +236,75 @@ class TestCalibrationSet:
         assert result["reliable"] is False  # Unknown, not reliable
         assert result["drift_detected"] is None  # Unknown
 
+    def test_save_and_load_anchors(self, tmp_path):
+        """Test that anchors can be saved to and loaded from a JSON file."""
+        cal = CalibrationSet()
+        cal.add_anchor(
+            "anchor-1",
+            "some diff content",
+            {"correctness": 4, "completeness": 3},
+            0.7,
+            metadata={"source": "manual"},
+        )
+        cal.add_anchor("anchor-2", "another diff", {"correctness": 2}, 0.3)
+
+        path = tmp_path / "calibration.json"
+        cal.save_to_file(path)
+
+        # File should exist and be valid JSON
+        assert path.exists()
+
+        # Load and verify
+        loaded = CalibrationSet.load_from_file(path)
+        assert len(loaded.anchors) == 2
+        assert loaded.anchors[0]["name"] == "anchor-1"
+        assert loaded.anchors[0]["diff"] == "some diff content"
+        assert loaded.anchors[0]["expected_scores"] == {
+            "correctness": 4,
+            "completeness": 3,
+        }
+        assert loaded.anchors[0]["expected_success"] == 0.7
+        assert loaded.anchors[0]["metadata"] == {"source": "manual"}
+        assert loaded.anchors[1]["name"] == "anchor-2"
+
+    def test_save_and_load_empty_anchors(self, tmp_path):
+        """Test that an empty calibration set can be saved and loaded."""
+        cal = CalibrationSet()
+        path = tmp_path / "empty_cal.json"
+        cal.save_to_file(path)
+
+        loaded = CalibrationSet.load_from_file(path)
+        assert len(loaded.anchors) == 0
+
+    def test_save_results_after_calibrate(self, tmp_path, open_ended_task):
+        """Test that calibration results can be persisted to disk."""
+        cal = CalibrationSet()
+        judge = FrozenJudge(api_key=None)
+        cal.calibrate(judge, open_ended_task, DEFAULT_RUBRIC)
+
+        results_path = tmp_path / "calibration_results.json"
+        cal.save_results(results_path)
+
+        assert results_path.exists()
+        # Verify the file contains valid JSON with expected fields
+        import json
+
+        data = json.loads(results_path.read_text())
+        assert "judge_version" in data
+        assert "num_anchors" in data
+        assert "mean_absolute_error" in data
+
+    def test_save_results_without_calibrate_raises(self, tmp_path):
+        """Test that save_results raises if calibrate hasn't been called."""
+        cal = CalibrationSet()
+        with pytest.raises(ValueError, match="No calibration results"):
+            cal.save_results(tmp_path / "results.json")
+
+    def test_load_from_nonexistent_file_raises(self, tmp_path):
+        """Test that loading from a nonexistent file raises."""
+        with pytest.raises(FileNotFoundError):
+            CalibrationSet.load_from_file(tmp_path / "nonexistent.json")
+
 
 class TestOpenEndedEvaluator:
     async def test_no_change_detected(self, mock_repo, open_ended_task):
@@ -252,7 +321,7 @@ class TestOpenEndedEvaluator:
         """Test evaluator with a mock judge that returns high scores."""
 
         class MockJudge(FrozenJudge):
-            async def judge(self, task, diff, rubric):
+            async def judge(self, task, diff, rubric, trace_id=None):
                 return JudgeResult(
                     scores={c.name: 4 for c in rubric.criteria},
                     justifications={c.name: "Good" for c in rubric.criteria},
@@ -270,7 +339,7 @@ class TestOpenEndedEvaluator:
         """Test that structural failure caps success at 0.5."""
 
         class MockJudge(FrozenJudge):
-            async def judge(self, task, diff, rubric):
+            async def judge(self, task, diff, rubric, trace_id=None):
                 return JudgeResult(
                     scores={c.name: 5 for c in rubric.criteria},
                     justifications={c.name: "Perfect" for c in rubric.criteria},
@@ -293,7 +362,7 @@ class TestOpenEndedEvaluator:
         """Test that diffs containing braces don't crash the judge prompt."""
 
         class MockJudge(FrozenJudge):
-            async def judge(self, task, diff, rubric):
+            async def judge(self, task, diff, rubric, trace_id=None):
                 # Verify the prompt was generated successfully
                 prompt = self.get_prompt(task, diff, rubric)
                 assert "cache = {}" in prompt or "{" in prompt

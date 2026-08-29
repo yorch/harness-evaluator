@@ -12,6 +12,7 @@ The open-ended track evaluates tasks that don't have a single correct answer
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -265,10 +266,12 @@ class FrozenJudge:
         version: JudgeVersion = JudgeVersion.V1_0,
         api_key: str | None = None,
         model: str = "claude-sonnet-4-20250514",
+        gateway_url: str | None = None,
     ) -> None:
         self.version = version
         self.api_key = api_key
         self.model = model
+        self.gateway_url = gateway_url
 
     def get_prompt(
         self, task: TaskSpec, diff: str, rubric: Rubric
@@ -302,19 +305,29 @@ class FrozenJudge:
         )
 
     async def judge(
-        self, task: TaskSpec, diff: str, rubric: Rubric
+        self,
+        task: TaskSpec,
+        diff: str,
+        rubric: Rubric,
+        trace_id: str | None = None,
     ) -> JudgeResult:
         """Run the judge on a submission.
 
         This calls the LLM API to evaluate the submission.
         In test mode, this can be mocked.
+
+        If ``gateway_url`` is set, the judge request is routed through
+        the gateway (POST to ``{gateway_url}/v1/messages``) with the
+        ``x-heval-trace-id`` header so the gateway captures token usage
+        and attributes it to the trace. Otherwise, a direct Anthropic
+        API call is made (backward compatible).
         """
         prompt = self.get_prompt(task, diff, rubric)
 
         # In production, this would call the Anthropic/OpenAI API
         # For now, we provide a mock implementation that can be overridden
         try:
-            response = await self._call_llm(prompt)
+            response = await self._call_llm(prompt, trace_id=trace_id)
             parsed = self._parse_response(response)
             parsed.judge_version = self.version.value
             parsed.raw_response = response
@@ -328,35 +341,60 @@ class FrozenJudge:
                 error=str(e),
             )
 
-    async def _call_llm(self, prompt: str) -> str:
+    async def _call_llm(
+        self, prompt: str, trace_id: str | None = None
+    ) -> str:
         """Call the LLM API. Override for testing.
+
+        If ``gateway_url`` is set, routes the request through the gateway
+        (POST to ``{gateway_url}/v1/messages``) with the ``x-heval-trace-id``
+        header so token usage is captured and attributed to the trace.
 
         Default implementation uses Anthropic API if key is available,
         otherwise returns a placeholder.
         """
-        if not self.api_key:
+        if not self.api_key and not self.gateway_url:
             return (
                 '{"scores": {}, "justifications": {}, '
                 '"overall_assessment": "No API key configured"}'
             )
 
-        # Use httpx to call the Anthropic API
+        # Use httpx to call the API
         import httpx
 
-        headers = {
-            "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        }
         body = {
             "model": self.model,
             "max_tokens": 4096,
             "messages": [{"role": "user", "content": prompt}],
         }
 
+        if self.gateway_url:
+            # Route through the gateway for token accounting.
+            # Read the API key from explicit config or the environment
+            # so the gateway can authenticate with the upstream provider.
+            api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY")
+            headers: dict[str, str] = {
+                "content-type": "application/json",
+            }
+            if api_key:
+                headers["x-api-key"] = api_key
+                headers["anthropic-version"] = "2023-06-01"
+            if trace_id:
+                headers["x-heval-trace-id"] = trace_id
+
+            url = f"{self.gateway_url.rstrip('/')}/v1/messages"
+        else:
+            # Direct Anthropic API call (backward compat)
+            headers = {
+                "x-api-key": self.api_key or "",
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            }
+            url = "https://api.anthropic.com/v1/messages"
+
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(
-                "https://api.anthropic.com/v1/messages",
+                url,
                 headers=headers,
                 json=body,
             )
@@ -406,6 +444,7 @@ class CalibrationSet:
 
     def __init__(self) -> None:
         self.anchors: list[dict[str, Any]] = []
+        self._last_results: dict[str, Any] | None = None
 
     def add_anchor(
         self,
@@ -469,7 +508,7 @@ class CalibrationSet:
 
         # With zero anchors, reliability is unknown (not True)
         if len(self.anchors) == 0:
-            return {
+            self._last_results = {
                 "judge_version": judge.version.value,
                 "num_anchors": 0,
                 "results": [],
@@ -477,8 +516,9 @@ class CalibrationSet:
                 "drift_detected": None,  # Unknown
                 "reliable": False,  # Cannot be reliable without anchors
             }
+            return self._last_results
 
-        return {
+        self._last_results = {
             "judge_version": judge.version.value,
             "num_anchors": len(self.anchors),
             "results": results,
@@ -486,6 +526,44 @@ class CalibrationSet:
             "drift_detected": mae > 0.15,  # 15% threshold
             "reliable": mae <= 0.15,
         }
+        return self._last_results
+
+    def save_to_file(self, path: str | Path) -> None:
+        """Save calibration anchors to a JSON file.
+
+        This persists the anchor definitions so they can be reused
+        across runs without redefining them in code.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {"anchors": self.anchors}
+        path.write_text(json.dumps(data, indent=2))
+
+    @classmethod
+    def load_from_file(cls, path: str | Path) -> CalibrationSet:
+        """Load calibration anchors from a JSON file.
+
+        Returns a new CalibrationSet with the anchors populated.
+        """
+        path = Path(path)
+        data = json.loads(path.read_text())
+        cal = cls()
+        cal.anchors = data.get("anchors", [])
+        return cal
+
+    def save_results(self, path: str | Path) -> None:
+        """Save the last calibration results to a JSON file.
+
+        This allows calibration results to be compared across runs.
+        Raises ValueError if calibrate() has not been called yet.
+        """
+        if self._last_results is None:
+            raise ValueError(
+                "No calibration results to save. Run calibrate() first."
+            )
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self._last_results, indent=2, default=str))
 
 
 # Default rubric for open-ended tasks
@@ -528,16 +606,19 @@ class OpenEndedEvaluator:
         rubric: Rubric | None = None,
         judge: FrozenJudge | None = None,
         structural_checker: StructuralChecker | None = None,
+        gateway_url: str | None = None,
     ) -> None:
         self.rubric = rubric or DEFAULT_RUBRIC
-        self.judge = judge or FrozenJudge()
+        self.judge = judge or FrozenJudge(gateway_url=gateway_url)
         self.structural_checker = structural_checker or StructuralChecker()
+        self.gateway_url = gateway_url
 
     async def evaluate(
         self,
         task: TaskSpec,
         workdir: str | Path,
         timeout: int | None = None,
+        trace_id: str | None = None,
     ) -> OpenEndedResult:
         """Evaluate an open-ended task submission.
 
@@ -545,6 +626,10 @@ class OpenEndedEvaluator:
         1. Structural checks (file existence, syntax, tests)
         2. LLM judge scoring against rubric
         3. Composite success metric
+
+        If ``trace_id`` is provided and the judge is configured with a
+        ``gateway_url``, the judge's token usage is captured by the
+        gateway and attributed to the trace.
         """
         workdir = Path(workdir)
         repo_dir = workdir / "repo" if (workdir / "repo").exists() else workdir
@@ -563,7 +648,9 @@ class OpenEndedEvaluator:
         structural = self.structural_checker.check(task, workdir)
 
         # Run LLM judge
-        judge_result = await self.judge.judge(task, diff, self.rubric)
+        judge_result = await self.judge.judge(
+            task, diff, self.rubric, trace_id=trace_id
+        )
 
         # Calculate composite success
         judge_success = self.rubric.score_to_success(judge_result.scores)
@@ -599,8 +686,18 @@ class OpenEndedEvaluator:
         )
 
     def _get_diff(self, workdir: Path) -> str:
-        """Get the git diff of changes."""
+        """Get the git diff of changes made by the harness.
+
+        Tries multiple strategies:
+        1. ``git diff HEAD`` — uncommitted changes (staged + unstaged)
+        2. ``git diff HEAD~1`` — changes in the last commit
+        3. Check for untracked files via ``git status`` and generate real
+           content diffs for them (``git diff --no-index /dev/null <file>``)
+
+        This handles harnesses that commit, stage, or just modify files.
+        """
         try:
+            # Check for uncommitted changes (staged + unstaged) against HEAD
             result = subprocess.run(
                 ["git", "diff", "HEAD"],
                 cwd=workdir,
@@ -612,6 +709,7 @@ class OpenEndedEvaluator:
             if result.stdout.strip():
                 return result.stdout
 
+            # Fall back to last commit's changes
             result = subprocess.run(
                 ["git", "diff", "HEAD~1"],
                 cwd=workdir,
@@ -620,6 +718,51 @@ class OpenEndedEvaluator:
                 errors="replace",
                 timeout=10,
             )
-            return result.stdout
+            if result.stdout.strip():
+                return result.stdout
+
+            # Check for untracked files and generate real content diffs
+            status_result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=workdir,
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=10,
+            )
+            if status_result.stdout.strip():
+                # Parse porcelain output and generate real diffs for
+                # untracked files (?? prefix) that git diff HEAD misses.
+                diffs: list[str] = []
+                for line in status_result.stdout.strip().splitlines():
+                    if not line.strip():
+                        continue
+                    # Porcelain format: "XY <path>" (2-char status + space + path)
+                    if line[:2] == "??":
+                        file_path = line[3:]
+                        full_path = workdir / file_path
+                        if full_path.is_file():
+                            diff_result = subprocess.run(
+                                [
+                                    "git", "diff", "--no-index",
+                                    "/dev/null", str(full_path),
+                                ],
+                                cwd=workdir,
+                                capture_output=True,
+                                text=True,
+                                errors="replace",
+                                timeout=10,
+                            )
+                            # --no-index exits 1 when files differ (expected)
+                            if diff_result.stdout.strip():
+                                diffs.append(diff_result.stdout)
+
+                if diffs:
+                    return "\n".join(diffs)
+
+                # No untracked files with content diffs; fall back to status
+                return f"--- untracked changes ---\n{status_result.stdout}"
+
+            return ""
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return ""

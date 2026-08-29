@@ -1,0 +1,51 @@
+tasks:
+- id: open-design-002
+  name: Design a multi-source config loader
+  track: open_ended
+  difficulty: hard
+  description: Design and implement a config loader that merges configuration from YAML files, environment
+    variables, and CLI overrides, with a clear precedence order. Include comprehensive tests.
+  task_prompt: 'Design and implement a config loader in src/config_loader.py.
+
+
+    Requirements:
+
+    - Load base configuration from a YAML file
+
+    - Override values from environment variables (e.g., APP__DATABASE__URL maps to config[''database''][''url''])
+
+    - Override values from CLI arguments (e.g., --database.url=value)
+
+    - Clear precedence: CLI > env > YAML > defaults
+
+    - Support nested keys with a separator (e.g., ''.'' or ''__'')
+
+    - Type coercion (env vars are strings; convert to int/float/bool as needed)
+
+    - A `load()` method that returns the merged config dict
+
+
+    Add comprehensive tests in tests/test_config_loader.py covering:
+
+    - YAML loading
+
+    - Env var overrides with nested keys
+
+    - CLI argument overrides
+
+    - Precedence ordering
+
+    - Type coercion
+
+    - Edge cases (missing files, empty configs, etc.)
+
+
+    Run tests with: python -m pytest tests/'
+  test_command: python -m pytest tests/
+  expected_files:
+  - src/config_loader.py
+  - tests/test_config_loader.py
+  timeout_seconds: 600
+  metadata:
+    design_type: config_loader
+    language: python

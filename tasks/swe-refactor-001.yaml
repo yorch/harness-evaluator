@@ -1,0 +1,96 @@
+tasks:
+- id: swe-refactor-001
+  name: Refactor duplicated validation code
+  track: swe
+  difficulty: easy
+  description: The geometry module in src/solution.py has duplicated input validation logic — the same
+    non-negative check is repeated in every function. Refactor to remove the duplication (e.g., extract
+    a shared validation helper) while keeping the public API and behavior identical.
+  repo_url: tasks/repos/swe-refactor-001
+  repo_commit: 3eaf26d2acd1cc33d5c41df877d5bde6d9d5d1b1
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Refactor the geometry module in src/solution.py to remove code duplication.
+
+    The non-negative validation check is duplicated across all four functions:
+    - calculate_rectangle_area
+    - calculate_rectangle_perimeter
+    - calculate_circle_area
+    - calculate_circle_perimeter
+
+    Extract the shared validation into a helper function (or similar) so the duplication is eliminated. The public API and behavior must remain identical.
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..355988e
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,58 @@
+    +"""Hidden tests for geometry — verify validation still works after refactor."""
+    +
+    +import math
+    +
+    +import pytest
+    +
+    +from src.solution import (
+    +    calculate_circle_area,
+    +    calculate_circle_perimeter,
+    +    calculate_rectangle_area,
+    +    calculate_rectangle_perimeter,
+    +)
+    +
+    +
+    +def test_rectangle_area_negative_length():
+    +    with pytest.raises(ValueError):
+    +        calculate_rectangle_area(-1, 4)
+    +
+    +
+    +def test_rectangle_area_negative_width():
+    +    with pytest.raises(ValueError):
+    +        calculate_rectangle_area(3, -1)
+    +
+    +
+    +def test_rectangle_perimeter_negative():
+    +    with pytest.raises(ValueError):
+    +        calculate_rectangle_perimeter(-1, 4)
+    +
+    +
+    +def test_circle_area_negative():
+    +    with pytest.raises(ValueError):
+    +        calculate_circle_area(-1)
+    +
+    +
+    +def test_circle_perimeter_negative():
+    +    with pytest.raises(ValueError):
+    +        calculate_circle_perimeter(-1)
+    +
+    +
+    +def test_rectangle_area_zero():
+    +    assert calculate_rectangle_area(0, 5) == 0
+    +    assert calculate_rectangle_area(5, 0) == 0
+    +
+    +
+    +def test_circle_area_zero():
+    +    assert calculate_circle_area(0) == 0
+    +
+    +
+    +def test_circle_perimeter_zero():
+    +    assert calculate_circle_perimeter(0) == 0
+    +
+    +
+    +def test_circle_area_value():
+    +    assert abs(calculate_circle_area(5) - math.pi * 25) < 1e-9
+    +
+    +
+    +def test_circle_perimeter_value():
+    +    assert abs(calculate_circle_perimeter(5) - 10 * math.pi) < 1e-9
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 300
+  metadata:
+    refactor_type: extract_validation
+    language: python
+    test_count: 15

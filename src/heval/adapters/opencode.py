@@ -23,7 +23,7 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
-from heval.adapters.base import AdapterInfo, BaseAdapter
+from heval.adapters.base import AdapterInfo, AdapterNotInstalledError, BaseAdapter
 from heval.adapters.registry import register_adapter
 from heval.adapters.utils import run_command
 
@@ -53,9 +53,12 @@ class OpenCodeAdapter(BaseAdapter):
         )
 
     async def prepare(self) -> None:
-        """Check that opencode is installed."""
-        # OpenCode may not be installed; we check at run time
-        pass
+        """Verify that opencode is installed and on PATH."""
+        if not shutil.which("opencode"):
+            raise AdapterNotInstalledError(
+                "opencode not found on PATH. "
+                "Install with: npm install -g opencode"
+            )
 
     async def run(self, task_prompt: str, timeout: int = 600) -> Any:
         """Run OpenCode with the given task prompt."""
@@ -75,7 +78,16 @@ class OpenCodeAdapter(BaseAdapter):
                 duration_ms=0,
             )
 
-        # Run opencode in non-interactive mode
+        cmd = self.get_command(task_prompt)
+
+        return await run_command(cmd, workdir, env, timeout)
+
+    def get_command(self, task_prompt: str) -> list[str]:
+        """Return the opencode command list for execution inside a container."""
+        # When running inside Docker, the binary is on the container PATH.
+        # Use the bare name so it resolves inside the container, not on the host.
+        opencode_bin = "opencode"
+
         cmd = [
             opencode_bin,
             "run",
@@ -91,7 +103,7 @@ class OpenCodeAdapter(BaseAdapter):
             provider = self.model.provider
             cmd.extend(["--model", f"{provider}/{self.model.name}"])
 
-        return await run_command(cmd, workdir, env, timeout)
+        return cmd
 
 
 register_adapter("opencode", OpenCodeAdapter)

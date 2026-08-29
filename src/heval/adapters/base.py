@@ -14,8 +14,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from heval.orchestrator.config import ModelSpec
+
+
+class AdapterNotInstalledError(RuntimeError):
+    """Raised when a harness executable is not found on PATH."""
 
 
 @dataclass
@@ -88,6 +93,51 @@ class BaseAdapter(ABC):
         """
         ...
 
+    def get_command(self, task_prompt: str) -> list[str]:
+        """Return the raw command list to run the harness, without executing it.
+
+        This is used by the Docker runner to execute the harness CLI inside a
+        container via ``docker exec``. The returned command must not depend on
+        the host filesystem layout (the workdir is mounted at ``/workspace``).
+
+        Subclasses must override this to return the harness-specific command.
+        The default implementation raises ``NotImplementedError``.
+
+        Args:
+            task_prompt: The task to give to the harness.
+
+        Returns:
+            A list of command parts (argv) to execute.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement get_command(); "
+            "it cannot be used with the Docker runner."
+        )
+
+    def _gateway_url_with_trace(self) -> str:
+        """Return the gateway URL with trace_id appended as a query param.
+
+        If no trace_id is set, returns the gateway URL unchanged.
+        Preserves any existing query parameters.
+
+        For the OpenAI provider, ``/v1`` is appended to the path so the
+        base URL ends with ``/v1`` (the gateway proxy routes
+        ``/v1/chat/completions`` and ``/v1/responses``).
+        """
+        if not self.gateway_url:
+            return ""
+        parsed = urlparse(self.gateway_url)
+        # Append /v1 to the path for OpenAI provider if not already present.
+        if self.model.provider == "openai" and not parsed.path.rstrip("/").endswith(
+            "/v1"
+        ):
+            parsed = parsed._replace(path=parsed.path.rstrip("/") + "/v1")
+        if not self.trace_id:
+            return urlunparse(parsed)
+        params = parse_qsl(parsed.query)
+        params.append(("trace_id", self.trace_id))
+        return urlunparse(parsed._replace(query=urlencode(params)))
+
     def get_env(self) -> dict[str, str]:
         """Get environment variables for the harness process.
 
@@ -113,11 +163,15 @@ class BaseAdapter(ABC):
                 env[key] = val
 
         if self.gateway_url:
-            # Route provider traffic through the gateway proxy
+            # Route provider traffic through the gateway proxy.
+            # Append trace_id as a query parameter so the gateway can
+            # attribute calls to this cell without relying on headers
+            # (which the harness subprocesses don't reliably inject).
+            gateway_url = self._gateway_url_with_trace()
             if self.model.provider == "anthropic":
-                env["ANTHROPIC_BASE_URL"] = self.gateway_url
+                env["ANTHROPIC_BASE_URL"] = gateway_url
             elif self.model.provider == "openai":
-                env["OPENAI_BASE_URL"] = self.gateway_url
+                env["OPENAI_BASE_URL"] = gateway_url
 
         # Set API key from the configured env var
         api_key = os.environ.get(self.model.api_key_env, "")

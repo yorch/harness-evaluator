@@ -148,3 +148,43 @@ class TestOrchestratorBudget:
         # First cell runs, subsequent cells should be skipped
         assert progress.completed >= 1
         assert progress.skipped >= 1
+
+    async def test_budget_lock_protects_save(
+        self, tmp_task_dir, results_store
+    ):
+        """Test that parallel cells don't exceed the budget.
+
+        With the budget lock protecting the save, only one cell's cost
+        should be recorded before the next cell's pre-check sees it.
+        """
+        config = RunConfig(
+            name="budget-lock-test",
+            harnesses=[HarnessSpec(name="h1", adapter="a")],
+            models=[ModelSpec(name="m1", provider="anthropic", api_key_env="X")],
+            tasks=["*"],
+            task_library_path=str(tmp_task_dir),
+            repeats=4,
+            budget_usd=0.002,  # Only enough for 2 cells at 0.001 each
+            parallel_runs=4,
+        )
+
+        async def costly_cell(cell):
+            return {
+                "exit_class": "pass",
+                "success": 1.0,
+                "usage": TokenUsage(input_tokens=100, output_tokens=50),
+                "total_cost": 0.001,
+                "latency_ms": 100,
+            }
+
+        orch = Orchestrator(config, results_store, run_cell_fn=costly_cell)
+        progress = await orch.run()
+
+        # Total recorded cost should not exceed the budget by more than
+        # one cell's cost (the pre-check / post-update pattern means at
+        # most parallel_runs cells can pass the pre-check before any save,
+        # but the save is under the lock so cost is always consistent).
+        total_cost = results_store.get_total_cost("budget-lock-test")
+        assert total_cost <= 0.002 + 0.001  # budget + at most one extra cell
+        assert progress.completed >= 1
+        assert progress.skipped >= 1

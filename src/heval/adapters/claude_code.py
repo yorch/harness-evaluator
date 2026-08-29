@@ -30,7 +30,7 @@ import re
 import shutil
 from typing import Any
 
-from heval.adapters.base import AdapterInfo, BaseAdapter
+from heval.adapters.base import AdapterInfo, AdapterNotInstalledError, BaseAdapter
 from heval.adapters.registry import register_adapter
 from heval.adapters.utils import run_command
 
@@ -71,8 +71,12 @@ class ClaudeCodeAdapter(BaseAdapter):
         )
 
     async def prepare(self) -> None:
-        """Check that claude is installed."""
-        pass  # Checked at run time
+        """Verify that claude is installed and on PATH."""
+        if not shutil.which("claude"):
+            raise AdapterNotInstalledError(
+                "claude not found on PATH. "
+                "Install with: npm install -g @anthropic-ai/claude-code"
+            )
 
     async def run(self, task_prompt: str, timeout: int = 600) -> Any:
         """Run Claude Code with the given task prompt."""
@@ -90,6 +94,30 @@ class ClaudeCodeAdapter(BaseAdapter):
                 timed_out=False,
                 duration_ms=0,
             )
+
+        cmd = self.get_command(task_prompt)
+
+        result = await run_command(cmd, workdir, env, timeout)
+
+        # Parse JSON output if requested
+        output_format = self.config.get("output_format", "text")
+        if output_format == "json" and result.stdout:
+            try:
+                clean = _strip_ansi(result.stdout).strip()
+                parsed = json.loads(clean)
+                result.metadata["parsed_output"] = parsed
+                result.metadata["num_turns"] = parsed.get("num_turns")
+                result.metadata["session_id"] = parsed.get("session_id")
+            except json.JSONDecodeError:
+                pass
+
+        return result
+
+    def get_command(self, task_prompt: str) -> list[str]:
+        """Return the claude command list for execution inside a container."""
+        # When running inside Docker, the binary is on the container PATH.
+        # Use the bare name so it resolves inside the container, not on the host.
+        claude_bin = "claude"
 
         # Build command for non-interactive mode
         cmd = [
@@ -116,20 +144,7 @@ class ClaudeCodeAdapter(BaseAdapter):
             else:
                 cmd.extend(["--allowedTools", str(allowed_tools)])
 
-        result = await run_command(cmd, workdir, env, timeout)
-
-        # Parse JSON output if requested
-        if output_format == "json" and result.stdout:
-            try:
-                clean = _strip_ansi(result.stdout).strip()
-                parsed = json.loads(clean)
-                result.metadata["parsed_output"] = parsed
-                result.metadata["num_turns"] = parsed.get("num_turns")
-                result.metadata["session_id"] = parsed.get("session_id")
-            except json.JSONDecodeError:
-                pass
-
-        return result
+        return cmd
 
 
 register_adapter("claude-code", ClaudeCodeAdapter)

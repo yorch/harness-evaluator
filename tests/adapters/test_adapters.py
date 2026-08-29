@@ -119,7 +119,7 @@ class TestAdapterEnv:
         )
         assert adapter is not None
         env = adapter.get_env()
-        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877"
+        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877?trace_id=test-cell-1"
         assert env["HEVAL_TRACE_ID"] == "test-cell-1"
 
     def test_openai_gateway_env(self, tmp_workdir, openai_model):
@@ -132,7 +132,7 @@ class TestAdapterEnv:
         )
         assert adapter is not None
         env = adapter.get_env()
-        assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8877"
+        assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8877/v1?trace_id=test-cell-2"
         assert env["HEVAL_TRACE_ID"] == "test-cell-2"
 
     def test_no_gateway_url(self, tmp_workdir, anthropic_model):
@@ -147,6 +147,62 @@ class TestAdapterEnv:
         assert "ANTHROPIC_BASE_URL" not in env or env.get(
             "ANTHROPIC_BASE_URL"
         ) == os.environ.get("ANTHROPIC_BASE_URL", "")
+
+    def test_gateway_url_no_trace_id(self, tmp_workdir, anthropic_model):
+        """Gateway URL is unchanged when no trace_id is set."""
+        adapter = create_adapter(
+            "claude-code",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+            gateway_url="http://127.0.0.1:8877",
+        )
+        assert adapter is not None
+        env = adapter.get_env()
+        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877"
+        assert "HEVAL_TRACE_ID" not in env
+
+    def test_gateway_url_with_trace_id_appended(self, tmp_workdir, anthropic_model):
+        """trace_id is appended as a query param to the gateway URL."""
+        adapter = create_adapter(
+            "claude-code",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+            gateway_url="http://127.0.0.1:8877",
+            trace_id="cell-abc-123",
+        )
+        assert adapter is not None
+        env = adapter.get_env()
+        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877?trace_id=cell-abc-123"
+
+    def test_gateway_url_preserves_existing_query_params(
+        self, tmp_workdir, anthropic_model
+    ):
+        """Existing query params on the gateway URL are preserved."""
+        adapter = create_adapter(
+            "claude-code",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+            gateway_url="http://127.0.0.1:8877?foo=bar",
+            trace_id="cell-xyz",
+        )
+        assert adapter is not None
+        env = adapter.get_env()
+        url = env["ANTHROPIC_BASE_URL"]
+        assert "foo=bar" in url
+        assert "trace_id=cell-xyz" in url
+
+    def test_gateway_url_trace_id_openai(self, tmp_workdir, openai_model):
+        """trace_id is appended to the OpenAI gateway URL too."""
+        adapter = create_adapter(
+            "codex",
+            workdir=str(tmp_workdir),
+            model=openai_model,
+            gateway_url="http://localhost:9999",
+            trace_id="openai-cell",
+        )
+        assert adapter is not None
+        env = adapter.get_env()
+        assert env["OPENAI_BASE_URL"] == "http://localhost:9999/v1?trace_id=openai-cell"
 
 
 class TestAdapterRunMissingExecutable:
@@ -245,6 +301,123 @@ class TestAdapterEnvAllowlist:
         assert adapter is not None
         env = adapter.get_env()
         assert "PATH" in env
+
+
+class TestAdapterPrepare:
+    """Tests that adapter prepare() verifies harness installation."""
+
+    async def test_claude_prepare_raises_when_missing(
+        self, tmp_workdir, anthropic_model, monkeypatch
+    ):
+        """Test that prepare() raises when claude is not installed."""
+        from heval.adapters.base import AdapterNotInstalledError
+
+        monkeypatch.setattr("heval.adapters.claude_code.shutil.which", lambda x: None)
+        adapter = create_adapter(
+            "claude-code",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+        )
+        assert adapter is not None
+        with pytest.raises(AdapterNotInstalledError, match="claude not found"):
+            await adapter.prepare()
+
+    async def test_claude_prepare_passes_when_installed(
+        self, tmp_workdir, anthropic_model, monkeypatch
+    ):
+        """Test that prepare() succeeds when claude is installed."""
+        monkeypatch.setattr(
+            "heval.adapters.claude_code.shutil.which",
+            lambda x: "/usr/bin/claude" if x == "claude" else None,
+        )
+        adapter = create_adapter(
+            "claude-code",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+        )
+        assert adapter is not None
+        await adapter.prepare()  # Should not raise
+
+    async def test_codex_prepare_raises_when_missing(
+        self, tmp_workdir, openai_model, monkeypatch
+    ):
+        """Test that prepare() raises when codex is not installed."""
+        from heval.adapters.base import AdapterNotInstalledError
+
+        monkeypatch.setattr("heval.adapters.codex.shutil.which", lambda x: None)
+        adapter = create_adapter(
+            "codex",
+            workdir=str(tmp_workdir),
+            model=openai_model,
+        )
+        assert adapter is not None
+        with pytest.raises(AdapterNotInstalledError, match="codex not found"):
+            await adapter.prepare()
+
+    async def test_opencode_prepare_raises_when_missing(
+        self, tmp_workdir, anthropic_model, monkeypatch
+    ):
+        """Test that prepare() raises when opencode is not installed."""
+        from heval.adapters.base import AdapterNotInstalledError
+
+        monkeypatch.setattr("heval.adapters.opencode.shutil.which", lambda x: None)
+        adapter = create_adapter(
+            "opencode",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+        )
+        assert adapter is not None
+        with pytest.raises(AdapterNotInstalledError, match="opencode not found"):
+            await adapter.prepare()
+
+    async def test_pi_prepare_raises_when_missing(
+        self, tmp_workdir, anthropic_model, monkeypatch
+    ):
+        """Test that prepare() raises when pi is not installed."""
+        from heval.adapters.base import AdapterNotInstalledError
+
+        monkeypatch.setattr("heval.adapters.pi.shutil.which", lambda x: None)
+        adapter = create_adapter(
+            "pi",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+        )
+        assert adapter is not None
+        with pytest.raises(AdapterNotInstalledError, match="pi not found"):
+            await adapter.prepare()
+
+    async def test_omp_prepare_raises_when_missing(
+        self, tmp_workdir, anthropic_model, monkeypatch
+    ):
+        """Test that prepare() raises when omp is not installed."""
+        from heval.adapters.base import AdapterNotInstalledError
+
+        monkeypatch.setattr("heval.adapters.omp.shutil.which", lambda x: None)
+        adapter = create_adapter(
+            "omp",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+        )
+        assert adapter is not None
+        with pytest.raises(AdapterNotInstalledError, match="omp not found"):
+            await adapter.prepare()
+
+    async def test_prepare_error_includes_install_instructions(
+        self, tmp_workdir, anthropic_model, monkeypatch
+    ):
+        """Test that the error message includes install instructions."""
+        from heval.adapters.base import AdapterNotInstalledError
+
+        monkeypatch.setattr("heval.adapters.claude_code.shutil.which", lambda x: None)
+        adapter = create_adapter(
+            "claude-code",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+        )
+        assert adapter is not None
+        with pytest.raises(AdapterNotInstalledError) as exc_info:
+            await adapter.prepare()
+        assert "npm install" in str(exc_info.value)
 
 
 class TestClaudeCodeAnsiStripping:
