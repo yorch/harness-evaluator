@@ -37,6 +37,7 @@ The SWE evaluator (`src/heval/evaluator/swe.py`) evaluates tasks with hidden tes
 4. Parse test output
    │  Supports pytest format: "X passed, Y failed, Z errors"
    │  Supports unittest format: "Ran X tests" + "OK"/"FAILED"
+   │  Supports bun test format: "X pass / Y fail"
    │  If 0 tests collected with returncode=0 → CRASH (not a silent pass)
    │
 5. Calculate partial credit

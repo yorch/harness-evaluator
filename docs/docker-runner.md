@@ -84,10 +84,10 @@ The container runs `sleep <timeout+30>` so the runner can `docker exec` into it 
    │  • --stop-timeout <task_timeout>
    │  • sleep <timeout+30> as the command
    │
-4. Host: docker exec -w /workspace/repo -- bash /workspace/setup.sh
+4. Host: docker exec -w /workspace/repo <container> bash /workspace/setup.sh
    │  Run setup script if present (e.g. pip install -r requirements.txt)
    │
-5. Host: docker exec -w /workspace/repo -- <harness command>
+5. Host: docker exec -w /workspace/repo <container> <harness command>
    │  Execute the harness CLI (from adapter.get_command())
    │  Timeout enforced via asyncio.wait_for
    │

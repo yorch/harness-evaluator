@@ -1,3 +1,8 @@
+---
+title: Gateway Proxy
+description: Custom HTTP/SSE proxy that intercepts provider API calls for token, cost, and latency accounting.
+---
+
 # Gateway Proxy
 
 The gateway proxy is a custom HTTP/SSE server that sits between an agentic

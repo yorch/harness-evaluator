@@ -34,7 +34,7 @@ RunConfig.build_matrix()
       )
 ```
 
-For example, with 5 harnesses, 2 models, 6 tasks, and 5 repeats, the matrix has **300 cells**.
+For example, with 5 harnesses, 2 models, 20 tasks, and 5 repeats, the matrix has **1000 cells**.
 
 ### Cell ID format
 
@@ -134,8 +134,8 @@ Resumability is **cell-level only**:
 3. On re-run, only incomplete cells are executed
 
 ```
-heval run runs/sample-run.yaml     # Runs 300 cells, crashes after 150
-heval run runs/sample-run.yaml     # Skips 150 completed, runs remaining 150
+heval run runs/sample-run.yaml     # Runs 1000 cells, crashes after 500
+heval run runs/sample-run.yaml     # Skips 500 completed, runs remaining 500
 ```
 
 > **Note**: There is no mid-flight agent process resumption. Incomplete cells are re-run from scratch — the workdir is cleaned, the gateway calls for that trace_id are deleted, and the container starts fresh.

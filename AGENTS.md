@@ -12,7 +12,7 @@ uv run ruff check src/ tests/
 # Type check (fast, ~3s)
 uv run mypy src/heval/
 
-# Tests (full suite ~10s, 248 tests)
+# Tests (full suite ~10s, 271 tests)
 uv run pytest tests/ -q
 
 # All gates at once — must pass before completing any change
@@ -109,3 +109,5 @@ ci: bump actions/checkout to v7
 - `.github/workflows/ci.yml` — ruff + mypy + pytest on every push/PR to main
 - `.github/workflows/docker.yml` — builds and verifies the Docker image on
   Dockerfile changes (main only for push, PRs verify build)
+- `.github/workflows/astro.yml` — builds and deploys the Astro+Starlight docs
+  site to GitHub Pages on changes to `site/`, `docs/`, or the workflow

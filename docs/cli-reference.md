@@ -67,12 +67,12 @@ Run: broad-first-pass
   Harnesses: ['opencode', 'claude-code', 'codex', 'pi', 'omp']
   Models: ['claude-sonnet-4-20250514', 'gpt-4o']
   Repeats: 5
-  Total cells: 300
+  Total cells: 1000
 Gateway reachable on port 8877
 
 Run complete
-  Passed: 180
-  Failed: 120
+  Passed: 600
+  Failed: 400
   Skipped: 0
   Cost: $12.3456
 ```
@@ -84,7 +84,7 @@ Run: broad-first-pass
   Harnesses: ['opencode', 'claude-code', 'codex', 'pi', 'omp']
   Models: ['claude-sonnet-4-20250514', 'gpt-4o']
   Repeats: 5
-  Total cells: 300
+  Total cells: 1000
 
                           Eval Matrix
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━┓
@@ -287,7 +287,7 @@ No arguments or options.
 
 ### Output
 
-See [Adapters](adapters.md#listing-adapters) for example output.
+See [Adapters](adapters/#listing-adapters) for example output.
 
 ## heval stats
 

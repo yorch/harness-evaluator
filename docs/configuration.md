@@ -192,6 +192,54 @@ tasks:
     language: python
 ```
 
+### TypeScript tasks
+
+TypeScript tasks use `bun test` as the test runner (Bun is installed in the Docker image). The repo structure uses `.ts` files:
+
+```yaml
+tasks:
+- id: swe-bugfix-005
+  name: Fix sumPositive
+  track: swe
+  difficulty: easy
+  description: Fix the sumPositive function to include zeros and handle empty arrays.
+  repo_url: tasks/repos/swe-bugfix-005
+  repo_commit: 7a3c9e1f4b2d8a5601c3e7f9d4a8b6c2e0f1d3a5
+  setup_script: bun install
+  task_prompt: |-
+    Fix the `sumPositive` function in src/solution.ts...
+  test_command: bun test
+  test_patch: |
+    diff --git a/tests/test_hidden.test.ts b/tests/test_hidden.test.ts
+    new file mode 100644
+    ...
+  expected_files:
+  - src/solution.ts
+  timeout_seconds: 300
+  metadata:
+    bug_type: logic_error
+    language: typescript
+```
+
+Open-ended TypeScript tasks don't need a `repo_url` or `test_patch` — the harness creates files from scratch:
+
+```yaml
+tasks:
+- id: open-design-006
+  name: Build an HTTP router
+  track: open_ended
+  difficulty: medium
+  task_prompt: 'Design and implement an HTTP router in src/router.ts...'
+  test_command: bun test
+  expected_files:
+  - src/router.ts
+  - tests/test_router.test.ts
+  timeout_seconds: 600
+  metadata:
+    design_type: http_router
+    language: typescript
+```
+
 ### Field reference
 
 #### `id`

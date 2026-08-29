@@ -2,13 +2,14 @@
 
 [![CI](https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/ci.yml)
 [![Docker](https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/docker.yml)
-[![Pages](https://github.com/yorch/heval/actions/workflows/pages.yml/badge.svg)](https://yorch.github.io/heval/)
+[![Docs Site](https://github.com/yorch/heval/actions/workflows/astro.yml/badge.svg)](https://yorch.github.io/heval/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Harness evaluator: compare agentic coding harnesses (Claude Code, Codex, Pi,
 OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.
 
-See [DESIGN.md](DESIGN.md) for the full design specification.
+See [DESIGN.md](DESIGN.md) for the full design specification and
+[the docs site](https://yorch.github.io/heval/) for comprehensive documentation.
 
 ## Quick start
 
@@ -16,8 +17,8 @@ See [DESIGN.md](DESIGN.md) for the full design specification.
 # 1. Install dependencies
 uv sync --extra dev
 
-# 2. Build the Docker image (contains all 5 harnesses + Python + Git)
-docker build -t heval-runner:latest .
+# 2. Pull the pre-built Docker image (or build locally with: docker build -t heval-runner:latest .)
+docker pull ghcr.io/yorch/heval-runner:latest
 
 # 3. Set API keys
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -32,16 +33,20 @@ heval run runs/sample-minimal.yaml
 # Or dry-run to see the matrix without executing
 heval run runs/sample-minimal.yaml --dry-run
 
-# Full sweep (all 5 harnesses, 2 providers, all tasks)
-heval run runs/sample-run.yaml
+# Curated 20-task mix (5 harnesses × 2 models × 20 tasks × 3 repeats = 600 cells)
+heval run runs/task-mix.yaml --dry-run
 ```
 
 ## Docker image
 
-The runner executes harnesses inside an isolated Docker container. Build the
-image (contains all 5 harnesses + Python + Git):
+The runner executes harnesses inside an isolated Docker container. A pre-built
+image is available on GHCR (recommended), or you can build locally:
 
 ```bash
+# Pull the pre-built image (recommended)
+docker pull ghcr.io/yorch/heval-runner:latest
+
+# Or build locally
 docker build -t heval-runner:latest .
 ```
 
@@ -272,7 +277,7 @@ heval stats my-run --db heval_results.db
   token usage, cost, and latency with full request/response logging.
 - **Orchestrator**: builds the eval matrix (harness × model × task × repeats),
   manages budget caps, and handles cell-level resumability.
-- **Runner**: Docker-based isolation, one container per run.
+- **Runner**: Docker-based isolation, one container per eval cell.
 - **Adapters**: per-harness integration (Python core + TS shims where needed).
 - **Evaluator**: SWE-bench-style (hidden tests) and open-ended (LLM judge) tracks.
 - **Reporting**: CLI reports + static HTML + interactive web dashboard.

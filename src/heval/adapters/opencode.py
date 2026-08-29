@@ -57,7 +57,7 @@ class OpenCodeAdapter(BaseAdapter):
         if not shutil.which("opencode"):
             raise AdapterNotInstalledError(
                 "opencode not found on PATH. "
-                "Install with: npm install -g opencode"
+                "Install with: npm install -g opencode-ai"
             )
 
     async def run(self, task_prompt: str, timeout: int = 600) -> Any:
@@ -73,7 +73,7 @@ class OpenCodeAdapter(BaseAdapter):
             return AdapterResult(
                 exit_code=-1,
                 stdout="",
-                stderr="opencode not found. Install with: npm install -g opencode",
+                stderr="opencode not found. Install with: npm install -g opencode-ai",
                 timed_out=False,
                 duration_ms=0,
             )

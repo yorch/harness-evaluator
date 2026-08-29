@@ -258,7 +258,7 @@ Once the minimal run works, try the full sweep:
 heval run runs/sample-run.yaml
 ```
 
-This runs all 5 harnesses × 2 models × all tasks × 5 repeats. With 6 tasks, that's 300 cells. Budget cap is $100.
+This runs all 5 harnesses × 2 models × all tasks × 5 repeats. With 20 tasks, that's 1000 cells. Budget cap is $100.
 
 > **Warning**: The full sweep can take hours and cost significant money. Start with a small budget and fewer repeats to validate before scaling up.
 
@@ -273,7 +273,7 @@ heval calibrate --model claude-sonnet-4-20250514
 
 This verifies the judge produces consistent scores against known anchor submissions. If calibration fails (MAE > 0.15), the open-ended track should be flagged as unreliable.
 
-See [Evaluators](evaluators.md#calibration) for details.
+See [Evaluators](evaluators/#calibration) for details.
 
 ## Creating a custom run config
 
@@ -347,7 +347,7 @@ If using the GHCR image, set `docker_image: "ghcr.io/yorch/heval-runner:latest"`
 WARNING: No pricing found for model 'my-model'; cost will be $0
 ```
 
-Add the model to `DEFAULT_PRICING` in `src/heval/gateway/models.py`. See [Configuration](configuration.md#pricing-tables).
+Add the model to `DEFAULT_PRICING` in `src/heval/gateway/models.py`. See [Configuration](configuration/#pricing-tables).
 
 ### Harness binary not found in container
 

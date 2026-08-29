@@ -81,10 +81,10 @@ Leaderboards can be filtered by tier. Comparisons across tiers are flagged.
 
 ## Isolation
 
-- Docker container per run, disposable
+- Docker container per eval cell, disposable
 - Controlled network policy (block non-provider traffic unless task requires it)
 - Hosted API models only for v1 (local models out of scope)
-- Fresh repo checkout per run
+- Fresh repo checkout per cell
 
 ## Statistics
 
@@ -100,15 +100,15 @@ Leaderboards can be filtered by tier. Comparisons across tiers are flagged.
 Every run is classified into one of:
 - **PASS** — task succeeded (tests pass / judge approves)
 - **FAIL** — task failed, non-retryable (wrong answer, assertion failure, final-answer mismatch)
-- **RETRYABLE_KILL** — run killed by transient issue (rate limit, OOM, timeout, provider error). Workdir preserved. Retried with exponential backoff. Does NOT enter significance tests as a failure; feeds a reliability metric.
+- **RETRYABLE_KILL** — run killed by transient issue (rate limit, OOM, timeout, provider error). Retried with exponential backoff. Counted as failure (success=0.0) in the current implementation; the exit class is preserved for future reliability analysis.
 - **NON_RETRYABLE_KILL** — run killed by non-transient issue (harness crash, config error). Counted as failure.
 
-Only PASS and FAIL enter the effectiveness significance tests. RETRYABLE_KILL and NON_RETRYABLE_KILL feed a separate reliability metric. This prevents transient infra issues from masquerading as task failures and biasing the mixed-effects model.
+All exit classes enter the effectiveness significance tests. Kills are recorded as `success=0.0`. The exit class is preserved in the results database for later reliability analysis, but the current statistics module does not filter by exit class.
 
 ## Resumability
 
 - Cell-level only: skip already-completed cells, re-run incomplete ones from scratch
-- Workdir preserved on kill (for retry of transient kills)
+- Workdir cleaned and re-initialized on re-run (no preserved state from killed cells)
 - RETRYABLE_KILL: retry with exponential backoff, up to 3 attempts
 - NON_RETRYABLE_KILL or FAIL: counted as failure, not retried
 - No mid-flight agent process resumption
@@ -128,15 +128,15 @@ Orchestrator (Python)
   └── statistics              — mixed-effects model, variance decomposition
 
 Runner (Docker)
-  ├── per-run container       — fresh, disposable, network-controlled
+  ├── per-cell container       — fresh, disposable, network-controlled
   └── harness launch          — adapter installs + configures + runs harness
 
 Harness Adapter Layer (Python + TS shims)
   ├── OpenCode adapter        — TS shim, full observability
   ├── Claude Code adapter     — env var proxy, partial observability
-  ├── Codex adapter           — TS shim, partial/full observability
-  ├── Pi adapter              — TBD, partial/minimal observability
-  └── OMP adapter             — TBD, partial/minimal observability
+  ├── Codex adapter           — TS shim, partial observability
+  ├── Pi adapter              — minimal observability
+  └── OMP adapter             — minimal observability
 
 Provider Gateway (Python)
   ├── HTTP/SSE proxy          — intercepts provider calls
@@ -151,15 +151,13 @@ Evaluator (Python)
   ├── Open track              — frozen judge, rubric, structural checks
   └── error classification    — per-run failure mode
 
-Results Store (SQLite + parquet)
+Results Store (SQLite)
   ├── per-cell metrics
   ├── raw traces              — full request/response logs
   └── harness metadata        — prompt, tools, config, observability tier
 
 Reporting + Dashboard (Python/FastAPI)
   ├── within-model leaderboards
-  ├── within-harness leaderboards
-  ├── Pareto fronts (per model, per track)
   ├── observability tier filtering
   ├── transparency/reconciliation flags
   ├── uncertainty bands, variance decomposition

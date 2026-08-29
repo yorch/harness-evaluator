@@ -299,7 +299,7 @@ Builds the Astro + Starlight documentation site from `site/` and deploys it to G
 
 ## Adding a new harness adapter
 
-See [Adapters](adapters.md#adding-a-new-adapter) for the step-by-step guide.
+See [Adapters](adapters/#adding-a-new-adapter) for the step-by-step guide.
 
 ## Adding a new task
 
@@ -309,7 +309,7 @@ See [Adapters](adapters.md#adding-a-new-adapter) for the step-by-step guide.
 4. For SWE tasks: write a `test_patch` with hidden tests
 5. For open-ended tasks: set `expected_files` and optionally `test_command`
 
-See [Configuration](configuration.md#task-definitions) for the full task spec.
+See [Configuration](configuration/#task-definitions) for the full task spec.
 
 ## Adding a new model to pricing
 
