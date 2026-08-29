@@ -230,7 +230,7 @@ class TestSetupScriptWritten:
                 side_effect=docker_results,
             ),
             patch("heval.runner.docker.subprocess.run") as mock_run,
-            patch("heval.adapters.claude_code.shutil.which", return_value="/usr/bin/claude"),
+            patch("heval.adapters.base.shutil.which", return_value="/usr/bin/claude"),
         ):
             mock_run.side_effect = git_results
 

@@ -10,6 +10,7 @@ and provides a uniform interface for the runner to:
 from __future__ import annotations
 
 import os
+import shutil
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -186,6 +187,45 @@ class BaseAdapter(ABC):
             env["HEVAL_TRACE_ID"] = self.trace_id
 
         return env
+
+    def _repo_dir(self) -> Path:
+        """Return the directory the harness should run in.
+
+        Prefers ``<workdir>/repo`` (created when a task has a repo_url) and
+        falls back to the workdir itself for repo-less tasks.
+        """
+        repo = self.workdir / "repo"
+        return repo if repo.exists() else self.workdir
+
+    def _assert_installed(self, binary: str) -> None:
+        """Raise AdapterNotInstalledError if ``binary`` is not on PATH."""
+        if shutil.which(binary) is None:
+            raise AdapterNotInstalledError(
+                f"{binary} not found on PATH. {self.info().install_instructions}"
+            )
+
+    async def _run_binary(
+        self, binary: str, task_prompt: str, timeout: int
+    ) -> AdapterResult:
+        """Shared run() implementation: verify install, build+exec the command.
+
+        Returns an error AdapterResult (rather than raising) when the binary is
+        missing on the host, so a missing harness is recorded as a failed cell
+        instead of crashing the runner.
+        """
+        # Local import to avoid a circular import (utils imports AdapterResult).
+        from heval.adapters.utils import run_command
+
+        if shutil.which(binary) is None:
+            return AdapterResult(
+                exit_code=-1,
+                stdout="",
+                stderr=f"{binary} not found. {self.info().install_instructions}",
+                timed_out=False,
+                duration_ms=0.0,
+            )
+        cmd = self.get_command(task_prompt)
+        return await run_command(cmd, self._repo_dir(), self.get_env(), timeout)
 
     async def cleanup(self) -> None:
         """Clean up after the harness run. Override if needed."""

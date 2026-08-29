@@ -332,11 +332,13 @@ class FrozenJudge:
         api_key: str | None = None,
         model: str = "claude-sonnet-4-20250514",
         gateway_url: str | None = None,
+        provider: str = "anthropic",
     ) -> None:
         self.version = version
         self.api_key = api_key
         self.model = model
         self.gateway_url = gateway_url
+        self.provider = provider
 
     def get_prompt(
         self, task: TaskSpec, diff: str, rubric: Rubric
@@ -434,49 +436,66 @@ class FrozenJudge:
         # Use httpx to call the API
         import httpx
 
+        if self.provider == "openai":
+            return await self._call_openai(prompt, trace_id)
+        return await self._call_anthropic(prompt, trace_id, httpx)
+
+    async def _call_anthropic(self, prompt: str, trace_id: str | None, httpx: Any) -> str:
+        # temperature=0 keeps the frozen judge deterministic.
         body = {
             "model": self.model,
             "max_tokens": 4096,
+            "temperature": 0,
             "messages": [{"role": "user", "content": prompt}],
         }
-
+        api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY")
+        headers: dict[str, str] = {"content-type": "application/json"}
+        if api_key:
+            headers["x-api-key"] = api_key
+            headers["anthropic-version"] = "2023-06-01"
         if self.gateway_url:
-            # Route through the gateway for token accounting.
-            # Read the API key from explicit config or the environment
-            # so the gateway can authenticate with the upstream provider.
-            api_key = self.api_key or os.environ.get("ANTHROPIC_API_KEY")
-            headers: dict[str, str] = {
-                "content-type": "application/json",
-            }
-            if api_key:
-                headers["x-api-key"] = api_key
-                headers["anthropic-version"] = "2023-06-01"
             if trace_id:
                 headers["x-heval-trace-id"] = trace_id
-
             url = f"{self.gateway_url.rstrip('/')}/v1/messages"
         else:
-            # Direct Anthropic API call (backward compat)
-            headers = {
-                "x-api-key": self.api_key or "",
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            }
             url = "https://api.anthropic.com/v1/messages"
 
         async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(
-                url,
-                headers=headers,
-                json=body,
-            )
+            resp = await client.post(url, headers=headers, json=body)
             resp.raise_for_status()
             data = resp.json()
-            # Extract text from response
             content = data.get("content", [])
             if content and isinstance(content, list):
-                text_val: str = content[0].get("text", "")
-                return text_val
+                return str(content[0].get("text", ""))
+            return ""
+
+    async def _call_openai(self, prompt: str, trace_id: str | None) -> str:
+        import httpx
+
+        body = {
+            "model": self.model,
+            "temperature": 0,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        api_key = self.api_key or os.environ.get("OPENAI_API_KEY")
+        headers: dict[str, str] = {"content-type": "application/json"}
+        if api_key:
+            headers["authorization"] = f"Bearer {api_key}"
+        if self.gateway_url:
+            if trace_id:
+                headers["x-heval-trace-id"] = trace_id
+            url = f"{self.gateway_url.rstrip('/')}/v1/chat/completions"
+        else:
+            url = "https://api.openai.com/v1/chat/completions"
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(url, headers=headers, json=body)
+            resp.raise_for_status()
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices and isinstance(choices, list):
+                message = choices[0].get("message", {})
+                return str(message.get("content", ""))
             return ""
 
     def _parse_response(self, response: str) -> JudgeResult:
@@ -492,7 +511,7 @@ class FrozenJudge:
         try:
             data = json.loads(text)
             return JudgeResult(
-                scores=data.get("scores", {}),
+                scores=self._coerce_scores(data.get("scores", {})),
                 justifications=data.get("justifications", {}),
                 overall_assessment=data.get("overall_assessment", ""),
             )
@@ -503,6 +522,24 @@ class FrozenJudge:
                 overall_assessment="",
                 error=f"Failed to parse judge response: {e}",
             )
+
+    @staticmethod
+    def _coerce_scores(raw: Any) -> dict[str, int]:
+        """Coerce judge scores to ints, tolerating strings/floats/nulls.
+
+        A well-formed JSON response whose score values are e.g. ``"5"`` or
+        ``5.5`` must not crash downstream ``Rubric.score_to_success`` (which
+        does ``min(score, max_score)``). Unparseable values become 0.
+        """
+        if not isinstance(raw, dict):
+            return {}
+        coerced: dict[str, int] = {}
+        for key, value in raw.items():
+            try:
+                coerced[str(key)] = int(round(float(value)))
+            except (TypeError, ValueError):
+                coerced[str(key)] = 0
+        return coerced
 
 
 class CalibrationSet:

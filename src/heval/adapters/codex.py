@@ -26,17 +26,8 @@ Limitations:
 
 from __future__ import annotations
 
-import shutil
-from typing import Any
-
-from heval.adapters.base import (
-    AdapterInfo,
-    AdapterNotInstalledError,
-    AdapterResult,
-    BaseAdapter,
-)
+from heval.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from heval.adapters.registry import register_adapter
-from heval.adapters.utils import run_command
 
 
 class CodexAdapter(BaseAdapter):
@@ -68,30 +59,11 @@ class CodexAdapter(BaseAdapter):
 
     async def prepare(self) -> None:
         """Verify that codex is installed and on PATH."""
-        if not shutil.which("codex"):
-            raise AdapterNotInstalledError(
-                "codex not found on PATH. "
-                "Install with: npm install -g @openai/codex"
-            )
+        self._assert_installed("codex")
 
-    async def run(self, task_prompt: str, timeout: int = 600) -> Any:
+    async def run(self, task_prompt: str, timeout: int = 600) -> AdapterResult:
         """Run Codex with the given task prompt using `codex exec`."""
-        env = self.get_env()
-        workdir = self.workdir / "repo" if (self.workdir / "repo").exists() else self.workdir
-
-        codex_bin = shutil.which("codex")
-        if not codex_bin:
-            return AdapterResult(
-                exit_code=-1,
-                stdout="",
-                stderr="codex not found. Install with: npm install -g @openai/codex",
-                timed_out=False,
-                duration_ms=0,
-            )
-
-        cmd = self.get_command(task_prompt)
-
-        return await run_command(cmd, workdir, env, timeout)
+        return await self._run_binary("codex", task_prompt, timeout)
 
     def get_command(self, task_prompt: str) -> list[str]:
         """Return the codex command list for execution inside a container."""

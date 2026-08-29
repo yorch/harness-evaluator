@@ -27,12 +27,9 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-from typing import Any
 
-from heval.adapters.base import AdapterInfo, AdapterNotInstalledError, BaseAdapter
+from heval.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from heval.adapters.registry import register_adapter
-from heval.adapters.utils import run_command
 
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -72,32 +69,11 @@ class ClaudeCodeAdapter(BaseAdapter):
 
     async def prepare(self) -> None:
         """Verify that claude is installed and on PATH."""
-        if not shutil.which("claude"):
-            raise AdapterNotInstalledError(
-                "claude not found on PATH. "
-                "Install with: npm install -g @anthropic-ai/claude-code"
-            )
+        self._assert_installed("claude")
 
-    async def run(self, task_prompt: str, timeout: int = 600) -> Any:
+    async def run(self, task_prompt: str, timeout: int = 600) -> AdapterResult:
         """Run Claude Code with the given task prompt."""
-        env = self.get_env()
-        workdir = self.workdir / "repo" if (self.workdir / "repo").exists() else self.workdir
-
-        claude_bin = shutil.which("claude")
-        if not claude_bin:
-            from heval.adapters.base import AdapterResult
-
-            return AdapterResult(
-                exit_code=-1,
-                stdout="",
-                stderr="claude not found. Install with: npm install -g @anthropic-ai/claude-code",
-                timed_out=False,
-                duration_ms=0,
-            )
-
-        cmd = self.get_command(task_prompt)
-
-        result = await run_command(cmd, workdir, env, timeout)
+        result = await self._run_binary("claude", task_prompt, timeout)
 
         # Parse JSON output if requested
         output_format = self.config.get("output_format", "text")
@@ -127,9 +103,9 @@ class ClaudeCodeAdapter(BaseAdapter):
             "--model", self.model.name,
         ]
 
-        # Add max turns if configured
+        # Add max turns if configured (use "is not None" so max_turns: 0 is honored)
         max_turns = self.config.get("max_turns")
-        if max_turns:
+        if max_turns is not None:
             cmd.extend(["--max-turns", str(max_turns)])
 
         # Add output format

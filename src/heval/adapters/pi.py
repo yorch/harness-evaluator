@@ -21,12 +21,8 @@ Limitations:
 
 from __future__ import annotations
 
-import shutil
-from typing import Any
-
-from heval.adapters.base import AdapterInfo, AdapterNotInstalledError, BaseAdapter
+from heval.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from heval.adapters.registry import register_adapter
-from heval.adapters.utils import run_command
 
 
 class PiAdapter(BaseAdapter):
@@ -57,31 +53,11 @@ class PiAdapter(BaseAdapter):
 
     async def prepare(self) -> None:
         """Verify that pi is installed and on PATH."""
-        if not shutil.which("pi"):
-            raise AdapterNotInstalledError(
-                "pi not found on PATH. Install with: pip install pi"
-            )
+        self._assert_installed("pi")
 
-    async def run(self, task_prompt: str, timeout: int = 600) -> Any:
+    async def run(self, task_prompt: str, timeout: int = 600) -> AdapterResult:
         """Run Pi with the given task prompt."""
-        env = self.get_env()
-        workdir = self.workdir / "repo" if (self.workdir / "repo").exists() else self.workdir
-
-        pi_bin = shutil.which("pi")
-        if not pi_bin:
-            from heval.adapters.base import AdapterResult
-
-            return AdapterResult(
-                exit_code=-1,
-                stdout="",
-                stderr="pi not found. Install with: pip install pi",
-                timed_out=False,
-                duration_ms=0,
-            )
-
-        cmd = self.get_command(task_prompt)
-
-        return await run_command(cmd, workdir, env, timeout)
+        return await self._run_binary("pi", task_prompt, timeout)
 
     def get_command(self, task_prompt: str) -> list[str]:
         """Return the pi command list for execution inside a container."""
@@ -95,9 +71,11 @@ class PiAdapter(BaseAdapter):
             "-p", task_prompt,
         ]
 
-        # Add model if configured
-        if self.config.get("model_flag"):
-            cmd.extend(["--model", self.config["model_flag"]])
+        # Model selection: prefer an explicit model_flag override, otherwise
+        # pass the configured ModelSpec name so the run actually uses it.
+        model_flag = self.config.get("model_flag", self.model.name)
+        if model_flag:
+            cmd.extend(["--model", str(model_flag)])
 
         return cmd
 

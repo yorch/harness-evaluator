@@ -56,17 +56,17 @@ async def run_command(
                 duration_ms=duration_ms,
             )
         except TimeoutError:
+            # Kill then drain the pipes with communicate() (do NOT wait()
+            # first — that reaps the process and can lose buffered output).
             proc.kill()
-            await proc.wait()
             duration_ms = (time.monotonic() - start) * 1000
-            # Try to capture partial output
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
                     proc.communicate(), timeout=5
                 )
                 stdout = stdout_bytes.decode("utf-8", errors="replace")
                 stderr = stderr_bytes.decode("utf-8", errors="replace")
-            except (TimeoutError, Exception):
+            except TimeoutError:
                 stdout, stderr = "", "Process killed after timeout"
 
             return AdapterResult(

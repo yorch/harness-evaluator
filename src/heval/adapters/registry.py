@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from heval.adapters.base import AdapterInfo, BaseAdapter
+from heval.orchestrator.config import ModelSpec
 
 # Registry of adapter name -> class
 _ADAPTERS: dict[str, type[BaseAdapter]] = {}
@@ -34,7 +35,7 @@ def list_adapters() -> dict[str, AdapterInfo]:
 def create_adapter(
     name: str,
     workdir: str,
-    model: Any,
+    model: ModelSpec,
     gateway_url: str | None = None,
     trace_id: str | None = None,
     config: dict[str, Any] | None = None,

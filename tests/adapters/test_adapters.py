@@ -211,7 +211,7 @@ class TestAdapterRunMissingExecutable:
         # Force shutil.which to return None
 
         monkeypatch.setattr(
-            "heval.adapters.claude_code.shutil.which", lambda x: None
+            "heval.adapters.base.shutil.which", lambda x: None
         )
         adapter = create_adapter(
             "claude-code",
@@ -225,7 +225,7 @@ class TestAdapterRunMissingExecutable:
 
     async def test_codex_not_installed(self, tmp_workdir, openai_model, monkeypatch):
         """Test that missing codex returns error result."""
-        monkeypatch.setattr("heval.adapters.codex.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "codex",
             workdir=str(tmp_workdir),
@@ -238,7 +238,7 @@ class TestAdapterRunMissingExecutable:
 
     async def test_opencode_not_installed(self, tmp_workdir, anthropic_model, monkeypatch):
         """Test that missing opencode returns error result."""
-        monkeypatch.setattr("heval.adapters.opencode.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "opencode",
             workdir=str(tmp_workdir),
@@ -251,7 +251,7 @@ class TestAdapterRunMissingExecutable:
 
     async def test_pi_not_installed(self, tmp_workdir, anthropic_model, monkeypatch):
         """Test that missing pi returns error result."""
-        monkeypatch.setattr("heval.adapters.pi.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "pi",
             workdir=str(tmp_workdir),
@@ -264,7 +264,7 @@ class TestAdapterRunMissingExecutable:
 
     async def test_omp_not_installed(self, tmp_workdir, anthropic_model, monkeypatch):
         """Test that missing omp returns error result."""
-        monkeypatch.setattr("heval.adapters.omp.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "omp",
             workdir=str(tmp_workdir),
@@ -312,7 +312,7 @@ class TestAdapterPrepare:
         """Test that prepare() raises when claude is not installed."""
         from heval.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.claude_code.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "claude-code",
             workdir=str(tmp_workdir),
@@ -327,7 +327,7 @@ class TestAdapterPrepare:
     ):
         """Test that prepare() succeeds when claude is installed."""
         monkeypatch.setattr(
-            "heval.adapters.claude_code.shutil.which",
+            "heval.adapters.base.shutil.which",
             lambda x: "/usr/bin/claude" if x == "claude" else None,
         )
         adapter = create_adapter(
@@ -344,7 +344,7 @@ class TestAdapterPrepare:
         """Test that prepare() raises when codex is not installed."""
         from heval.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.codex.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "codex",
             workdir=str(tmp_workdir),
@@ -360,7 +360,7 @@ class TestAdapterPrepare:
         """Test that prepare() raises when opencode is not installed."""
         from heval.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.opencode.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "opencode",
             workdir=str(tmp_workdir),
@@ -376,7 +376,7 @@ class TestAdapterPrepare:
         """Test that prepare() raises when pi is not installed."""
         from heval.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.pi.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "pi",
             workdir=str(tmp_workdir),
@@ -392,7 +392,7 @@ class TestAdapterPrepare:
         """Test that prepare() raises when omp is not installed."""
         from heval.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.omp.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "omp",
             workdir=str(tmp_workdir),
@@ -408,7 +408,7 @@ class TestAdapterPrepare:
         """Test that the error message includes install instructions."""
         from heval.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.claude_code.shutil.which", lambda x: None)
+        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "claude-code",
             workdir=str(tmp_workdir),

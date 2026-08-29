@@ -20,12 +20,8 @@ Limitations:
 
 from __future__ import annotations
 
-import shutil
-from typing import Any
-
-from heval.adapters.base import AdapterInfo, AdapterNotInstalledError, BaseAdapter
+from heval.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from heval.adapters.registry import register_adapter
-from heval.adapters.utils import run_command
 
 
 class OpenCodeAdapter(BaseAdapter):
@@ -54,33 +50,11 @@ class OpenCodeAdapter(BaseAdapter):
 
     async def prepare(self) -> None:
         """Verify that opencode is installed and on PATH."""
-        if not shutil.which("opencode"):
-            raise AdapterNotInstalledError(
-                "opencode not found on PATH. "
-                "Install with: npm install -g opencode-ai"
-            )
+        self._assert_installed("opencode")
 
-    async def run(self, task_prompt: str, timeout: int = 600) -> Any:
+    async def run(self, task_prompt: str, timeout: int = 600) -> AdapterResult:
         """Run OpenCode with the given task prompt."""
-        env = self.get_env()
-        workdir = self.workdir / "repo" if (self.workdir / "repo").exists() else self.workdir
-
-        # Find opencode executable
-        opencode_bin = shutil.which("opencode")
-        if not opencode_bin:
-            from heval.adapters.base import AdapterResult
-
-            return AdapterResult(
-                exit_code=-1,
-                stdout="",
-                stderr="opencode not found. Install with: npm install -g opencode-ai",
-                timed_out=False,
-                duration_ms=0,
-            )
-
-        cmd = self.get_command(task_prompt)
-
-        return await run_command(cmd, workdir, env, timeout)
+        return await self._run_binary("opencode", task_prompt, timeout)
 
     def get_command(self, task_prompt: str) -> list[str]:
         """Return the opencode command list for execution inside a container."""
