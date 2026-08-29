@@ -34,6 +34,41 @@ _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 _SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
 
 
+def default_task_library() -> str:
+    """Return the path to the bundled task library.
+
+    Tasks are shipped inside the wheel at ``heval/tasks`` (see the hatchling
+    force-include in pyproject.toml), so an installed heval can run without a
+    repository checkout. Falls back to the repo-root ``tasks/`` directory when
+    running from a source tree without the bundled copy.
+    """
+    import importlib.resources as resources
+
+    try:
+        bundled = resources.files("heval") / "tasks"
+        if bundled.is_dir():
+            return str(bundled)
+    except (ModuleNotFoundError, AttributeError):
+        pass
+    # Source-tree fallback: <repo>/tasks (config.py -> heval -> src -> repo).
+    return str(Path(__file__).resolve().parents[3] / "tasks")
+
+
+def default_docker_image() -> str:
+    """Return the default runner image, pinned to the installed heval version.
+
+    A given heval version pairs with the matching published runner image so
+    runs are reproducible. Falls back to ``:latest`` if the version is
+    unavailable.
+    """
+    try:
+        from heval import __version__
+
+        return f"ghcr.io/yorch/heval-runner:{__version__}"
+    except Exception:
+        return "ghcr.io/yorch/heval-runner:latest"
+
+
 class TaskTrack(StrEnum):
     SWE = "swe"
     OPEN_ENDED = "open_ended"
@@ -191,7 +226,9 @@ class RunConfig(BaseModel):
     models: list[ModelSpec]
     tasks: list[str]
     """Task IDs to run. Use '*' for all tasks in the library."""
-    task_library_path: str
+    task_library_path: str = Field(default_factory=default_task_library)
+    """Path to the task library. Defaults to the bundled library so an
+    installed heval works without a repo checkout."""
     repeats: int = 5
     budget_usd: float | None = None
     """Maximum total spend in USD. None = no cap."""
@@ -201,7 +238,7 @@ class RunConfig(BaseModel):
     gateway_db: str = "heval_gateway.db"
     results_db: str = "heval_results.db"
     workdir: str = "./heval_workdir"
-    docker_image: str = "heval-runner:latest"
+    docker_image: str = Field(default_factory=default_docker_image)
     parallel_runs: int = 1
     """Number of parallel container runs (1 = sequential)."""
 
@@ -223,8 +260,16 @@ class RunConfig(BaseModel):
         return cls(**data)
 
     def expand_tasks(self) -> list[TaskSpec]:
-        """Expand task IDs to full TaskSpecs from the library."""
+        """Expand task IDs to full TaskSpecs from the library.
+
+        Local ``repo_url`` fixtures are resolved to absolute paths relative to
+        the task library root so they work whether the library is the repo's
+        ``tasks/`` dir or the bundled ``heval/tasks`` inside an installed wheel.
+        """
         lib = TaskLibrary.from_directory(self.task_library_path)
+        lib_root = Path(self.task_library_path).resolve()
+        for task in lib.tasks:
+            self._normalize_repo_url(task, lib_root)
         if "*" in self.tasks:
             return lib.tasks
         task_map = {t.id: t for t in lib.tasks}
@@ -232,6 +277,27 @@ class RunConfig(BaseModel):
         if missing:
             raise ValueError(f"Unknown task IDs: {missing}. Available: {list(task_map.keys())}")
         return [task_map[tid] for tid in self.tasks]
+
+    @staticmethod
+    def _normalize_repo_url(task: TaskSpec, lib_root: Path) -> None:
+        """Rewrite a local repo_url to an absolute path under the library.
+
+        Task YAMLs historically use ``repo_url: tasks/repos/<id>`` (relative to
+        the repo root). The fixtures live under ``<lib_root>/repos/<id>``, so a
+        leading ``tasks/`` segment is stripped and the path is resolved against
+        the library root. Remote URLs (http/https/git/ssh) are left untouched.
+        """
+        url = task.repo_url
+        if not url:
+            return
+        if url.startswith(("http://", "https://", "git@", "ssh://")):
+            return
+        if Path(url).is_absolute():
+            return
+        rel = Path(url)
+        if rel.parts and rel.parts[0] == "tasks":
+            rel = Path(*rel.parts[1:])
+        task.repo_url = str((lib_root / rel).resolve())
 
     def build_matrix(self) -> list[RunCell]:
         """Build the full eval matrix: harness × model × task × repeat."""

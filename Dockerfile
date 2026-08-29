@@ -49,19 +49,29 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # ---------------------------------------------------------------------------
 # Harnesses (all installed globally via npm)
 # ---------------------------------------------------------------------------
-# Versions are pinned for reproducibility. Bump deliberately and re-verify.
+# Versions are customizable at build time and default to a pinned, verified
+# set for reproducibility. Override to evaluate a specific harness version:
+#   docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t heval-runner:cc-2.0.0 .
+# then reference that image via `docker_image:` in the run config.
+ARG CLAUDE_CODE_VERSION=2.1.251
+ARG CODEX_VERSION=0.151.0
+ARG OPENCODE_VERSION=1.18.25
+ARG PI_VERSION=0.84.4
+ARG OMP_VERSION=18.0.11
+ARG BUN_VERSION=1.4.0
+
 # Claude Code — Anthropic's CLI
-RUN npm install -g @anthropic-ai/claude-code@2.1.251
+RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # Codex — OpenAI's CLI
-RUN npm install -g @openai/codex@0.151.0
+RUN npm install -g @openai/codex@${CODEX_VERSION}
 
 # OpenCode — open-source agentic coding tool
-RUN npm install -g opencode-ai@1.18.25
+RUN npm install -g opencode-ai@${OPENCODE_VERSION}
 
 # Pi — minimal terminal coding harness
 # --ignore-scripts avoids running lifecycle scripts during install.
-RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.84.4
+RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@${PI_VERSION}
 
 # Bun runtime — required by OMP's CLI entry point AND used to run
 # TypeScript task repos (`bun test`, `bun install`). Installed to
@@ -69,11 +79,21 @@ RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.84.4
 # `heval` user (a prior version installed to /root/.bun, which is 0700
 # and unreadable by heval, breaking every TypeScript task and OMP).
 ENV BUN_INSTALL=/usr/local
-RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.0" \
+RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
     && chmod -R a+rX /usr/local/bin/bun /usr/local/cache 2>/dev/null || true
 
 # OMP — coding-first fork of Pi with Rust core
-RUN npm install -g @oh-my-pi/pi-coding-agent@18.0.11
+RUN npm install -g @oh-my-pi/pi-coding-agent@${OMP_VERSION}
+
+# Record the installed harness versions as image labels so a built image is
+# self-describing (and reproducible runs can be traced to exact versions).
+LABEL org.opencontainers.image.title="heval-runner" \
+      io.heval.claude-code="${CLAUDE_CODE_VERSION}" \
+      io.heval.codex="${CODEX_VERSION}" \
+      io.heval.opencode="${OPENCODE_VERSION}" \
+      io.heval.pi="${PI_VERSION}" \
+      io.heval.omp="${OMP_VERSION}" \
+      io.heval.bun="${BUN_VERSION}"
 
 # ---------------------------------------------------------------------------
 # Verification

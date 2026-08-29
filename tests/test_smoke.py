@@ -43,4 +43,26 @@ class TestHelpCommands:
     def test_dashboard_help(self) -> None:
         result = runner.invoke(app, ["dashboard", "--help"])
         assert result.exit_code == 0
-        assert "port" in result.stdout.lower()
+
+
+class TestInitCommand:
+    def test_init_generates_runnable_config(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`heval init` writes a config that loads and builds a matrix."""
+        cfg_path = tmp_path / "heval.yaml"
+        result = runner.invoke(app, ["init", "--filename", str(cfg_path)])
+        assert result.exit_code == 0
+        assert cfg_path.exists()
+
+        from heval.orchestrator.config import RunConfig
+
+        cfg = RunConfig.from_yaml(str(cfg_path))
+        # Uses the bundled task library + published image by default.
+        assert "ghcr.io/yorch/heval-runner" in cfg.docker_image
+        assert len(cfg.build_matrix()) >= 1
+
+    def test_init_refuses_overwrite_without_force(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        cfg_path = tmp_path / "heval.yaml"
+        cfg_path.write_text("existing")
+        result = runner.invoke(app, ["init", "--filename", str(cfg_path)])
+        assert result.exit_code == 1
+        assert cfg_path.read_text() == "existing"

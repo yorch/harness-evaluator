@@ -392,10 +392,11 @@ class StatsAnalyzer:
             # degenerate fits, which would push the ratio outside [0, 1]).
             total_var = float(df["success"].var())
             residual_var = float(mdf.scale)
-            if total_var > 0:
-                r_squared = min(1.0, max(0.0, 1.0 - residual_var / total_var))
-            else:
-                r_squared = 0.0
+            r_squared = (
+                min(1.0, max(0.0, 1.0 - residual_var / total_var))
+                if total_var > 0
+                else 0.0
+            )
 
             return MixedEffectsResult(
                 formula=formula,
