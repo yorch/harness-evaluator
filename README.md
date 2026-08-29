@@ -13,6 +13,18 @@ See [DESIGN.md](DESIGN.md) for the full design specification and
 
 ## Quick start
 
+No clone required — heval bundles its task library and publishes to PyPI:
+
+```bash
+uvx heval init                                  # scaffold heval.yaml
+docker pull ghcr.io/yorch/heval-runner:latest   # pull the runner image
+export ANTHROPIC_API_KEY=sk-ant-...
+uvx heval gateway --port 8877                    # separate terminal
+uvx heval run heval.yaml
+```
+
+### From source
+
 ```bash
 # 1. Install dependencies
 uv sync --extra dev

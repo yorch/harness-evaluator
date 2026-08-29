@@ -11,6 +11,7 @@ heval uses [Typer](https://typer.tiangolo.com/) for its CLI. The entry point is 
 
 | Command | Description |
 |---------|-------------|
+| [`heval init`](#heval-init) | Scaffold a starter run config (no clone needed) |
 | [`heval run`](#heval-run) | Execute an evaluation run from a config file |
 | [`heval gateway`](#heval-gateway) | Start the gateway proxy server |
 | [`heval canary`](#heval-canary) | Verify proxy token capture accuracy |
@@ -20,6 +21,35 @@ heval uses [Typer](https://typer.tiangolo.com/) for its CLI. The entry point is 
 | [`heval stats`](#heval-stats) | Generate statistical analysis for a run |
 | [`heval dashboard`](#heval-dashboard) | Start the interactive web dashboard |
 | [`heval calibrate`](#heval-calibrate) | Run judge calibration against anchor set |
+
+## heval init
+
+Scaffold a starter run config in the current directory so you can run heval
+without cloning the repository. The generated config uses the bundled task
+library and the version-pinned published runner image by default.
+
+### Usage
+
+```bash
+heval init [options]
+```
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--filename` | string | `heval.yaml` | Path for the generated config |
+| `--force` / `--no-force` | flag | `False` | Overwrite an existing file |
+
+### Examples
+
+```bash
+# Zero-install scaffold via uv
+uvx heval init
+
+# Custom filename, overwrite if present
+heval init --filename my-run.yaml --force
+```
 
 ## heval run
 

@@ -37,12 +37,15 @@ proxy for token/cost accounting.
 - `src/heval/orchestrator/` — Matrix builder, budget engine, results store
 - `src/heval/runner/` — Docker lifecycle (container per cell, exec-based)
 - `src/heval/adapters/` — Per-harness CLI wrappers (claude, codex, opencode, pi, omp)
-- `src/heval/evaluator/` — SWE hidden-test + open-ended LLM judge tracks
+- `src/heval/evaluator/` — SWE hidden-test + open-ended LLM judge tracks;
+  `evaluator/utils.py` holds the shared, symlink-safe `get_workdir_diff`
 - `src/heval/dashboard/` — FastAPI dashboard with Jinja2 templates
 - `src/heval/stats/` — Mixed-effects model, variance decomposition, bootstrap CIs
 - `src/heval/cli.py` — Typer-based CLI entry point
-- `tasks/` — Task YAML definitions and repo fixtures
-- `Dockerfile` — Image with all 5 harnesses (node:22-slim base)
+- `tasks/` — Task YAML definitions and repo fixtures (bundled into the wheel
+  at `heval/tasks` so an installed heval runs without a repo checkout)
+- `Dockerfile` — Image with all 5 harnesses + Bun (node:22-slim base). Harness
+  versions are build args (`CLAUDE_CODE_VERSION`, etc.) with pinned defaults.
 
 ## Code style
 
@@ -87,6 +90,8 @@ ci: bump actions/checkout to v7
 - The gateway proxy must never forward internal trace headers
   (`x-heval-trace-id`, `x-trace-id`) or the `trace_id` query param upstream.
 - The dashboard has no auth — keep it localhost-only by default.
+- Task YAMLs are trusted input: `test_command` runs on the host and
+  `setup_script` runs in the container. Do not load untrusted task libraries.
 
 ## Known traps
 
@@ -111,3 +116,6 @@ ci: bump actions/checkout to v7
   Dockerfile changes (main only for push, PRs verify build)
 - `.github/workflows/astro.yml` — builds and deploys the Astro+Starlight docs
   site to GitHub Pages on changes to `site/`, `docs/`, or the workflow
+- `.github/workflows/publish.yml` — builds and publishes the wheel/sdist to
+  PyPI (trusted publishing / OIDC) on `v*` tags; docker.yml also pushes a
+  version-tagged runner image on `v*` tags

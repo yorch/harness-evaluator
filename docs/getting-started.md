@@ -11,10 +11,37 @@ This guide walks you through installing heval, getting the Docker image, configu
 
 - **Python 3.11+** (3.12 recommended)
 - **Docker** — for running harnesses in isolated containers
-- **[uv](https://docs.astral.sh/uv/)** — Python package manager
 - **API keys** — at least one of:
   - `ANTHROPIC_API_KEY` (for Claude models and Claude Code)
   - `OPENAI_API_KEY` (for GPT models and Codex)
+
+## Quick start (no clone)
+
+heval bundles its task library, so you can run it without cloning the
+repository. Using [uv](https://docs.astral.sh/uv/):
+
+```bash
+# Scaffold a starter config in the current directory
+uvx heval init
+
+# Pull the pre-built runner image
+docker pull ghcr.io/yorch/heval-runner:latest
+
+# Set an API key
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# Start the gateway (separate terminal)
+uvx heval gateway --port 8877
+
+# Run the evaluation
+uvx heval run heval.yaml
+```
+
+`uvx heval` runs the published package in an ephemeral environment. To install
+it persistently, use `uv tool install heval` or `pipx install heval`.
+
+The rest of this guide covers the from-source workflow and explains each step
+in detail.
 
 ## Step 1: Install dependencies
 

@@ -33,7 +33,17 @@ docker_image: "ghcr.io/yorch/heval-runner:latest"
 docker build -t heval-runner:latest .
 ```
 
-The default `docker_image` in run config is `heval-runner:latest`, so local builds work without any config change.
+Harness (and Bun) versions are build args, so you can pin a specific harness
+release to compare versions:
+
+```bash
+docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t heval-runner:cc-2.0.0 .
+```
+
+Build args: `CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`,
+`PI_VERSION`, `OMP_VERSION`, `BUN_VERSION` — each defaults to a pinned,
+verified version. The installed versions are recorded as `io.heval.*` image
+labels. See [Configuration](configuration/#docker-image-configuration).
 
 ### Image contents
 

@@ -30,7 +30,7 @@ models:                            # Required. List of model specs.
       max_tokens: 16384
 tasks:                             # Required. List of task IDs or ["*"] for all.
   - "*"
-task_library_path: "./tasks"       # Required. Path to task YAML directory.
+task_library_path: "./tasks"       # Optional. Defaults to the bundled library.
 repeats: 5                         # Optional. Default: 5.
 budget_usd: 100.0                  # Optional. Max total spend in USD. null = no cap.
 gateway_host: "host.docker.internal" # Optional. Gateway host from inside Docker.
@@ -38,7 +38,8 @@ gateway_port: 8877                 # Optional. Gateway port. Default: 8877.
 gateway_db: "heval_gateway.db"     # Optional. Gateway SQLite DB path.
 results_db: "heval_results.db"     # Optional. Results SQLite DB path.
 workdir: "./heval_workdir"         # Optional. Host workdir for cell repos.
-docker_image: "heval-runner:latest" # Optional. Docker image name.
+docker_image: "..."                # Optional. Defaults to the version-pinned
+                                   #   ghcr.io/yorch/heval-runner:<heval version>.
 parallel_runs: 1                   # Optional. Parallel container runs. Default: 1.
 ```
 
@@ -76,7 +77,7 @@ List of task IDs to run, or `["*"]` to run all tasks in the library. Task IDs ar
 
 #### `task_library_path`
 
-Path to a directory containing task YAML files. All `*.yaml` files in this directory are loaded as the task library.
+Path to a directory containing task YAML files. All `*.yaml` files in this directory are loaded as the task library. Optional — defaults to the task library bundled inside the installed `heval` package (`heval/tasks`), so an installed heval works without a repo checkout. Local `repo_url` fixtures are resolved relative to this directory.
 
 #### `repeats`
 
@@ -456,7 +457,12 @@ Then reference it in your run config:
 docker_image: "ghcr.io/yorch/heval-runner:latest"
 ```
 
-Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), and `main`.
+Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), semver tags
+like `1.2.3` and `1.2` (published from `v*` release tags), and `main`.
+
+The default `docker_image` is version-pinned to the installed heval version
+(`ghcr.io/yorch/heval-runner:<heval version>`) so a given heval release pairs
+with a matching runner image for reproducibility.
 
 ### Build locally
 
@@ -464,11 +470,32 @@ Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), and `main`.
 docker build -t heval-runner:latest .
 ```
 
-The default `docker_image` is `heval-runner:latest`, so local builds work without any config change. You can also use a custom image name:
+Then set `docker_image: "heval-runner:latest"` (or any custom name) in the run config.
 
-```yaml
-docker_image: "my-custom-runner:latest"
+### Building a specific harness version
+
+Harness versions are build args, so you can build an image that pins a specific
+harness release to compare versions:
+
+```bash
+docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t heval-runner:cc-2.0.0 .
 ```
+
+Available build args (defaulting to the verified pinned set): `CLAUDE_CODE_VERSION`,
+`CODEX_VERSION`, `OPENCODE_VERSION`, `PI_VERSION`, `OMP_VERSION`, `BUN_VERSION`.
+The installed versions are recorded as `io.heval.*` OCI image labels, and the
+image name is stored in each run's metadata, so results trace to exact versions.
+Reference the built image via `docker_image:` in the run config.
+
+## Task trust model
+
+Task YAMLs — including `test_command`, `setup_script`, and `repo_url` — are
+treated as **trusted input**. The SWE evaluator and the open-ended structural
+checker run a task's `test_command` on the **host** (not inside the container),
+and `setup_script` runs inside the container. Do not load task libraries from
+untrusted sources. heval still validates task `id` and `repo_commit` against a
+safe charset and skips symlinked untracked files during diff extraction as
+defense in depth, but a hostile task definition can execute arbitrary commands.
 
 ## Task library structure
 
