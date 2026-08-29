@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>heval — Harness Evaluator</title>
+  <meta name="description" content="Compare agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.">
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-hover: #79c0ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --code-bg: #1c2128;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); text-decoration: underline; }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 5rem 1.5rem 3rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .hero h1 {
+      font-size: 3rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      margin-bottom: 0.5rem;
+    }
+
+    .hero h1 .accent { color: var(--accent); }
+
+    .hero .tagline {
+      font-size: 1.25rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+
+    .badges {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+
+    .badges img { height: 20px; }
+
+    .cta-group {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 0.6rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      border: 1px solid var(--border);
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+      color: var(--bg);
+      text-decoration: none;
+    }
+
+    .btn-secondary {
+      background: var(--card);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+
+    /* Sections */
+    .section {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    .section h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+      color: var(--accent);
+    }
+
+    .section p { margin-bottom: 1rem; color: var(--muted); }
+
+    /* Feature grid */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .feature-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+
+    .feature-card h3 {
+      margin-top: 0;
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .feature-card p {
+      font-size: 0.9rem;
+      margin-bottom: 0;
+    }
+
+    .feature-card .icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      display: block;
+    }
+
+    /* Harness table */
+    .harness-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+
+    .harness-table th,
+    .harness-table td {
+      padding: 0.6rem 0.8rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .harness-table th {
+      font-weight: 600;
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .tier-full { color: var(--green); }
+    .tier-partial { color: var(--yellow); }
+    .tier-minimal { color: var(--red); }
+
+    /* Code block */
+    .code-block {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    .code-block .comment { color: var(--muted); }
+    .code-block .cmd { color: var(--accent); }
+
+    /* Architecture list */
+    .arch-list {
+      list-style: none;
+      margin-top: 1rem;
+    }
+
+    .arch-list li {
+      padding: 0.5rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .arch-list li:last-child { border-bottom: none; }
+
+    .arch-list strong { color: var(--text); }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 2rem 1.5rem;
+      color: var(--muted);
+      font-size: 0.875rem;
+      border-top: 1px solid var(--border);
+      margin-top: 2rem;
+    }
+
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--accent); }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 2rem; }
+      .hero .tagline { font-size: 1rem; }
+      .feature-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1><span class="accent">heval</span></h1>
+    <p class="tagline">
+      Compare agentic coding harnesses on token efficiency,<br>
+      task effectiveness, and time efficiency.
+    </p>
+    <div class="badges">
+      <img src="https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg" alt="CI">
+      <img src="https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg" alt="Docker">
+      <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+    </div>
+    <div class="cta-group">
+      <a href="https://github.com/yorch/heval" class="btn btn-primary">View on GitHub</a>
+      <a href="https://github.com/yorch/heval/blob/main/DESIGN.md" class="btn btn-secondary">Design Doc</a>
+      <a href="https://github.com/yorch/heval/blob/main/README.md" class="btn btn-secondary">README</a>
+    </div>
+  </div>
+
+  <!-- Quick Start -->
+  <div class="section">
+    <h2>Quick Start</h2>
+    <div class="code-block">
+<span class="comment"># 1. Install dependencies</span>
+<span class="cmd">uv</span> sync --extra dev
+
+<span class="comment"># 2. Build the Docker image (all 5 harnesses + Python + Git)</span>
+<span class="cmd">docker</span> build -t heval-runner:latest .
+
+<span class="comment"># 3. Set API keys</span>
+<span class="cmd">export</span> ANTHROPIC_API_KEY=sk-ant-...
+<span class="cmd">export</span> OPENAI_API_KEY=sk-...
+
+<span class="comment"># 4. Start the gateway proxy (separate terminal)</span>
+<span class="cmd">heval</span> gateway --port 8877
+
+<span class="comment"># 5. Run a minimal evaluation</span>
+<span class="cmd">heval</span> run runs/sample-minimal.yaml
+
+<span class="comment"># Or dry-run to see the matrix without executing</span>
+<span class="cmd">heval</span> run runs/sample-minimal.yaml --dry-run
+    </div>
+  </div>
+
+  <!-- Supported Harnesses -->
+  <div class="section">
+    <h2>Supported Harnesses</h2>
+    <table class="harness-table">
+      <thead>
+        <tr>
+          <th>Harness</th>
+          <th>Adapter</th>
+          <th>Observability</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>OpenCode</td>
+          <td><code>opencode</code></td>
+          <td class="tier-full">full</td>
+          <td>Open-source, system prompt visible</td>
+        </tr>
+        <tr>
+          <td>Claude Code</td>
+          <td><code>claude_code</code></td>
+          <td class="tier-partial">partial</td>
+          <td>Closed, proxy captures traffic</td>
+        </tr>
+        <tr>
+          <td>Codex</td>
+          <td><code>codex</code></td>
+          <td class="tier-partial">partial</td>
+          <td>Closed, proxy captures traffic</td>
+        </tr>
+        <tr>
+          <td>Pi</td>
+          <td><code>pi</code></td>
+          <td class="tier-minimal">minimal</td>
+          <td>May bypass proxy</td>
+        </tr>
+        <tr>
+          <td>OMP</td>
+          <td><code>omp</code></td>
+          <td class="tier-minimal">minimal</td>
+          <td>May bypass proxy</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Features -->
+  <div class="section">
+    <h2>Features</h2>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="icon">&#128279;</span>
+        <h3>Gateway Proxy</h3>
+        <p>Custom HTTP/SSE proxy intercepts every provider call, capturing token usage, cost, and latency with full request/response logging.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">&#128202;</span>
+        <h3>Token Accounting</h3>
+        <p>Input, output, cache-read, cache-write, and reasoning tokens tracked per call. Cost calculated from a per-model pricing table.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">&#128737;</span>
+        <h3>Docker Isolation</h3>
+        <p>Each harness runs in its own container with <code>--cap-drop=ALL</code>, non-root user, and network policy enforcement.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">&#128260;</span>
+        <h3>Resumability &amp; Budgets</h3>
+        <p>Cell-level resumability skips completed cells on re-run. Budget caps stop the run when spend exceeds the configured limit.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">&#129504;</span>
+        <h3>Frozen LLM Judge</h3>
+        <p>Open-ended tasks evaluated by a versioned, immutable-prompt judge with structured rubric and anchor-set calibration for drift detection.</p>
+      </div>
+      <div class="feature-card">
+        <span class="icon">&#128200;</span>
+        <h3>Statistics &amp; Reporting</h3>
+        <p>Mixed-effects modeling, variance decomposition, bootstrap CIs, HTML/JSON/CSV reports, and an interactive FastAPI dashboard.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Architecture -->
+  <div class="section">
+    <h2>Architecture</h2>
+    <ul class="arch-list">
+      <li><strong>Gateway</strong> — Custom HTTP/SSE proxy (aiohttp) that intercepts provider calls and captures token usage, cost, and latency.</li>
+      <li><strong>Orchestrator</strong> — Builds the eval matrix (harness &times; model &times; task &times; repeats), manages budget caps, and handles cell-level resumability.</li>
+      <li><strong>Runner</strong> — Docker-based isolation, one container per run with capability dropping and non-root execution.</li>
+      <li><strong>Adapters</strong> — Per-harness integration (Python core + TS shims where needed) with a uniform prepare/run/cleanup interface.</li>
+      <li><strong>Evaluator</strong> — SWE-bench-style (hidden tests) and open-ended (LLM judge) tracks with partial credit and error classification.</li>
+      <li><strong>Reporting</strong> — CLI reports, static HTML/JSON/CSV, and an interactive web dashboard.</li>
+      <li><strong>Statistics</strong> — Mixed-effects models, variance decomposition, and bootstrap confidence intervals.</li>
+    </ul>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <p>
+      <a href="https://github.com/yorch/heval">yorch/heval</a> &middot;
+      <a href="https://github.com/yorch/heval/blob/main/LICENSE">MIT License</a>
+    </p>
+    <p style="margin-top: 0.5rem;">Built with Devin</p>
+  </footer>
+
+</body>
+</html>

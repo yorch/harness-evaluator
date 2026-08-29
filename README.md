@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/ci.yml)
 [![Docker](https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/docker.yml)
+[![Pages](https://github.com/yorch/heval/actions/workflows/pages.yml/badge.svg)](https://yorch.github.io/heval/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Harness evaluator: compare agentic coding harnesses (Claude Code, Codex, Pi,
