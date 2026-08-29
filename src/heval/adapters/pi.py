@@ -52,7 +52,7 @@ class PiAdapter(BaseAdapter):
                 "Cost accounting may rely on billing data only",
             ],
             requires_install=True,
-            install_instructions="pip install pi  # or similar",
+            install_instructions="npm install -g --ignore-scripts @earendil-works/pi-coding-agent",
         )
 
     async def prepare(self) -> None:

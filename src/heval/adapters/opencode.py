@@ -49,7 +49,7 @@ class OpenCodeAdapter(BaseAdapter):
                 "Sub-agent topology varies by config",
             ],
             requires_install=True,
-            install_instructions="npm install -g @anthropic/opencode  # or similar",
+            install_instructions="npm install -g opencode-ai",
         )
 
     async def prepare(self) -> None:

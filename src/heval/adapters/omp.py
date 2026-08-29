@@ -52,7 +52,7 @@ class OMPAdapter(BaseAdapter):
                 "Cost accounting may rely on billing data only",
             ],
             requires_install=True,
-            install_instructions="pip install omp  # or similar",
+            install_instructions="npm install -g @oh-my-pi/pi-coding-agent",
         )
 
     async def prepare(self) -> None:
