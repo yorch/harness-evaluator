@@ -52,6 +52,32 @@ proxy for token/cost accounting.
 - pytest-asyncio with auto mode
 - Do not add or remove comments unless asked
 
+## Commits
+
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+- **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`, `build`, `perf`
+- **Scope**: optional, the module or area affected (e.g. `gateway`, `runner`, `docker`)
+- **Description**: lowercase, imperative mood, no trailing period
+- **Body**: wrap at 100 chars, explain *why* not *what*
+- **Breaking change**: add `BREAKING CHANGE:` in the footer or `!` after the type
+
+Examples:
+```
+feat(gateway): strip trace headers before upstream forwarding
+fix(runner): use /workspace/repo as container exec cwd
+docs: rewrite AGENTS.md following best practices
+ci: bump actions/checkout to v7
+```
+
 ## Boundaries
 
 - Do not edit `tasks/repos/*/` contents directly — they are task fixtures.
