@@ -50,6 +50,10 @@ docker build -t heval-runner:latest .
 The gateway proxy is a custom HTTP/SSE server that sits between a harness and
 the provider API, capturing every call's token usage, cost, and latency.
 
+See [docs/gateway-proxy.md](docs/gateway-proxy.md) for a detailed explanation
+with architecture diagram, token parsing, storage schema, and configuration
+reference.
+
 ### Running the proxy
 
 ```bash
