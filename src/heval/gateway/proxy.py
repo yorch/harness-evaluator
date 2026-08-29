@@ -525,9 +525,10 @@ class GatewayProxy:
             stream_error = f"Unexpected stream error: {e}"
             logger.error("Unexpected stream error for call %s: %s", call_id, e)
 
-        with contextlib.suppress(Exception):
-            await resp.write_eof()  # Client may have disconnected
-
+        # NOTE: do not write_eof() yet. We persist the captured call *before*
+        # signaling end-of-stream to the client, otherwise the client's read
+        # loop can finish (and inspect the store) before the background save
+        # commits — a race that made streaming-capture tests flaky.
         latency_ms = (time.monotonic() - start_time) * 1000
 
         # Calculate cost
@@ -566,6 +567,10 @@ class GatewayProxy:
             error=stream_error,
         )
         await asyncio.to_thread(self.store.save, call)
+
+        # Now that the call is persisted, signal end-of-stream to the client.
+        with contextlib.suppress(Exception):
+            await resp.write_eof()  # Client may have disconnected
 
         logger.info(
             "Captured streaming %s: %s tokens, $%.6f, %.0fms%s",

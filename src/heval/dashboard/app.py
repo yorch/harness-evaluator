@@ -40,7 +40,7 @@ SQL_RUN_SUMMARIES = """
 SELECT run_name,
        COUNT(*) as total_cells,
        SUM(CASE WHEN exit_class = 'pass' THEN 1 ELSE 0 END) as passed,
-       SUM(CASE WHEN exit_class = 'fail' THEN 1 ELSE 0 END) as failed,
+       SUM(CASE WHEN exit_class != 'pass' THEN 1 ELSE 0 END) as failed,
        COALESCE(SUM(total_cost), 0) as total_cost,
        COALESCE(AVG(success), 0) as avg_success
 FROM run_results
@@ -206,7 +206,7 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
         model: str | None = Query(None),
         harness: str | None = Query(None),
         track: str | None = Query(None),
-        min_success: float | None = Query(None),
+        min_success: float | None = Query(None, ge=0.0, le=1.0),
         page: int = Query(1, ge=1),
         per_page: int = Query(50, ge=1, le=500),
     ) -> str:
@@ -219,12 +219,15 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
         harnesses = _get_unique_values(run_name, "harness")
         tracks = _get_unique_values(run_name, "track")
 
-        # Get paginated results
+        # Clamp the requested page to the available range so an out-of-range
+        # page returns the last page rather than an empty, misleading result.
+        total_count = _get_filtered_count(run_name, model, harness, track, min_success)
+        total_pages = max(1, (total_count + per_page - 1) // per_page)
+        page = min(page, total_pages)
         offset = (page - 1) * per_page
         results = _get_paginated_results(
             run_name, model, harness, track, min_success, per_page, offset
         )
-        total_count = _get_filtered_count(run_name, model, harness, track, min_success)
 
         # Get live state (if run is in progress)
         state_summary = _get_run_state_summary(run_name)
@@ -245,8 +248,6 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
             total_cells = summary_row[0] or 0
             passed = summary_row[1] or 0
             cost = summary_row[2] or 0.0
-
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
 
         template = _env.get_template("run_detail.html")
         return template.render(
@@ -282,7 +283,7 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
         model: str | None = Query(None),
         harness: str | None = Query(None),
         track: str | None = Query(None),
-        min_success: float | None = Query(None),
+        min_success: float | None = Query(None, ge=0.0, le=1.0),
         page: int = Query(1, ge=1),
         per_page: int = Query(50, ge=1, le=500),
     ) -> JSONResponse:
@@ -290,12 +291,15 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
         if not _run_exists(run_name):
             raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
 
+        total_count = _get_filtered_count(run_name, model, harness, track, min_success)
+        total_pages = max(1, (total_count + per_page - 1) // per_page)
+        # Clamp to the last page so out-of-range requests don't report a page
+        # number with an empty result set.
+        page = min(page, total_pages)
         offset = (page - 1) * per_page
         results = _get_paginated_results(
             run_name, model, harness, track, min_success, per_page, offset
         )
-        total_count = _get_filtered_count(run_name, model, harness, track, min_success)
-        total_pages = max(1, (total_count + per_page - 1) // per_page)
 
         return JSONResponse(
             {

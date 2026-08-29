@@ -194,6 +194,11 @@ class ReportGenerator:
         safe_name = sanitize_id(run_name)
 
         results = self.store.get_all_results(run_name)
+        if not results:
+            raise ValueError(
+                f"No results found for run '{run_name}'. Check the run name and "
+                f"--db path (a typo produces an empty database, not an error)."
+            )
         leaderboards = self._build_leaderboards(results)
 
         # Generate JSON

@@ -387,10 +387,15 @@ class StatsAnalyzer:
             except Exception:
                 pass
 
-            # Pseudo R-squared: 1 - residual_var / total_var
+            # Pseudo R-squared: 1 - residual_var / total_var, clamped to [0, 1]
+            # (residual_var can exceed total_var or be negative-ish on
+            # degenerate fits, which would push the ratio outside [0, 1]).
             total_var = float(df["success"].var())
             residual_var = float(mdf.scale)
-            r_squared = max(0.0, 1.0 - residual_var / total_var) if total_var > 0 else 0.0
+            if total_var > 0:
+                r_squared = min(1.0, max(0.0, 1.0 - residual_var / total_var))
+            else:
+                r_squared = 0.0
 
             return MixedEffectsResult(
                 formula=formula,
@@ -508,7 +513,11 @@ class StatsAnalyzer:
                 continue
 
             mean_s = float(vals.mean())
-            std_s = float(vals.std()) if n > 1 else 0.0
+            # Sample standard deviation (ddof=1) — the population std (ddof=0)
+            # understates uncertainty for the small repeat counts used here.
+            std_s = float(vals.std(ddof=1)) if n > 1 else 0.0
+            # success is non-negative, so mean == 0 implies all values are 0
+            # (std == 0, a perfectly consistent all-fail cell) → CV of 0.0.
             cv = float(std_s / mean_s) if mean_s != 0 else 0.0
 
             # Bootstrap CI
@@ -550,8 +559,25 @@ class StatsAnalyzer:
             warnings.append(
                 f"Only {n} observations. Mixed-effects model may be unreliable."
             )
+        if 0 < n < 10:
+            warnings.append(
+                f"Mixed-effects model and variance decomposition skipped: "
+                f"fewer than 10 observations ({n})."
+            )
         if n == 0:
             warnings.append("No data available for analysis.")
+
+        # Surface how many rows are infrastructure kills (recorded as
+        # success=0.0). They are included in the analysis alongside genuine
+        # task failures, which can inflate apparent ineffectiveness.
+        if not self.df.empty and "exit_class" in self.df.columns:
+            kill_mask = self.df["exit_class"].isin(["retryable_kill", "non_retryable_kill"])
+            n_kills = int(kill_mask.sum())
+            if n_kills > 0:
+                warnings.append(
+                    f"{n_kills} of {n} rows are infrastructure kills counted as "
+                    f"success=0.0; effectiveness estimates include these failures."
+                )
 
         var_decomp = self.variance_decomposition()
         mixed = self.mixed_effects_model()

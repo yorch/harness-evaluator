@@ -29,7 +29,7 @@
     {% if runs %}
         {% for run in runs %}
         <div class="run-card">
-            <h3><a href="/run/{{ run.run_name }}">{{ run.run_name }}</a></h3>
+            <h3><a href="/run/{{ run.run_name | urlencode }}">{{ run.run_name }}</a></h3>
             <div class="stats">
                 <span class="stat"><b>{{ run.total_cells }}</b> cells</span>
                 <span class="stat pass"><b>{{ run.passed }}</b> passed</span>

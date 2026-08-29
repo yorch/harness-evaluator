@@ -13,6 +13,7 @@
         .pass { color: #1971c2; font-weight: 600; }
         .fail { color: #c92a2a; font-weight: 600; }
         .partial { color: #e67700; font-weight: 600; }
+        .kill { color: #862e9c; font-weight: 600; }
         .summary { display: flex; gap: 2rem; margin: 1rem 0; }
         .summary-card { background: white; padding: 1rem 1.5rem; border-radius: 8px;
                         box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -66,7 +67,7 @@
     </div>
 
     <div class="filters">
-        <form method="get" action="/run/{{ run_name }}">
+        <form method="get" action="/run/{{ run_name | urlencode }}">
             <select name="model">
                 <option value="">All models</option>
                 {% for m in models %}
@@ -121,7 +122,7 @@
             <th>Time</th><th>Error Class</th></tr>
         {% for r in results %}
         {% set total_tokens = r.input_tokens + r.output_tokens + r.cache_read_tokens + r.cache_write_tokens + r.reasoning_tokens %}
-        {% set exit_class = 'pass' if r.exit_class == 'pass' else ('partial' if r.exit_class == 'partial' else 'fail') %}
+        {% set exit_class = 'pass' if r.exit_class == 'pass' else ('partial' if r.exit_class == 'partial' else ('kill' if r.exit_class in ('retryable_kill', 'non_retryable_kill') else 'fail')) %}
         <tr>
             <td>{{ r.harness }}</td>
             <td>{{ r.model }}</td>
@@ -140,19 +141,19 @@
     {% if total_pages > 1 %}
     <div class="pagination">
         {% if page > 1 %}
-        <a href="/run/{{ run_name }}?model={{ current_model or '' }}&harness={{ current_harness or '' }}&track={{ current_track or '' }}&min_success={{ current_min_success or '' }}&page={{ page - 1 }}&per_page={{ per_page }}">&laquo; Prev</a>
+        <a href="/run/{{ run_name | urlencode }}?model={{ (current_model or '') | urlencode }}&harness={{ (current_harness or '') | urlencode }}&track={{ (current_track or '') | urlencode }}&min_success={{ current_min_success or '' }}&page={{ page - 1 }}&per_page={{ per_page }}">&laquo; Prev</a>
         {% endif %}
         {% for p in range(1, total_pages + 1) %}
             {% if p == page %}
             <span class="current">{{ p }}</span>
             {% elif p <= 5 or p > total_pages - 2 or (p >= page - 1 and p <= page + 1) %}
-            <a href="/run/{{ run_name }}?model={{ current_model or '' }}&harness={{ current_harness or '' }}&track={{ current_track or '' }}&min_success={{ current_min_success or '' }}&page={{ p }}&per_page={{ per_page }}">{{ p }}</a>
+            <a href="/run/{{ run_name | urlencode }}?model={{ (current_model or '') | urlencode }}&harness={{ (current_harness or '') | urlencode }}&track={{ (current_track or '') | urlencode }}&min_success={{ current_min_success or '' }}&page={{ p }}&per_page={{ per_page }}">{{ p }}</a>
             {% elif p == 6 or p == total_pages - 2 %}
             <span>...</span>
             {% endif %}
         {% endfor %}
         {% if page < total_pages %}
-        <a href="/run/{{ run_name }}?model={{ current_model or '' }}&harness={{ current_harness or '' }}&track={{ current_track or '' }}&min_success={{ current_min_success or '' }}&page={{ page + 1 }}&per_page={{ per_page }}">Next &raquo;</a>
+        <a href="/run/{{ run_name | urlencode }}?model={{ (current_model or '') | urlencode }}&harness={{ (current_harness or '') | urlencode }}&track={{ (current_track or '') | urlencode }}&min_success={{ current_min_success or '' }}&page={{ page + 1 }}&per_page={{ per_page }}">Next &raquo;</a>
         {% endif %}
     </div>
     {% endif %}

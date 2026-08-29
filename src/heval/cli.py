@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import typer
 from rich.console import Console
@@ -65,8 +66,6 @@ def run(
     ),
 ) -> None:
     """Execute an evaluation run from a config file."""
-    from pathlib import Path
-
     from heval.orchestrator.config import RunConfig
     from heval.orchestrator.engine import Orchestrator
     from heval.orchestrator.results_store import ResultsStore
@@ -98,10 +97,15 @@ def run(
             )
         if len(cells) > 20:
             table.add_row("...", "...", "...", "...", "...")
+            table.caption = f"Showing 20 of {len(cells)} total cells"
         console.print(table)
         return
 
     # Preflight: check that the gateway is reachable on the configured port.
+    # Connect to 127.0.0.1 (not cfg.gateway_host): gateway_host is the
+    # container's view of the host (default "host.docker.internal") and is
+    # not resolvable from the CLI process, whereas `heval gateway` binds to
+    # loopback on this host.
     if check_gateway:
         import socket
 
@@ -161,9 +165,17 @@ def report(
     from heval.orchestrator.results_store import ResultsStore
     from heval.reporting.static_report import ReportGenerator
 
+    if not Path(db).exists():
+        console.print(f"[red]Results DB not found: {db}[/red]")
+        raise typer.Exit(1)
+
     store = ResultsStore(db)
     gen = ReportGenerator(store)
-    paths = gen.generate(run_name, output)
+    try:
+        paths = gen.generate(run_name, output)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from None
 
     console.print("[bold green]Reports generated:[/bold green]")
     for fmt, path in paths.items():
@@ -379,6 +391,12 @@ def calibrate(
 
     # Read API key from environment, not CLI
     api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        console.print(
+            "[red]ANTHROPIC_API_KEY is not set.[/red] Calibration calls the judge "
+            "model and requires an API key. Export it and re-run."
+        )
+        raise typer.Exit(1)
 
     # Create a minimal task for calibration
     task = TaskSpec(
