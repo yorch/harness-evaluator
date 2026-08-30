@@ -5,7 +5,7 @@ description: Eval matrix building, budget caps with atomic reservation, retry lo
 
 # Orchestrator
 
-The orchestrator (`src/heval/orchestrator/`) is the central execution engine. It takes a run configuration, expands it into a full eval matrix, executes each cell with budget tracking and retry logic, and stores results for reporting and analysis.
+The orchestrator (`src/harnessbench/orchestrator/`) is the central execution engine. It takes a run configuration, expands it into a full eval matrix, executes each cell with budget tracking and retry logic, and stores results for reporting and analysis.
 
 ## Components
 
@@ -214,7 +214,7 @@ Stores the full run config for reproducibility:
 |--------|------|-------------|
 | `run_name` | TEXT PK | Run name |
 | `config_json` | TEXT | Full `RunConfig` as JSON |
-| `heval_version` | TEXT | harnessbench package version |
+| `harnessbench_version` | TEXT | harnessbench package version |
 | `docker_image` | TEXT | Docker image used |
 | `created_at` | TEXT | ISO timestamp |
 
@@ -226,7 +226,7 @@ At the start of each run, the orchestrator saves run metadata:
 self.store.save_run_metadata(
     run_name=self.config.name,
     config_json=self.config.model_dump_json(indent=2),
-    heval_version=heval.__version__,
+    harnessbench_version=harnessbench.__version__,
     docker_image=self.config.docker_image,
 )
 ```

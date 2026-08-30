@@ -26,13 +26,13 @@ A change is incomplete until all three gates pass: ruff, mypy, pytest.
 uv run ruff check src/ tests/
 
 # Type check (fast, ~3s)
-uv run mypy src/heval/
+uv run mypy src/harnessbench/
 
 # Tests (full suite ~10s, 271 tests)
 uv run pytest tests/ -q
 
 # All gates at once
-uv run ruff check src/ tests/ && uv run mypy src/heval/ && uv run pytest tests/ -q
+uv run ruff check src/ tests/ && uv run mypy src/harnessbench/ && uv run pytest tests/ -q
 ```
 
 ### Running focused tests
@@ -75,7 +75,7 @@ line-length = 100
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["heval"]
+known-first-party = ["harnessbench"]
 ```
 
 ### Mypy
@@ -89,7 +89,7 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-packages = ["heval"]
+packages = ["harnessbench"]
 
 [[tool.mypy.overrides]]
 module = ["pandas", "statsmodels.*", "numpy.*"]
@@ -154,14 +154,14 @@ Python core that orchestrates Node.js coding harnesses running inside Docker con
 
 | Directory | Responsibility |
 |-----------|---------------|
-| `src/heval/gateway/` | HTTP/SSE proxy, parsers, SQLite store, reconciliation |
-| `src/heval/orchestrator/` | Matrix builder, budget engine, results store |
-| `src/heval/runner/` | Docker lifecycle (container per cell, exec-based) |
-| `src/heval/adapters/` | Per-harness CLI wrappers (claude, codex, opencode, pi, omp) |
-| `src/heval/evaluator/` | SWE hidden-test + open-ended LLM judge tracks |
-| `src/heval/dashboard/` | FastAPI dashboard with Jinja2 templates |
-| `src/heval/stats/` | Mixed-effects model, variance decomposition, bootstrap CIs |
-| `src/heval/cli.py` | Typer-based CLI entry point |
+| `src/harnessbench/gateway/` | HTTP/SSE proxy, parsers, SQLite store, reconciliation |
+| `src/harnessbench/orchestrator/` | Matrix builder, budget engine, results store |
+| `src/harnessbench/runner/` | Docker lifecycle (container per cell, exec-based) |
+| `src/harnessbench/adapters/` | Per-harness CLI wrappers (claude, codex, opencode, pi, omp) |
+| `src/harnessbench/evaluator/` | SWE hidden-test + open-ended LLM judge tracks |
+| `src/harnessbench/dashboard/` | FastAPI dashboard with Jinja2 templates |
+| `src/harnessbench/stats/` | Mixed-effects model, variance decomposition, bootstrap CIs |
+| `src/harnessbench/cli.py` | Typer-based CLI entry point |
 | `tasks/` | Task YAML definitions and repo fixtures |
 | `Dockerfile` | Image with all 5 harnesses (node:22-slim base) |
 
@@ -173,7 +173,7 @@ See [Architecture](architecture/) for the full component map and data flow.
 
 - **Edit `tasks/repos/*/` contents directly** — they are task fixtures. Change the source and re-init via the runner's `_git_init_fresh`.
 - **Add production dependencies without `uv add <pkg>`** — do not manually edit `pyproject.toml` dependencies.
-- **Forward internal trace headers upstream** — the gateway proxy must never forward `x-heval-trace-id`, `x-trace-id`, or the `trace_id` query param to the real provider API.
+- **Forward internal trace headers upstream** — the gateway proxy must never forward `x-harnessbench-trace-id`, `x-trace-id`, or the `trace_id` query param to the real provider API.
 - **Expose the dashboard externally** — it has no auth, keep it localhost-only.
 
 ### Do
@@ -279,7 +279,7 @@ Runs on every push/PR to `main`. Three parallel jobs:
 | Job | Tool | Command |
 |-----|------|---------|
 | Lint | ruff | `uv run ruff check src/ tests/` |
-| Type check | mypy | `uv run mypy src/heval/` |
+| Type check | mypy | `uv run mypy src/harnessbench/` |
 | Tests | pytest | `uv run pytest tests/ -q` |
 
 A quality-gate job depends on all three and must pass for PRs to be mergeable.
@@ -313,7 +313,7 @@ See [Configuration](configuration/#task-definitions) for the full task spec.
 
 ## Adding a new model to pricing
 
-Add an entry to `DEFAULT_PRICING` in `src/heval/gateway/models.py`:
+Add an entry to `DEFAULT_PRICING` in `src/harnessbench/gateway/models.py`:
 
 ```python
 "my-new-model": PricingTable(

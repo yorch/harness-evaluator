@@ -88,12 +88,12 @@ RUN npm install -g @oh-my-pi/pi-coding-agent@${OMP_VERSION}
 # Record the installed harness versions as image labels so a built image is
 # self-describing (and reproducible runs can be traced to exact versions).
 LABEL org.opencontainers.image.title="harnessbench-runner" \
-      io.heval.claude-code="${CLAUDE_CODE_VERSION}" \
-      io.heval.codex="${CODEX_VERSION}" \
-      io.heval.opencode="${OPENCODE_VERSION}" \
-      io.heval.pi="${PI_VERSION}" \
-      io.heval.omp="${OMP_VERSION}" \
-      io.heval.bun="${BUN_VERSION}"
+      io.harnessbench.claude-code="${CLAUDE_CODE_VERSION}" \
+      io.harnessbench.codex="${CODEX_VERSION}" \
+      io.harnessbench.opencode="${OPENCODE_VERSION}" \
+      io.harnessbench.pi="${PI_VERSION}" \
+      io.harnessbench.omp="${OMP_VERSION}" \
+      io.harnessbench.bun="${BUN_VERSION}"
 
 # ---------------------------------------------------------------------------
 # Verification

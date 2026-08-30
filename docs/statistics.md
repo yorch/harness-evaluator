@@ -10,10 +10,10 @@ harnessbench provides statistical analysis of evaluation results to determine wh
 ## Overview
 
 ```bash
-harnessbench stats my-run --db heval_results.db
+harnessbench stats my-run --db harnessbench_results.db
 ```
 
-The statistics module (`src/heval/stats/__init__.py`) provides four analyses:
+The statistics module (`src/harnessbench/stats/__init__.py`) provides four analyses:
 
 1. **Variance decomposition** — how much variance in success is explained by harness, model, task, and residual
 2. **Mixed-effects model** — fixed effects for harness and model, random effect for task
@@ -232,7 +232,7 @@ These are listed in `pyproject.toml` as production dependencies.
 
 | File | Description |
 |------|-------------|
-| `src/heval/stats/__init__.py` | `StatsAnalyzer`, `StatisticalReport`, all result dataclasses, `analyze_results()` |
+| `src/harnessbench/stats/__init__.py` | `StatsAnalyzer`, `StatisticalReport`, all result dataclasses, `analyze_results()` |
 
 ## Honest limitations
 

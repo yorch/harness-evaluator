@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from heval.adapters.registry import create_adapter, get_adapter_class
-from heval.orchestrator.config import ModelSpec
+from harnessbench.adapters.registry import create_adapter, get_adapter_class
+from harnessbench.orchestrator.config import ModelSpec
 
 
 @pytest.fixture

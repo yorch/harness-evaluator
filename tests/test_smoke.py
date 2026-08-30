@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from heval.cli import app
+from harnessbench.cli import app
 
 runner = CliRunner()
 
 
 class TestAdaptersCommand:
     def test_adapters_lists_all_five(self) -> None:
-        """`heval adapters` should list all 5 registered adapters."""
+        """`harnessbench adapters` should list all 5 registered adapters."""
         result = runner.invoke(app, ["adapters"])
         assert result.exit_code == 0
         # All five adapters should appear in the output.
@@ -47,13 +47,13 @@ class TestHelpCommands:
 
 class TestInitCommand:
     def test_init_generates_runnable_config(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        """`heval init` writes a config that loads and builds a matrix."""
-        cfg_path = tmp_path / "heval.yaml"
+        """`harnessbench init` writes a config that loads and builds a matrix."""
+        cfg_path = tmp_path / "harnessbench.yaml"
         result = runner.invoke(app, ["init", "--filename", str(cfg_path)])
         assert result.exit_code == 0
         assert cfg_path.exists()
 
-        from heval.orchestrator.config import RunConfig
+        from harnessbench.orchestrator.config import RunConfig
 
         cfg = RunConfig.from_yaml(str(cfg_path))
         # Uses the bundled task library + published image by default.
@@ -61,7 +61,7 @@ class TestInitCommand:
         assert len(cfg.build_matrix()) >= 1
 
     def test_init_refuses_overwrite_without_force(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        cfg_path = tmp_path / "heval.yaml"
+        cfg_path = tmp_path / "harnessbench.yaml"
         cfg_path.write_text("existing")
         result = runner.invoke(app, ["init", "--filename", str(cfg_path)])
         assert result.exit_code == 1

@@ -6,8 +6,8 @@ import subprocess
 
 import pytest
 
-from heval.evaluator.swe import ErrorClass, SWEEvaluator
-from heval.orchestrator.config import TaskSpec, TaskTrack
+from harnessbench.evaluator.swe import ErrorClass, SWEEvaluator
+from harnessbench.orchestrator.config import TaskSpec, TaskTrack
 
 
 @pytest.fixture

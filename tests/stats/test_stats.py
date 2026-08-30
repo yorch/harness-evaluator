@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from heval.stats import (
+from harnessbench.stats import (
     BootstrapResult,
     ConsistencyResult,
     StatsAnalyzer,

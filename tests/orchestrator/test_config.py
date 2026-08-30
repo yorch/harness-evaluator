@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from heval.orchestrator.config import (
+from harnessbench.orchestrator.config import (
     HarnessSpec,
     ModelSpec,
     RunConfig,

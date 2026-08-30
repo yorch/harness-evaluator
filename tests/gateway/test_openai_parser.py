@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from heval.gateway.models import TokenUsage
-from heval.gateway.parsers.openai import (
+from harnessbench.gateway.models import TokenUsage
+from harnessbench.gateway.parsers.openai import (
     parse_non_streaming_usage,
     parse_sse_chunk,
 )

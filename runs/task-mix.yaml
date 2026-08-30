@@ -6,8 +6,8 @@
 # replace the docker_image value with "harnessbench-runner:latest".
 #
 # Usage:
-#   heval run runs/task-mix.yaml --dry-run   # preview the matrix
-#   heval run runs/task-mix.yaml             # execute (needs API keys + Docker)
+#   harnessbench run runs/task-mix.yaml --dry-run   # preview the matrix
+#   harnessbench run runs/task-mix.yaml             # execute (needs API keys + Docker)
 name: "task-mix-v1"
 description: "Curated 20-task mix: 12 SWE (Python + TypeScript) + 8 open-ended (Python + TypeScript)"
 
@@ -85,8 +85,8 @@ task_library_path: "./tasks"
 repeats: 3
 budget_usd: 50.0
 gateway_port: 8877
-gateway_db: "heval_gateway.db"
-results_db: "heval_results.db"
-workdir: "./heval_workdir"
+gateway_db: "harnessbench_gateway.db"
+results_db: "harnessbench_results.db"
+workdir: "./harnessbench_workdir"
 docker_image: "ghcr.io/yorch/harnessbench-runner:latest"
 parallel_runs: 1

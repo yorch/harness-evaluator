@@ -35,9 +35,9 @@ repeats: 5                         # Optional. Default: 5.
 budget_usd: 100.0                  # Optional. Max total spend in USD. null = no cap.
 gateway_host: "host.docker.internal" # Optional. Gateway host from inside Docker.
 gateway_port: 8877                 # Optional. Gateway port. Default: 8877.
-gateway_db: "heval_gateway.db"     # Optional. Gateway SQLite DB path.
-results_db: "heval_results.db"     # Optional. Results SQLite DB path.
-workdir: "./heval_workdir"         # Optional. Host workdir for cell repos.
+gateway_db: "harnessbench_gateway.db"     # Optional. Gateway SQLite DB path.
+results_db: "harnessbench_results.db"     # Optional. Results SQLite DB path.
+workdir: "./harnessbench_workdir"         # Optional. Host workdir for cell repos.
 docker_image: "..."                # Optional. Defaults to the version-pinned
                                    #   ghcr.io/yorch/harnessbench-runner:<harnessbench version>.
 parallel_runs: 1                   # Optional. Parallel container runs. Default: 1.
@@ -105,7 +105,7 @@ List of task IDs to run, or `["*"]` to run all tasks in the library. Task IDs ar
 
 #### `task_library_path`
 
-Path to a directory containing task YAML files. All `*.yaml` files in this directory are loaded as the task library. Optional — defaults to the task library bundled inside the installed `heval` package (`heval/tasks`), so an installed harnessbench works without a repo checkout. Local `repo_url` fixtures are resolved relative to this directory.
+Path to a directory containing task YAML files. All `*.yaml` files in this directory are loaded as the task library. Optional — defaults to the task library bundled inside the installed `harnessbench` package (`harnessbench/tasks`), so an installed harnessbench works without a repo checkout. Local `repo_url` fixtures are resolved relative to this directory.
 
 #### `repeats`
 
@@ -393,7 +393,7 @@ tasks:
 
 ## Pricing tables
 
-Cost is calculated from per-token pricing tables in `src/heval/gateway/models.py`. Prices are in USD per 1 million tokens.
+Cost is calculated from per-token pricing tables in `src/harnessbench/gateway/models.py`. Prices are in USD per 1 million tokens.
 
 ### Default pricing
 
@@ -419,7 +419,7 @@ Add the model to DEFAULT_PRICING to fix this.
 
 ### Adding a new model
 
-Add an entry to `DEFAULT_PRICING` in `src/heval/gateway/models.py`:
+Add an entry to `DEFAULT_PRICING` in `src/harnessbench/gateway/models.py`:
 
 ```python
 DEFAULT_PRICING: dict[str, PricingTable] = {
@@ -450,7 +450,7 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
 | `OPENAI_BASE_URL` | Gateway proxy URL for OpenAI (with `/v1` and `?trace_id=`) |
 | `ANTHROPIC_API_KEY` | Passed through from host |
 | `OPENAI_API_KEY` | Passed through from host |
-| `HEVAL_TRACE_ID` | Cell trace ID for cost attribution |
+| `HARNESSBENCH_TRACE_ID` | Cell trace ID for cost attribution |
 
 ### Allowlisted (passed from host to container)
 
@@ -511,7 +511,7 @@ docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harnessbench-runner:cc-2.0
 
 Available build args (defaulting to the verified pinned set): `CLAUDE_CODE_VERSION`,
 `CODEX_VERSION`, `OPENCODE_VERSION`, `PI_VERSION`, `OMP_VERSION`, `BUN_VERSION`.
-The installed versions are recorded as `io.heval.*` OCI image labels, and the
+The installed versions are recorded as `io.harnessbench.*` OCI image labels, and the
 image name is stored in each run's metadata, so results trace to exact versions.
 Reference the built image via `docker_image:` in the run config.
 

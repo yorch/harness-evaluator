@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from heval.orchestrator.config import TaskLibrary, TaskTrack
+from harnessbench.orchestrator.config import TaskLibrary, TaskTrack
 
 # The tasks directory lives at the repository root, two levels up from
 # this test file (tests/test_task_library.py -> repo root).

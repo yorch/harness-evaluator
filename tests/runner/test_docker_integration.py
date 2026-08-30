@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
-from heval.orchestrator.config import (
+from harnessbench.orchestrator.config import (
     HarnessSpec,
     ModelSpec,
     RunCell,
@@ -24,9 +24,9 @@ from heval.orchestrator.config import (
     TaskSpec,
     TaskTrack,
 )
-from heval.orchestrator.engine import Orchestrator
-from heval.orchestrator.results_store import ResultsStore
-from heval.runner.docker import CompletedProcess, DockerRunner
+from harnessbench.orchestrator.engine import Orchestrator
+from harnessbench.orchestrator.results_store import ResultsStore
+from harnessbench.runner.docker import CompletedProcess, DockerRunner
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -226,11 +226,11 @@ class TestSetupScriptWritten:
 
         with (
             patch(
-                "heval.runner.docker._run_subprocess",
+                "harnessbench.runner.docker._run_subprocess",
                 side_effect=docker_results,
             ),
-            patch("heval.runner.docker.subprocess.run") as mock_run,
-            patch("heval.adapters.base.shutil.which", return_value="/usr/bin/claude"),
+            patch("harnessbench.runner.docker.subprocess.run") as mock_run,
+            patch("harnessbench.adapters.base.shutil.which", return_value="/usr/bin/claude"),
         ):
             mock_run.side_effect = git_results
 
@@ -251,7 +251,7 @@ class TestSetupScriptWritten:
 class TestCodexCommandNoQuotes:
     def test_codex_get_command_no_literal_quotes(self, tmp_path: Any):
         """CodexAdapter.get_command() should not wrap openai_base_url in quotes."""
-        from heval.adapters.codex import CodexAdapter
+        from harnessbench.adapters.codex import CodexAdapter
 
         model = ModelSpec(
             name="gpt-4o", provider="openai", api_key_env="OPENAI_API_KEY"
@@ -294,7 +294,7 @@ class TestCommitChangesIdentity:
 
         await runner._commit_changes(repo_dir)
 
-        # Verify local git config has the heval identity
+        # Verify local git config has the harnessbench identity
         email_result = subprocess.run(
             ["git", "config", "user.email"],
             cwd=repo_dir,
@@ -302,7 +302,7 @@ class TestCommitChangesIdentity:
             text=True,
         )
         assert email_result.returncode == 0
-        assert email_result.stdout.strip() == "heval@local"
+        assert email_result.stdout.strip() == "harnessbench@local"
 
         name_result = subprocess.run(
             ["git", "config", "user.name"],
@@ -311,7 +311,7 @@ class TestCommitChangesIdentity:
             text=True,
         )
         assert name_result.returncode == 0
-        assert name_result.stdout.strip() == "heval"
+        assert name_result.stdout.strip() == "harnessbench"
 
         # Verify a commit was made
         log_result = subprocess.run(
@@ -399,7 +399,7 @@ class TestOpenEndedEvaluatorGateway:
         """Docker runner should pass gateway_url and trace_id to
         OpenEndedEvaluator when evaluating an open-ended task.
         """
-        from heval.evaluator.open_ended import OpenEndedResult
+        from harnessbench.evaluator.open_ended import OpenEndedResult
 
         open_task = TaskSpec(
             id="open-1",
@@ -469,17 +469,17 @@ class TestOpenEndedEvaluatorGateway:
 
         with (
             patch(
-                "heval.evaluator.open_ended.OpenEndedEvaluator",
+                "harnessbench.evaluator.open_ended.OpenEndedEvaluator",
                 return_value=mock_eval_instance,
             ) as mock_eval_class,
             patch(
-                "heval.runner.docker._run_subprocess",
+                "harnessbench.runner.docker._run_subprocess",
                 new_callable=AsyncMock,
                 side_effect=docker_results,
             ),
-            patch("heval.runner.docker.subprocess.run") as mock_run,
+            patch("harnessbench.runner.docker.subprocess.run") as mock_run,
             patch(
-                "heval.adapters.registry.create_adapter",
+                "harnessbench.adapters.registry.create_adapter",
                 return_value=mock_adapter,
             ),
         ):

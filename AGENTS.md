@@ -10,13 +10,13 @@ uv sync --extra dev
 uv run ruff check src/ tests/
 
 # Type check (fast, ~3s)
-uv run mypy src/heval/
+uv run mypy src/harnessbench/
 
 # Tests (full suite ~10s, 271 tests)
 uv run pytest tests/ -q
 
 # All gates at once — must pass before completing any change
-uv run ruff check src/ tests/ && uv run mypy src/heval/ && uv run pytest tests/ -q
+uv run ruff check src/ tests/ && uv run mypy src/harnessbench/ && uv run pytest tests/ -q
 
 # Build Docker image (slow, ~5 min — only needed when changing Dockerfile)
 docker build -t harnessbench-runner:latest .
@@ -33,17 +33,17 @@ Python core that orchestrates Node.js coding harnesses running inside Docker
 containers, with all provider traffic routed through a custom aiohttp gateway
 proxy for token/cost accounting.
 
-- `src/heval/gateway/` — HTTP/SSE proxy, parsers, SQLite store, reconciliation
-- `src/heval/orchestrator/` — Matrix builder, budget engine, results store
-- `src/heval/runner/` — Docker lifecycle (container per cell, exec-based)
-- `src/heval/adapters/` — Per-harness CLI wrappers (claude, codex, opencode, pi, omp)
-- `src/heval/evaluator/` — SWE hidden-test + open-ended LLM judge tracks;
+- `src/harnessbench/gateway/` — HTTP/SSE proxy, parsers, SQLite store, reconciliation
+- `src/harnessbench/orchestrator/` — Matrix builder, budget engine, results store
+- `src/harnessbench/runner/` — Docker lifecycle (container per cell, exec-based)
+- `src/harnessbench/adapters/` — Per-harness CLI wrappers (claude, codex, opencode, pi, omp)
+- `src/harnessbench/evaluator/` — SWE hidden-test + open-ended LLM judge tracks;
   `evaluator/utils.py` holds the shared, symlink-safe `get_workdir_diff`
-- `src/heval/dashboard/` — FastAPI dashboard with Jinja2 templates
-- `src/heval/stats/` — Mixed-effects model, variance decomposition, bootstrap CIs
-- `src/heval/cli.py` — Typer-based CLI entry point
+- `src/harnessbench/dashboard/` — FastAPI dashboard with Jinja2 templates
+- `src/harnessbench/stats/` — Mixed-effects model, variance decomposition, bootstrap CIs
+- `src/harnessbench/cli.py` — Typer-based CLI entry point
 - `tasks/` — Task YAML definitions and repo fixtures (bundled into the wheel
-  at `heval/tasks` so an installed harnessbench runs without a repo checkout)
+  at `harnessbench/tasks` so an installed harnessbench runs without a repo checkout)
 - `Dockerfile` — Image with all 5 harnesses + Bun (node:22-slim base). Harness
   versions are build args (`CLAUDE_CODE_VERSION`, etc.) with pinned defaults.
 
@@ -88,7 +88,7 @@ ci: bump actions/checkout to v7
 - Do not add production dependencies without running `uv add <pkg>` (not
   manual `pyproject.toml` edits).
 - The gateway proxy must never forward internal trace headers
-  (`x-heval-trace-id`, `x-trace-id`) or the `trace_id` query param upstream.
+  (`x-harnessbench-trace-id`, `x-trace-id`) or the `trace_id` query param upstream.
 - The dashboard has no auth — keep it localhost-only by default.
 - Task YAMLs are trusted input: `test_command` runs on the host and
   `setup_script` runs in the container. Do not load untrusted task libraries.

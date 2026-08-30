@@ -239,7 +239,7 @@ Paginated results use parameterized SQL queries with `LIMIT` and `OFFSET`. Colum
 
 ### Templates
 
-Dashboard templates are in `src/heval/dashboard/templates/`:
+Dashboard templates are in `src/harnessbench/dashboard/templates/`:
 
 | Template | Description |
 |----------|-------------|
@@ -252,7 +252,7 @@ All templates use Jinja2 with `select_autoescape(["html", "xml"])` for XSS safet
 
 | File | Description |
 |------|-------------|
-| `src/heval/reporting/static_report.py` | `ReportGenerator` — HTML/JSON/CSV generation |
-| `src/heval/dashboard/app.py` | `create_app()` — FastAPI dashboard factory |
-| `src/heval/dashboard/templates/index.html` | Run overview template |
-| `src/heval/dashboard/templates/run_detail.html` | Run detail template |
+| `src/harnessbench/reporting/static_report.py` | `ReportGenerator` — HTML/JSON/CSV generation |
+| `src/harnessbench/dashboard/app.py` | `create_app()` — FastAPI dashboard factory |
+| `src/harnessbench/dashboard/templates/index.html` | Run overview template |
+| `src/harnessbench/dashboard/templates/run_detail.html` | Run detail template |

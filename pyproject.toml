@@ -49,19 +49,18 @@ Source = "https://github.com/yorch/heval"
 Issues = "https://github.com/yorch/heval/issues"
 
 [project.scripts]
-heval = "heval.cli:app"
-harnessbench = "heval.cli:app"
+harnessbench = "harnessbench.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/heval"]
+packages = ["src/harnessbench"]
 
 # Bundle the task library (YAMLs + repo fixtures) into the wheel at
-# heval/tasks so an installed `heval` can run without a repo checkout.
+# harnessbench/tasks so an installed `harnessbench` can run without a repo checkout.
 [tool.hatch.build.targets.wheel.force-include]
-"tasks" = "heval/tasks"
+"tasks" = "harnessbench/tasks"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/heval", "tasks", "runs", "README.md", "LICENSE", "pyproject.toml"]
+include = ["src/harnessbench", "tasks", "runs", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.ruff]
 src = ["src", "tests"]
@@ -71,7 +70,7 @@ line-length = 100
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["heval"]
+known-first-party = ["harnessbench"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -79,7 +78,7 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-packages = ["heval"]
+packages = ["harnessbench"]
 
 [[tool.mypy.overrides]]
 module = ["pandas", "statsmodels.*", "numpy.*"]

@@ -6,8 +6,8 @@ import os
 
 import pytest
 
-from heval.adapters.registry import create_adapter, get_adapter_class, list_adapters
-from heval.orchestrator.config import ModelSpec
+from harnessbench.adapters.registry import create_adapter, get_adapter_class, list_adapters
+from harnessbench.orchestrator.config import ModelSpec
 
 
 @pytest.fixture
@@ -73,35 +73,35 @@ class TestAdapterRegistry:
 
 class TestAdapterInfo:
     def test_opencode_info(self):
-        from heval.adapters.opencode import OpenCodeAdapter
+        from harnessbench.adapters.opencode import OpenCodeAdapter
 
         info = OpenCodeAdapter.info()
         assert info.name == "opencode"
         assert info.observability_tier == "full"
 
     def test_claude_code_info(self):
-        from heval.adapters.claude_code import ClaudeCodeAdapter
+        from harnessbench.adapters.claude_code import ClaudeCodeAdapter
 
         info = ClaudeCodeAdapter.info()
         assert info.name == "claude-code"
         assert info.observability_tier == "partial"
 
     def test_codex_info(self):
-        from heval.adapters.codex import CodexAdapter
+        from harnessbench.adapters.codex import CodexAdapter
 
         info = CodexAdapter.info()
         assert info.name == "codex"
         assert info.observability_tier == "partial"
 
     def test_pi_info(self):
-        from heval.adapters.pi import PiAdapter
+        from harnessbench.adapters.pi import PiAdapter
 
         info = PiAdapter.info()
         assert info.name == "pi"
         assert info.observability_tier == "minimal"
 
     def test_omp_info(self):
-        from heval.adapters.omp import OMPAdapter
+        from harnessbench.adapters.omp import OMPAdapter
 
         info = OMPAdapter.info()
         assert info.name == "omp"
@@ -120,7 +120,7 @@ class TestAdapterEnv:
         assert adapter is not None
         env = adapter.get_env()
         assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877?trace_id=test-cell-1"
-        assert env["HEVAL_TRACE_ID"] == "test-cell-1"
+        assert env["HARNESSBENCH_TRACE_ID"] == "test-cell-1"
 
     def test_openai_gateway_env(self, tmp_workdir, openai_model):
         adapter = create_adapter(
@@ -133,7 +133,7 @@ class TestAdapterEnv:
         assert adapter is not None
         env = adapter.get_env()
         assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8877/v1?trace_id=test-cell-2"
-        assert env["HEVAL_TRACE_ID"] == "test-cell-2"
+        assert env["HARNESSBENCH_TRACE_ID"] == "test-cell-2"
 
     def test_no_gateway_url(self, tmp_workdir, anthropic_model):
         adapter = create_adapter(
@@ -159,7 +159,7 @@ class TestAdapterEnv:
         assert adapter is not None
         env = adapter.get_env()
         assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877"
-        assert "HEVAL_TRACE_ID" not in env
+        assert "HARNESSBENCH_TRACE_ID" not in env
 
     def test_gateway_url_with_trace_id_appended(self, tmp_workdir, anthropic_model):
         """trace_id is appended as a query param to the gateway URL."""
@@ -211,7 +211,7 @@ class TestAdapterRunMissingExecutable:
         # Force shutil.which to return None
 
         monkeypatch.setattr(
-            "heval.adapters.base.shutil.which", lambda x: None
+            "harnessbench.adapters.base.shutil.which", lambda x: None
         )
         adapter = create_adapter(
             "claude-code",
@@ -225,7 +225,7 @@ class TestAdapterRunMissingExecutable:
 
     async def test_codex_not_installed(self, tmp_workdir, openai_model, monkeypatch):
         """Test that missing codex returns error result."""
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "codex",
             workdir=str(tmp_workdir),
@@ -238,7 +238,7 @@ class TestAdapterRunMissingExecutable:
 
     async def test_opencode_not_installed(self, tmp_workdir, anthropic_model, monkeypatch):
         """Test that missing opencode returns error result."""
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "opencode",
             workdir=str(tmp_workdir),
@@ -251,7 +251,7 @@ class TestAdapterRunMissingExecutable:
 
     async def test_pi_not_installed(self, tmp_workdir, anthropic_model, monkeypatch):
         """Test that missing pi returns error result."""
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "pi",
             workdir=str(tmp_workdir),
@@ -264,7 +264,7 @@ class TestAdapterRunMissingExecutable:
 
     async def test_omp_not_installed(self, tmp_workdir, anthropic_model, monkeypatch):
         """Test that missing omp returns error result."""
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "omp",
             workdir=str(tmp_workdir),
@@ -310,9 +310,9 @@ class TestAdapterPrepare:
         self, tmp_workdir, anthropic_model, monkeypatch
     ):
         """Test that prepare() raises when claude is not installed."""
-        from heval.adapters.base import AdapterNotInstalledError
+        from harnessbench.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "claude-code",
             workdir=str(tmp_workdir),
@@ -327,7 +327,7 @@ class TestAdapterPrepare:
     ):
         """Test that prepare() succeeds when claude is installed."""
         monkeypatch.setattr(
-            "heval.adapters.base.shutil.which",
+            "harnessbench.adapters.base.shutil.which",
             lambda x: "/usr/bin/claude" if x == "claude" else None,
         )
         adapter = create_adapter(
@@ -342,9 +342,9 @@ class TestAdapterPrepare:
         self, tmp_workdir, openai_model, monkeypatch
     ):
         """Test that prepare() raises when codex is not installed."""
-        from heval.adapters.base import AdapterNotInstalledError
+        from harnessbench.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "codex",
             workdir=str(tmp_workdir),
@@ -358,9 +358,9 @@ class TestAdapterPrepare:
         self, tmp_workdir, anthropic_model, monkeypatch
     ):
         """Test that prepare() raises when opencode is not installed."""
-        from heval.adapters.base import AdapterNotInstalledError
+        from harnessbench.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "opencode",
             workdir=str(tmp_workdir),
@@ -374,9 +374,9 @@ class TestAdapterPrepare:
         self, tmp_workdir, anthropic_model, monkeypatch
     ):
         """Test that prepare() raises when pi is not installed."""
-        from heval.adapters.base import AdapterNotInstalledError
+        from harnessbench.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "pi",
             workdir=str(tmp_workdir),
@@ -390,9 +390,9 @@ class TestAdapterPrepare:
         self, tmp_workdir, anthropic_model, monkeypatch
     ):
         """Test that prepare() raises when omp is not installed."""
-        from heval.adapters.base import AdapterNotInstalledError
+        from harnessbench.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "omp",
             workdir=str(tmp_workdir),
@@ -406,9 +406,9 @@ class TestAdapterPrepare:
         self, tmp_workdir, anthropic_model, monkeypatch
     ):
         """Test that the error message includes install instructions."""
-        from heval.adapters.base import AdapterNotInstalledError
+        from harnessbench.adapters.base import AdapterNotInstalledError
 
-        monkeypatch.setattr("heval.adapters.base.shutil.which", lambda x: None)
+        monkeypatch.setattr("harnessbench.adapters.base.shutil.which", lambda x: None)
         adapter = create_adapter(
             "claude-code",
             workdir=str(tmp_workdir),
@@ -422,13 +422,13 @@ class TestAdapterPrepare:
 
 class TestClaudeCodeAnsiStripping:
     def test_strip_ansi(self):
-        from heval.adapters.claude_code import _strip_ansi
+        from harnessbench.adapters.claude_code import _strip_ansi
 
         text = "\x1B[32mhello\x1B[0m world"
         assert _strip_ansi(text) == "hello world"
 
     def test_strip_ansi_complex(self):
-        from heval.adapters.claude_code import _strip_ansi
+        from harnessbench.adapters.claude_code import _strip_ansi
 
         text = "\x1B[1;31mError:\x1B[0m \x1B[4mnot found\x1B[24m"
         assert _strip_ansi(text) == "Error: not found"

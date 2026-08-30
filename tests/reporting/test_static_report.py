@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from heval.orchestrator.config import HarnessSpec, ModelSpec, RunCell, TaskSpec, TaskTrack
-from heval.orchestrator.results_store import ResultsStore
-from heval.reporting.static_report import ReportGenerator
+from harnessbench.orchestrator.config import HarnessSpec, ModelSpec, RunCell, TaskSpec, TaskTrack
+from harnessbench.orchestrator.results_store import ResultsStore
+from harnessbench.reporting.static_report import ReportGenerator
 
 
 @pytest.fixture

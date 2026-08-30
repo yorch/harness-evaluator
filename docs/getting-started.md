@@ -35,14 +35,14 @@ export ANTHROPIC_API_KEY=sk-ant-...
 uvx harnessbench gateway --port 8877
 
 # Run the evaluation
-uvx harnessbench run heval.yaml
+uvx harnessbench run harnessbench.yaml
 ```
 
 `uvx harnessbench` runs the published package in an ephemeral environment. To
 install it persistently, use `uv tool install harnessbench` or
 `pipx install harnessbench` — both provide the `harnessbench` command.
 
-> **Note**: The `heval` command also works as an alias for `harnessbench`. Examples in this documentation use `harnessbench`, but either name can be used interchangeably.
+> **Note**: The `harnessbench` command also works as an alias for `harnessbench`. Examples in this documentation use `harnessbench`, but either name can be used interchangeably.
 
 The rest of this guide covers the from-source workflow and explains each step
 in detail.
@@ -151,7 +151,7 @@ You should see:
 
 ```
 Starting gateway proxy on 127.0.0.1:8877
-Captured calls stored to: heval_gateway.db
+Captured calls stored to: harnessbench_gateway.db
 Configure harnesses with:
   ANTHROPIC_BASE_URL=http://127.0.0.1:8877
   OPENAI_BASE_URL=http://127.0.0.1:8877
@@ -378,7 +378,7 @@ If using the GHCR image, set `docker_image: "ghcr.io/yorch/harnessbench-runner:l
 WARNING: No pricing found for model 'my-model'; cost will be $0
 ```
 
-Add the model to `DEFAULT_PRICING` in `src/heval/gateway/models.py`. See [Configuration](configuration/#pricing-tables).
+Add the model to `DEFAULT_PRICING` in `src/harnessbench/gateway/models.py`. See [Configuration](configuration/#pricing-tables).
 
 ### Harness binary not found in container
 

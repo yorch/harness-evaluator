@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from heval.gateway.models import TokenUsage
-from heval.gateway.parsers.openai import _usage_from_openai_dict, parse_sse_chunk
-from heval.gateway.proxy import _validate_upstream_url
-from heval.orchestrator.config import TaskSpec, TaskTrack
+from harnessbench.gateway.models import TokenUsage
+from harnessbench.gateway.parsers.openai import _usage_from_openai_dict, parse_sse_chunk
+from harnessbench.gateway.proxy import _validate_upstream_url
+from harnessbench.orchestrator.config import TaskSpec, TaskTrack
 
 
 class TestTaskSpecValidation:
@@ -49,7 +49,7 @@ class TestTaskSpecValidation:
 
 class TestHarnessImageResolution:
     def _harness(self, **kw):  # type: ignore[no-untyped-def]
-        from heval.orchestrator.config import HarnessSpec
+        from harnessbench.orchestrator.config import HarnessSpec
 
         return HarnessSpec(name="claude-code", adapter="claude-code", **kw)
 
@@ -138,7 +138,7 @@ class TestOpenAIResponsesUsage:
 
 class TestBunTestParsing:
     def _evaluator(self):  # type: ignore[no-untyped-def]
-        from heval.evaluator.swe import SWEEvaluator
+        from harnessbench.evaluator.swe import SWEEvaluator
 
         return SWEEvaluator.__new__(SWEEvaluator)
 
@@ -163,7 +163,7 @@ class TestBunTestParsing:
 
 class TestSymlinkSafeDiff:
     def test_untracked_symlink_skipped(self, tmp_path: Path) -> None:
-        from heval.evaluator.utils import get_workdir_diff
+        from harnessbench.evaluator.utils import get_workdir_diff
 
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -185,7 +185,7 @@ class TestSymlinkSafeDiff:
 
 class TestCsvInjectionSanitization:
     def test_formula_prefixes_neutralized(self) -> None:
-        from heval.reporting.static_report import sanitize_csv_field
+        from harnessbench.reporting.static_report import sanitize_csv_field
 
         assert sanitize_csv_field("=cmd|'/C calc'!A0").startswith("'=")
         assert sanitize_csv_field("+1").startswith("'+")
@@ -193,7 +193,7 @@ class TestCsvInjectionSanitization:
         assert sanitize_csv_field("@x").startswith("'@")
 
     def test_normal_values_untouched(self) -> None:
-        from heval.reporting.static_report import sanitize_csv_field
+        from harnessbench.reporting.static_report import sanitize_csv_field
 
         assert sanitize_csv_field("hello") == "hello"
         assert sanitize_csv_field(42) == 42

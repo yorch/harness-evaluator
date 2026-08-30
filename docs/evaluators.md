@@ -16,7 +16,7 @@ harnessbench has two evaluation tracks, each with separate leaderboards. They ar
 
 ## SWE-bench-style track
 
-The SWE evaluator (`src/heval/evaluator/swe.py`) evaluates tasks with hidden tests, similar to [SWE-bench](https://www.swebench.com/).
+The SWE evaluator (`src/harnessbench/evaluator/swe.py`) evaluates tasks with hidden tests, similar to [SWE-bench](https://www.swebench.com/).
 
 ### Evaluation flow
 
@@ -110,7 +110,7 @@ If no test output is parseable and the return code is 0, the evaluator returns `
 
 ## Open-ended track
 
-The open-ended evaluator (`src/heval/evaluator/open_ended.py`) evaluates tasks without a single correct answer using a frozen LLM judge, structured rubric, and structural checks.
+The open-ended evaluator (`src/harnessbench/evaluator/open_ended.py`) evaluates tasks without a single correct answer using a frozen LLM judge, structured rubric, and structural checks.
 
 ### Components
 
@@ -183,7 +183,7 @@ The judge prompt explicitly instructs the LLM to treat diff content as data, not
 
 ### Gateway routing
 
-The judge routes through the gateway proxy when `gateway_url` is set, sending the `x-heval-trace-id` header so token usage is captured and attributed to the trace. Direct API calls (without gateway) are a fallback for testing only.
+The judge routes through the gateway proxy when `gateway_url` is set, sending the `x-harnessbench-trace-id` header so token usage is captured and attributed to the trace. Direct API calls (without gateway) are a fallback for testing only.
 
 ### Structural checks
 
@@ -289,5 +289,5 @@ tasks:
 
 | File | Description |
 |------|-------------|
-| `src/heval/evaluator/swe.py` | `SWEEvaluator`, `ErrorClass`, `EvaluationResult` |
-| `src/heval/evaluator/open_ended.py` | `FrozenJudge`, `Rubric`, `StructuralChecker`, `CalibrationSet`, `OpenEndedEvaluator` |
+| `src/harnessbench/evaluator/swe.py` | `SWEEvaluator`, `ErrorClass`, `EvaluationResult` |
+| `src/harnessbench/evaluator/open_ended.py` | `FrozenJudge`, `Rubric`, `StructuralChecker`, `CalibrationSet`, `OpenEndedEvaluator` |

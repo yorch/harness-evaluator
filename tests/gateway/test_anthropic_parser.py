@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from heval.gateway.models import TokenUsage
-from heval.gateway.parsers.anthropic import (
+from harnessbench.gateway.models import TokenUsage
+from harnessbench.gateway.parsers.anthropic import (
     parse_non_streaming_usage,
     parse_sse_event,
     parse_sse_line,

@@ -10,7 +10,7 @@ export default defineConfig({
   },
   integrations: [
     starlight({
-      title: 'heval',
+      title: 'harnessbench',
       description:
         'Compare agentic coding harnesses on token efficiency, task effectiveness, and time efficiency.',
       social: [

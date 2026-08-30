@@ -1,15 +1,15 @@
 ---
-title: heval Documentation
-description: Comprehensive documentation for heval — a harness evaluator that compares agentic coding harnesses on token efficiency, task effectiveness, and time efficiency.
+title: harnessbench Documentation
+description: Comprehensive documentation for harnessbench — a harness evaluator that compares agentic coding harnesses on token efficiency, task effectiveness, and time efficiency.
 ---
 
-# heval Documentation
+# harnessbench Documentation
 
-**heval** (harness evaluator) compares agentic coding harnesses — Claude Code, Codex, Pi, OpenCode, and OMP — against one or more models on a set of tasks. It measures which harnesses are most token-efficient, task-effective, and time-effective.
+**harnessbench** (harness evaluator) compares agentic coding harnesses — Claude Code, Codex, Pi, OpenCode, and OMP — against one or more models on a set of tasks. It measures which harnesses are most token-efficient, task-effective, and time-effective.
 
 The comparison is **product-level**: which harness to *use* with a given model. The harness's system prompt, tool set, context strategy, and safety policy are part of what is being evaluated, not controlled for.
 
-## How heval works
+## How harnessbench works
 
 ```
  ┌─────────────┐     ┌──────────────┐     ┌───────────────┐     ┌────────────┐
@@ -74,7 +74,7 @@ Leaderboards can be filtered by tier. Comparisons across tiers are flagged.
 
 ### Task tracks
 
-heval supports two tracks with separate leaderboards (never cross-compared):
+harnessbench supports two tracks with separate leaderboards (never cross-compared):
 
 - **SWE-bench-style** (`swe`): repo + issue + hidden test patch. Objective pass/fail with partial credit.
 - **Open-ended** (`open_ended`): free-form tasks evaluated by a frozen LLM judge with a structured rubric and structural checks.
@@ -94,7 +94,7 @@ heval supports two tracks with separate leaderboards (never cross-compared):
 
 ```
 harness-evaluator/
-├── src/heval/
+├── src/harnessbench/
 │   ├── cli.py                  # Typer-based CLI entry point
 │   ├── gateway/                # HTTP/SSE proxy, parsers, SQLite store, reconciliation
 │   │   ├── proxy.py            # aiohttp proxy server

@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from heval.gateway.models import TokenUsage
-from heval.orchestrator.config import HarnessSpec, ModelSpec, RunConfig
-from heval.orchestrator.engine import Orchestrator, RetryableError
-from heval.orchestrator.results_store import ResultsStore
+from harnessbench.gateway.models import TokenUsage
+from harnessbench.orchestrator.config import HarnessSpec, ModelSpec, RunConfig
+from harnessbench.orchestrator.engine import Orchestrator, RetryableError
+from harnessbench.orchestrator.results_store import ResultsStore
 
 
 @pytest.fixture

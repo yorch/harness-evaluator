@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from heval.dashboard.app import create_app
-from heval.orchestrator.config import HarnessSpec, ModelSpec, RunCell, TaskSpec, TaskTrack
-from heval.orchestrator.results_store import ResultsStore
+from harnessbench.dashboard.app import create_app
+from harnessbench.orchestrator.config import HarnessSpec, ModelSpec, RunCell, TaskSpec, TaskTrack
+from harnessbench.orchestrator.results_store import ResultsStore
 
 
 @pytest.fixture

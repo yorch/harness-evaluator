@@ -5,9 +5,9 @@ from __future__ import annotations
 import aiohttp
 from aiohttp import web
 
-from heval.gateway.models import Provider
-from heval.gateway.proxy import create_proxy_app
-from heval.gateway.store import CallStore
+from harnessbench.gateway.models import Provider
+from harnessbench.gateway.proxy import create_proxy_app
+from harnessbench.gateway.store import CallStore
 
 
 class TestProxyNonStreamingAnthropic:
@@ -233,7 +233,7 @@ class TestProxyTraceIdExtraction:
         assert calls[0].trace_id == "my-cell-123"
 
     async def test_trace_id_from_header(self, proxy_app):
-        """Test that trace_id is still extracted from the x-heval-trace-id header."""
+        """Test that trace_id is still extracted from the x-harnessbench-trace-id header."""
         proxy_url, store, _ = proxy_app
 
         async with aiohttp.ClientSession() as session, session.post(
@@ -243,7 +243,7 @@ class TestProxyTraceIdExtraction:
                 "max_tokens": 100,
                 "messages": [{"role": "user", "content": "Hi"}],
             },
-            headers={"x-heval-trace-id": "header-cell-456"},
+            headers={"x-harnessbench-trace-id": "header-cell-456"},
         ) as resp:
             assert resp.status == 200
 
@@ -262,7 +262,7 @@ class TestProxyTraceIdExtraction:
                 "max_tokens": 100,
                 "messages": [{"role": "user", "content": "Hi"}],
             },
-            headers={"x-heval-trace-id": "header-id"},
+            headers={"x-harnessbench-trace-id": "header-id"},
         ) as resp:
             assert resp.status == 200
 
@@ -311,14 +311,14 @@ class TestProxyTraceIdExtraction:
 
     def test_extract_trace_id_unit(self, tmp_db):
         """Unit test for _extract_trace_id with various inputs."""
-        from heval.gateway.proxy import GatewayProxy
+        from harnessbench.gateway.proxy import GatewayProxy
 
         store = CallStore(tmp_db)
         proxy = GatewayProxy(store)
 
         # Header takes precedence
         assert proxy._extract_trace_id(
-            {"x-heval-trace-id": "abc"}, "trace_id=xyz"
+            {"x-harnessbench-trace-id": "abc"}, "trace_id=xyz"
         ) == "abc"
 
         # Fallback to x-trace-id header
@@ -337,7 +337,7 @@ class TestProxyTraceIdExtraction:
 class TestProxyCanaryIntegration:
     async def test_canary_passes_with_mock(self, proxy_app):
         """Test that the canary passes when proxy usage matches upstream."""
-        from heval.gateway.canary import run_canary
+        from harnessbench.gateway.canary import run_canary
 
         proxy_url, store, _ = proxy_app
 
@@ -361,7 +361,7 @@ class TestProxyCanaryIntegration:
 
     async def test_canary_streaming(self, proxy_app):
         """Test that the canary handles streaming responses."""
-        from heval.gateway.canary import run_canary
+        from harnessbench.gateway.canary import run_canary
 
         proxy_url, store, _ = proxy_app
 

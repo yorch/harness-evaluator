@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from heval.evaluator.open_ended import (
+from harnessbench.evaluator.open_ended import (
     DEFAULT_RUBRIC,
     CalibrationSet,
     FrozenJudge,
@@ -17,7 +17,7 @@ from heval.evaluator.open_ended import (
     RubricCriterion,
     StructuralChecker,
 )
-from heval.orchestrator.config import TaskSpec, TaskTrack
+from harnessbench.orchestrator.config import TaskSpec, TaskTrack
 
 
 @pytest.fixture

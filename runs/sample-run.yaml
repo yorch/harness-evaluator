@@ -1,4 +1,4 @@
-# Sample run configuration for heval
+# Sample run configuration for harnessbench
 # Full sweep: all 5 harnesses, 2 providers, both task tracks.
 # For a minimal first run, see sample-minimal.yaml.
 name: "broad-first-pass"
@@ -52,8 +52,8 @@ task_library_path: "./tasks"
 repeats: 5
 budget_usd: 100.0
 gateway_port: 8877
-gateway_db: "heval_gateway.db"
-results_db: "heval_results.db"
-workdir: "./heval_workdir"
+gateway_db: "harnessbench_gateway.db"
+results_db: "harnessbench_results.db"
+workdir: "./harnessbench_workdir"
 docker_image: "harnessbench-runner:latest"
 parallel_runs: 1

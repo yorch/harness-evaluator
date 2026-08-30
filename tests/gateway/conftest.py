@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 from aiohttp import web
 
-from heval.gateway.models import Provider
-from heval.gateway.proxy import create_proxy_app
-from heval.gateway.store import CallStore
+from harnessbench.gateway.models import Provider
+from harnessbench.gateway.proxy import create_proxy_app
+from harnessbench.gateway.store import CallStore
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ description: All harnessbench CLI commands, flags, and options with examples.
 
 # CLI Reference
 
-harnessbench uses [Typer](https://typer.tiangolo.com/) for its CLI. The entry point is `harnessbench` (defined in `pyproject.toml` as `harnessbench = "heval.cli:app"`).
+harnessbench uses [Typer](https://typer.tiangolo.com/) for its CLI. The entry point is `harnessbench` (defined in `pyproject.toml` as `harnessbench = "harnessbench.cli:app"`).
 
 ## Commands overview
 
@@ -38,7 +38,7 @@ harnessbench init [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--filename` | string | `heval.yaml` | Path for the generated config |
+| `--filename` | string | `harnessbench.yaml` | Path for the generated config |
 | `--force` / `--no-force` | flag | `False` | Overwrite an existing file |
 
 ### Examples
@@ -153,7 +153,7 @@ harnessbench gateway [options]
 |--------|------|---------|-------------|
 | `--host` | string | `127.0.0.1` | Host to bind to |
 | `--port` | int | `8877` | Port to bind to |
-| `--db` | string | `heval_gateway.db` | SQLite DB path for captured calls |
+| `--db` | string | `harnessbench_gateway.db` | SQLite DB path for captured calls |
 
 ### Examples
 
@@ -165,7 +165,7 @@ harnessbench gateway
 harnessbench gateway --host 0.0.0.0 --port 8877
 
 # Custom database path
-harnessbench gateway --db /data/heval_gateway.db
+harnessbench gateway --db /data/harnessbench_gateway.db
 ```
 
 ## harnessbench canary
@@ -182,7 +182,7 @@ harnessbench canary [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--db` | string | `heval_gateway.db` | SQLite DB path |
+| `--db` | string | `harnessbench_gateway.db` | SQLite DB path |
 | `--tolerance-pct` / `--tolerance` | float | `1.0` | Max allowed discrepancy percentage |
 
 ### Examples
@@ -195,7 +195,7 @@ harnessbench canary
 harnessbench canary --tolerance-pct 0.5
 
 # Custom DB path
-harnessbench canary --db /data/heval_gateway.db
+harnessbench canary --db /data/harnessbench_gateway.db
 ```
 
 ### Output
@@ -235,7 +235,7 @@ harnessbench report <run_name> [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--db` | string | `heval_results.db` | Results DB path |
+| `--db` | string | `harnessbench_results.db` | Results DB path |
 | `--output` | string | `./reports` | Output directory for reports |
 
 ### Examples
@@ -248,7 +248,7 @@ harnessbench report broad-first-pass
 harnessbench report broad-first-pass --output ./my-reports
 
 # Custom DB path
-harnessbench report broad-first-pass --db /data/heval_results.db
+harnessbench report broad-first-pass --db /data/harnessbench_results.db
 ```
 
 ### Output
@@ -282,13 +282,13 @@ harnessbench results <run_name> [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--db` | string | `heval_results.db` | Results DB path |
+| `--db` | string | `harnessbench_results.db` | Results DB path |
 
 ### Examples
 
 ```bash
 harnessbench results broad-first-pass
-harnessbench results minimal-first-run --db /data/heval_results.db
+harnessbench results minimal-first-run --db /data/harnessbench_results.db
 ```
 
 ### Output
@@ -339,13 +339,13 @@ harnessbench stats <run_name> [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--db` | string | `heval_results.db` | Results DB path |
+| `--db` | string | `harnessbench_results.db` | Results DB path |
 
 ### Examples
 
 ```bash
 harnessbench stats broad-first-pass
-harnessbench stats minimal-first-run --db /data/heval_results.db
+harnessbench stats minimal-first-run --db /data/harnessbench_results.db
 ```
 
 ### Output
@@ -375,7 +375,7 @@ harnessbench dashboard [options]
 |--------|------|---------|-------------|
 | `--host` | string | `127.0.0.1` | Host to bind to |
 | `--port` | int | `8080` | Port to bind to |
-| `--db` | string | `heval_results.db` | Results DB path |
+| `--db` | string | `harnessbench_results.db` | Results DB path |
 
 ### Examples
 

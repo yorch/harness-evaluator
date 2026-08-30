@@ -16,11 +16,11 @@ See [DESIGN.md](DESIGN.md) for the full design specification and
 No clone required — harnessbench bundles its task library and publishes to PyPI as `harnessbench`:
 
 ```bash
-uvx harnessbench init                            # scaffold heval.yaml
+uvx harnessbench init                            # scaffold harnessbench.yaml
 docker pull ghcr.io/yorch/harnessbench-runner:latest   # pull the runner image
 export ANTHROPIC_API_KEY=sk-ant-...
 uvx harnessbench gateway --port 8877             # separate terminal
-uvx harnessbench run heval.yaml
+uvx harnessbench run harnessbench.yaml
 ```
 
 ### From source
@@ -197,7 +197,7 @@ Each adapter implements:
 - `cleanup()`: Clean up after the run
 - `get_env()`: Set gateway proxy env vars and API keys
 
-The adapter registry (`heval.adapters.registry`) loads adapters by name and
+The adapter registry (`harnessbench.adapters.registry`) loads adapters by name and
 the Docker runner uses it to dispatch to the correct adapter based on the
 run config's `harness.adapter` field.
 
@@ -266,7 +266,7 @@ variance decomposition, bootstrap confidence intervals, and consistency analysis
 ### Running stats
 
 ```bash
-harnessbench stats my-run --db heval_results.db
+harnessbench stats my-run --db harnessbench_results.db
 ```
 
 ### Components

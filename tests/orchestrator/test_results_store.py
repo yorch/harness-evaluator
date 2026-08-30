@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from heval.gateway.models import TokenUsage
-from heval.orchestrator.config import HarnessSpec, ModelSpec, RunCell, TaskSpec, TaskTrack
-from heval.orchestrator.results_store import ResultsStore
+from harnessbench.gateway.models import TokenUsage
+from harnessbench.orchestrator.config import HarnessSpec, ModelSpec, RunCell, TaskSpec, TaskTrack
+from harnessbench.orchestrator.results_store import ResultsStore
 
 
 @pytest.fixture

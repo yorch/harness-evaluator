@@ -21,18 +21,18 @@ import aiohttp
 import pytest
 from aiohttp import web
 
-from heval.evaluator.swe import ErrorClass, SWEEvaluator
-from heval.gateway.models import Provider
-from heval.gateway.proxy import create_proxy_app
-from heval.gateway.store import CallStore
-from heval.orchestrator.config import (
+from harnessbench.evaluator.swe import ErrorClass, SWEEvaluator
+from harnessbench.gateway.models import Provider
+from harnessbench.gateway.proxy import create_proxy_app
+from harnessbench.gateway.store import CallStore
+from harnessbench.orchestrator.config import (
     HarnessSpec,
     ModelSpec,
     RunCell,
     TaskLibrary,
 )
-from heval.orchestrator.results_store import ResultsStore
-from heval.reporting.static_report import ReportGenerator
+from harnessbench.orchestrator.results_store import ResultsStore
+from harnessbench.reporting.static_report import ReportGenerator
 
 # Paths to the real task assets shipped with the repo.
 TASKS_DIR = Path(__file__).resolve().parents[1] / "tasks"
@@ -65,7 +65,7 @@ def _git(workdir: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def _init_git_repo(workdir: Path) -> None:
     """Initialise a fresh git repo in workdir and commit all files."""
     _git(workdir, "init")
-    _git(workdir, "config", "user.email", "test@heval.dev")
+    _git(workdir, "config", "user.email", "test@harnessbench.dev")
     _git(workdir, "config", "user.name", "Heval Test")
     _git(workdir, "add", "-A")
     _git(workdir, "commit", "-m", "initial")
