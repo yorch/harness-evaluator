@@ -7,9 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from harnessbench.orchestrator.config import HarnessSpec, ModelSpec, RunCell, TaskSpec, TaskTrack
-from harnessbench.orchestrator.results_store import ResultsStore
-from harnessbench.reporting.static_report import ReportGenerator
+from harness_evaluator.orchestrator.config import (
+    HarnessSpec,
+    ModelSpec,
+    RunCell,
+    TaskSpec,
+    TaskTrack,
+)
+from harness_evaluator.orchestrator.results_store import ResultsStore
+from harness_evaluator.reporting.static_report import ReportGenerator
 
 
 @pytest.fixture

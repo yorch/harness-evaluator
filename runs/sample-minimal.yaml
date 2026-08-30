@@ -1,6 +1,6 @@
-# Minimal run configuration for harnessbench — safe first run.
+# Minimal run configuration for harness-evaluator — safe first run.
 # Uses one harness, one model, one task, one repeat.
-# Requires: harnessbench-runner:latest Docker image and ANTHROPIC_API_KEY env var.
+# Requires: harness-evaluator-runner:latest Docker image and ANTHROPIC_API_KEY env var.
 name: "minimal-first-run"
 description: "Minimal first run: one harness, one model, one task"
 
@@ -25,8 +25,8 @@ task_library_path: "./tasks"
 repeats: 1
 budget_usd: 5.0
 gateway_port: 8877
-gateway_db: "harnessbench_gateway.db"
-results_db: "harnessbench_results.db"
-workdir: "./harnessbench_workdir"
-docker_image: "harnessbench-runner:latest"
+gateway_db: "harness_evaluator_gateway.db"
+results_db: "harness_evaluator_results.db"
+workdir: "./harness_evaluator_workdir"
+docker_image: "harness-evaluator-runner:latest"
 parallel_runs: 1

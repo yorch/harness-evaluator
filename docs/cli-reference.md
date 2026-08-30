@@ -1,64 +1,64 @@
 ---
 title: CLI Reference
-description: All harnessbench CLI commands, flags, and options with examples.
+description: All harness-evaluator CLI commands, flags, and options with examples.
 ---
 
 # CLI Reference
 
-harnessbench uses [Typer](https://typer.tiangolo.com/) for its CLI. The entry point is `harnessbench` (defined in `pyproject.toml` as `harnessbench = "harnessbench.cli:app"`).
+harness-evaluator uses [Typer](https://typer.tiangolo.com/) for its CLI. The entry point is `harness-evaluator` (defined in `pyproject.toml` as `harness-evaluator = "harness_evaluator.cli:app"`).
 
 ## Commands overview
 
 | Command | Description |
 |---------|-------------|
-| [`harnessbench init`](#harnessbench-init) | Scaffold a starter run config (no clone needed) |
-| [`harnessbench run`](#harnessbench-run) | Execute an evaluation run from a config file |
-| [`harnessbench gateway`](#harnessbench-gateway) | Start the gateway proxy server |
-| [`harnessbench canary`](#harnessbench-canary) | Verify proxy token capture accuracy |
-| [`harnessbench report`](#harnessbench-report) | Generate static reports (HTML/JSON/CSV) |
-| [`harnessbench results`](#harnessbench-results) | Show results summary in the console |
-| [`harnessbench adapters`](#harnessbench-adapters) | List available harness adapters |
-| [`harnessbench stats`](#harnessbench-stats) | Generate statistical analysis for a run |
-| [`harnessbench dashboard`](#harnessbench-dashboard) | Start the interactive web dashboard |
-| [`harnessbench calibrate`](#harnessbench-calibrate) | Run judge calibration against anchor set |
+| [`harness-evaluator init`](#harness-evaluator-init) | Scaffold a starter run config (no clone needed) |
+| [`harness-evaluator run`](#harness-evaluator-run) | Execute an evaluation run from a config file |
+| [`harness-evaluator gateway`](#harness-evaluator-gateway) | Start the gateway proxy server |
+| [`harness-evaluator canary`](#harness-evaluator-canary) | Verify proxy token capture accuracy |
+| [`harness-evaluator report`](#harness-evaluator-report) | Generate static reports (HTML/JSON/CSV) |
+| [`harness-evaluator results`](#harness-evaluator-results) | Show results summary in the console |
+| [`harness-evaluator adapters`](#harness-evaluator-adapters) | List available harness adapters |
+| [`harness-evaluator stats`](#harness-evaluator-stats) | Generate statistical analysis for a run |
+| [`harness-evaluator dashboard`](#harness-evaluator-dashboard) | Start the interactive web dashboard |
+| [`harness-evaluator calibrate`](#harness-evaluator-calibrate) | Run judge calibration against anchor set |
 
-## harnessbench init
+## harness-evaluator init
 
-Scaffold a starter run config in the current directory so you can run harnessbench
+Scaffold a starter run config in the current directory so you can run harness-evaluator
 without cloning the repository. The generated config uses the bundled task
 library and the version-pinned published runner image by default.
 
 ### Usage
 
 ```bash
-harnessbench init [options]
+harness-evaluator init [options]
 ```
 
 ### Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--filename` | string | `harnessbench.yaml` | Path for the generated config |
+| `--filename` | string | `harness-evaluator.yaml` | Path for the generated config |
 | `--force` / `--no-force` | flag | `False` | Overwrite an existing file |
 
 ### Examples
 
 ```bash
-# Zero-install scaffold via uv (PyPI package: harnessbench)
-uvx harnessbench init
+# Zero-install scaffold via uv (PyPI package: harness-evaluator)
+uvx harness-evaluator init
 
 # Custom filename, overwrite if present
-harnessbench init --filename my-run.yaml --force
+harness-evaluator init --filename my-run.yaml --force
 ```
 
-## harnessbench run
+## harness-evaluator run
 
 Execute an evaluation run from a YAML config file.
 
 ### Usage
 
 ```bash
-harnessbench run <config> [options]
+harness-evaluator run <config> [options]
 ```
 
 ### Arguments
@@ -78,16 +78,16 @@ harnessbench run <config> [options]
 
 ```bash
 # Dry run — print the matrix without executing
-harnessbench run runs/sample-run.yaml --dry-run
+harness-evaluator run runs/sample-run.yaml --dry-run
 
 # Minimal run (1 harness, 1 model, 1 task, 1 repeat)
-harnessbench run runs/sample-minimal.yaml
+harness-evaluator run runs/sample-minimal.yaml
 
 # Full sweep (all 5 harnesses, 2 providers, all tasks)
-harnessbench run runs/sample-run.yaml
+harness-evaluator run runs/sample-run.yaml
 
 # Skip gateway preflight check
-harnessbench run runs/sample-run.yaml --no-check-gateway
+harness-evaluator run runs/sample-run.yaml --no-check-gateway
 ```
 
 ### Output
@@ -128,23 +128,23 @@ Run: broad-first-pass
 
 ### Gateway preflight
 
-By default, `harnessbench run` checks that the gateway proxy is reachable on `127.0.0.1:<gateway_port>` before executing. If the gateway is not running:
+By default, `harness-evaluator run` checks that the gateway proxy is reachable on `127.0.0.1:<gateway_port>` before executing. If the gateway is not running:
 
 ```
 Gateway is NOT reachable on 127.0.0.1:8877.
 Start it in another terminal with:
-  harnessbench gateway --port 8877
+  harness-evaluator gateway --port 8877
 Then re-run this command.
 ```
 
-## harnessbench gateway
+## harness-evaluator gateway
 
 Start the gateway proxy server for token accounting. See [Gateway Proxy](gateway-proxy/) for full details.
 
 ### Usage
 
 ```bash
-harnessbench gateway [options]
+harness-evaluator gateway [options]
 ```
 
 ### Options
@@ -153,49 +153,49 @@ harnessbench gateway [options]
 |--------|------|---------|-------------|
 | `--host` | string | `127.0.0.1` | Host to bind to |
 | `--port` | int | `8877` | Port to bind to |
-| `--db` | string | `harnessbench_gateway.db` | SQLite DB path for captured calls |
+| `--db` | string | `harness_evaluator_gateway.db` | SQLite DB path for captured calls |
 
 ### Examples
 
 ```bash
 # Start on default port
-harnessbench gateway
+harness-evaluator gateway
 
 # Custom host and port
-harnessbench gateway --host 0.0.0.0 --port 8877
+harness-evaluator gateway --host 0.0.0.0 --port 8877
 
 # Custom database path
-harnessbench gateway --db /data/harnessbench_gateway.db
+harness-evaluator gateway --db /data/harness_evaluator_gateway.db
 ```
 
-## harnessbench canary
+## harness-evaluator canary
 
 Verify that the gateway proxy accurately captures token usage. Reads the last captured call from the gateway DB and compares proxy-captured usage against the provider's response.
 
 ### Usage
 
 ```bash
-harnessbench canary [options]
+harness-evaluator canary [options]
 ```
 
 ### Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--db` | string | `harnessbench_gateway.db` | SQLite DB path |
+| `--db` | string | `harness_evaluator_gateway.db` | SQLite DB path |
 | `--tolerance-pct` / `--tolerance` | float | `1.0` | Max allowed discrepancy percentage |
 
 ### Examples
 
 ```bash
 # Default tolerance (1%)
-harnessbench canary
+harness-evaluator canary
 
 # Stricter tolerance (0.5%)
-harnessbench canary --tolerance-pct 0.5
+harness-evaluator canary --tolerance-pct 0.5
 
 # Custom DB path
-harnessbench canary --db /data/harnessbench_gateway.db
+harness-evaluator canary --db /data/harness_evaluator_gateway.db
 ```
 
 ### Output
@@ -215,14 +215,14 @@ Canary PASSED (single source): only proxy usage available.
 Tokens: 129. This is expected for streaming responses.
 ```
 
-## harnessbench report
+## harness-evaluator report
 
 Generate static reports (HTML, JSON, CSV) for a completed run.
 
 ### Usage
 
 ```bash
-harnessbench report <run_name> [options]
+harness-evaluator report <run_name> [options]
 ```
 
 ### Arguments
@@ -235,20 +235,20 @@ harnessbench report <run_name> [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--db` | string | `harnessbench_results.db` | Results DB path |
+| `--db` | string | `harness_evaluator_results.db` | Results DB path |
 | `--output` | string | `./reports` | Output directory for reports |
 
 ### Examples
 
 ```bash
 # Generate reports for a run
-harnessbench report broad-first-pass
+harness-evaluator report broad-first-pass
 
 # Custom output directory
-harnessbench report broad-first-pass --output ./my-reports
+harness-evaluator report broad-first-pass --output ./my-reports
 
 # Custom DB path
-harnessbench report broad-first-pass --db /data/harnessbench_results.db
+harness-evaluator report broad-first-pass --db /data/harness_evaluator_results.db
 ```
 
 ### Output
@@ -262,14 +262,14 @@ Reports generated:
 
 See [Reporting](reporting/) for report format details.
 
-## harnessbench results
+## harness-evaluator results
 
 Show results summary for a run in the console as a Rich table.
 
 ### Usage
 
 ```bash
-harnessbench results <run_name> [options]
+harness-evaluator results <run_name> [options]
 ```
 
 ### Arguments
@@ -282,13 +282,13 @@ harnessbench results <run_name> [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--db` | string | `harnessbench_results.db` | Results DB path |
+| `--db` | string | `harness_evaluator_results.db` | Results DB path |
 
 ### Examples
 
 ```bash
-harnessbench results broad-first-pass
-harnessbench results minimal-first-run --db /data/harnessbench_results.db
+harness-evaluator results broad-first-pass
+harness-evaluator results minimal-first-run --db /data/harness_evaluator_results.db
 ```
 
 ### Output
@@ -303,14 +303,14 @@ harnessbench results minimal-first-run --db /data/harnessbench_results.db
 └───────────┴────────────────────┴──────────────────┴────────┴─────────┴─────────┴──────────┴─────────┘
 ```
 
-## harnessbench adapters
+## harness-evaluator adapters
 
 List available harness adapters and their observability tiers.
 
 ### Usage
 
 ```bash
-harnessbench adapters
+harness-evaluator adapters
 ```
 
 No arguments or options.
@@ -319,14 +319,14 @@ No arguments or options.
 
 See [Adapters](adapters/#listing-adapters) for example output.
 
-## harnessbench stats
+## harness-evaluator stats
 
 Generate statistical analysis for a run. See [Statistics](statistics/) for details on the models.
 
 ### Usage
 
 ```bash
-harnessbench stats <run_name> [options]
+harness-evaluator stats <run_name> [options]
 ```
 
 ### Arguments
@@ -339,13 +339,13 @@ harnessbench stats <run_name> [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--db` | string | `harnessbench_results.db` | Results DB path |
+| `--db` | string | `harness_evaluator_results.db` | Results DB path |
 
 ### Examples
 
 ```bash
-harnessbench stats broad-first-pass
-harnessbench stats minimal-first-run --db /data/harnessbench_results.db
+harness-evaluator stats broad-first-pass
+harness-evaluator stats minimal-first-run --db /data/harness_evaluator_results.db
 ```
 
 ### Output
@@ -359,14 +359,14 @@ The command prints:
 
 See [Statistics](statistics/) for interpretation.
 
-## harnessbench dashboard
+## harness-evaluator dashboard
 
 Start the interactive web dashboard. See [Reporting](reporting/) for dashboard details.
 
 ### Usage
 
 ```bash
-harnessbench dashboard [options]
+harness-evaluator dashboard [options]
 ```
 
 ### Options
@@ -375,31 +375,31 @@ harnessbench dashboard [options]
 |--------|------|---------|-------------|
 | `--host` | string | `127.0.0.1` | Host to bind to |
 | `--port` | int | `8080` | Port to bind to |
-| `--db` | string | `harnessbench_results.db` | Results DB path |
+| `--db` | string | `harness_evaluator_results.db` | Results DB path |
 
 ### Examples
 
 ```bash
 # Start on default port
-harnessbench dashboard
+harness-evaluator dashboard
 
 # Custom port
-harnessbench dashboard --port 3000
+harness-evaluator dashboard --port 3000
 
 # Allow external connections (not recommended — no auth)
-harnessbench dashboard --host 0.0.0.0
+harness-evaluator dashboard --host 0.0.0.0
 ```
 
 Then open `http://127.0.0.1:8080` in your browser.
 
-## harnessbench calibrate
+## harness-evaluator calibrate
 
 Run judge calibration against the anchor set. Verifies the frozen LLM judge produces consistent scores.
 
 ### Usage
 
 ```bash
-harnessbench calibrate [options]
+harness-evaluator calibrate [options]
 ```
 
 ### Options
@@ -416,10 +416,10 @@ Requires `ANTHROPIC_API_KEY` environment variable to be set.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-harnessbench calibrate
+harness-evaluator calibrate
 
 # Use a different judge model
-harnessbench calibrate --model claude-opus-4-20250514
+harness-evaluator calibrate --model claude-opus-4-20250514
 ```
 
 ### Output

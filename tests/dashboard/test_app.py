@@ -5,9 +5,15 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from harnessbench.dashboard.app import create_app
-from harnessbench.orchestrator.config import HarnessSpec, ModelSpec, RunCell, TaskSpec, TaskTrack
-from harnessbench.orchestrator.results_store import ResultsStore
+from harness_evaluator.dashboard.app import create_app
+from harness_evaluator.orchestrator.config import (
+    HarnessSpec,
+    ModelSpec,
+    RunCell,
+    TaskSpec,
+    TaskTrack,
+)
+from harness_evaluator.orchestrator.results_store import ResultsStore
 
 
 @pytest.fixture
@@ -58,7 +64,7 @@ class TestDashboardHome:
         resp = client.get("/")
         assert resp.status_code == 200
         assert "text/html" in resp.headers.get("content-type", "")
-        assert "harnessbench Dashboard" in resp.text
+        assert "harness-evaluator Dashboard" in resp.text
 
     def test_home_shows_runs(self, client):
         resp = client.get("/")

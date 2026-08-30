@@ -5,7 +5,7 @@ description: Container isolation, security hardening, and how harnesses execute 
 
 # Docker Runner
 
-The Docker runner (`src/harnessbench/runner/docker.py`) executes each eval cell in an isolated Docker container. It handles the full lifecycle: repo setup, container launch, harness execution via `docker exec`, result collection, and cleanup.
+The Docker runner (`src/harness_evaluator/runner/docker.py`) executes each eval cell in an isolated Docker container. It handles the full lifecycle: repo setup, container launch, harness execution via `docker exec`, result collection, and cleanup.
 
 ## Container image
 
@@ -16,7 +16,7 @@ The runner image contains all five harnesses, Node.js 22, Python 3, Git, and Bun
 A pre-built image is published to the GitHub Container Registry on every push to `main`:
 
 ```bash
-docker pull ghcr.io/yorch/harnessbench-runner:latest
+docker pull ghcr.io/yorch/harness-evaluator-runner:latest
 ```
 
 Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), and `main`.
@@ -24,25 +24,25 @@ Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), and `main`.
 Reference it in your run config:
 
 ```yaml
-docker_image: "ghcr.io/yorch/harnessbench-runner:latest"
+docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"
 ```
 
 ### Build locally
 
 ```bash
-docker build -t harnessbench-runner:latest .
+docker build -t harness-evaluator-runner:latest .
 ```
 
 Harness (and Bun) versions are build args, so you can pin a specific harness
 release to compare versions:
 
 ```bash
-docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harnessbench-runner:cc-2.0.0 .
+docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harness-evaluator-runner:cc-2.0.0 .
 ```
 
 Build args: `CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`,
 `PI_VERSION`, `OMP_VERSION`, `BUN_VERSION` — each defaults to a pinned,
-verified version. The installed versions are recorded as `io.harnessbench.*` image
+verified version. The installed versions are recorded as `io.harness-evaluator.*` image
 labels. See [Configuration](configuration/#docker-image-configuration).
 
 ### Image contents
@@ -64,12 +64,12 @@ The image is ~1.2 GB because it carries all five harnesses. For single-harness e
 
 ### Non-root user
 
-The Dockerfile creates a `harnessbench` user:
+The Dockerfile creates a `harness-evaluator` user:
 
 ```dockerfile
-RUN groupadd -r harnessbench && useradd -r -g harnessbench -d /workspace -s /bin/bash harnessbench \
-    && chown -R harnessbench:harnessbench /workspace
-USER harnessbench
+RUN groupadd -r harness-evaluator && useradd -r -g harness-evaluator -d /workspace -s /bin/bash harness-evaluator \
+    && chown -R harness-evaluator:harness-evaluator /workspace
+USER harness-evaluator
 ```
 
 Harnesses run as this non-root user inside the container.
@@ -138,7 +138,7 @@ allowlist = {"PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TERM", "TMPDIR"
 Plus:
 - `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` → gateway proxy URL with trace_id
 - `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` → from the host environment
-- `HARNESSBENCH_TRACE_ID` → the cell's trace ID
+- `HARNESS_EVALUATOR_TRACE_ID` → the cell's trace ID
 
 The full host environment is never passed through. This prevents leaking host secrets (SSH keys, cloud credentials, etc.) into the container.
 
@@ -150,8 +150,8 @@ Cell IDs are sanitized for use as Docker container names (Docker requires `[a-zA
 def _sanitize_container_name(cell_id: str) -> str:
     name = _SAFE_NAME_RE.sub("-", cell_id)  # Replace unsafe chars with -
     if name and not name[0].isalnum():
-        name = "harnessbench-" + name
-    return f"harnessbench-{name}"
+        name = "harness-evaluator-" + name
+    return f"harness-evaluator-{name}"
 ```
 
 ### Network access
@@ -178,7 +178,7 @@ The runner supports three repo types:
 
 ### Relative path resolution
 
-`_clone_repo` resolves relative `repo_url` paths against the project root (`Path(__file__).resolve().parents[3]`), not the current working directory. This means `repo_url: tasks/repos/swe-bugfix-001` works regardless of where `harnessbench run` is invoked.
+`_clone_repo` resolves relative `repo_url` paths against the project root (`Path(__file__).resolve().parents[3]`), not the current working directory. This means `repo_url: tasks/repos/swe-bugfix-001` works regardless of where `harness-evaluator run` is invoked.
 
 ### Setup scripts
 
@@ -206,8 +206,8 @@ The container's `--stop-timeout` is set to the same value, ensuring Docker kills
 After the harness completes, the runner stages and commits all changes on the host:
 
 ```python
-git config user.email "harnessbench@local"
-git config user.name "harnessbench"
+git config user.email "harness-evaluator@local"
+git config user.name "harness-evaluator"
 git add -A
 git commit -m "harness output"
 ```

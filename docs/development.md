@@ -1,11 +1,11 @@
 ---
 title: Development
-description: Contributing to harnessbench, quality gates, code style, testing, project conventions, and CI.
+description: Contributing to harness_evaluator, quality gates, code style, testing, project conventions, and CI.
 ---
 
 # Development
 
-This guide covers everything you need to contribute to harnessbench: setting up the dev environment, running quality gates, understanding code style, writing tests, and following project conventions.
+This guide covers everything you need to contribute to harness-evaluator: setting up the dev environment, running quality gates, understanding code style, writing tests, and following project conventions.
 
 ## Setup
 
@@ -14,7 +14,7 @@ This guide covers everything you need to contribute to harnessbench: setting up 
 uv sync --extra dev
 
 # Build the Docker image (only needed when changing the Dockerfile)
-docker build -t harnessbench-runner:latest .
+docker build -t harness-evaluator-runner:latest .
 ```
 
 ## Quality gates
@@ -26,13 +26,13 @@ A change is incomplete until all three gates pass: ruff, mypy, pytest.
 uv run ruff check src/ tests/
 
 # Type check (fast, ~3s)
-uv run mypy src/harnessbench/
+uv run mypy src/harness_evaluator/
 
 # Tests (full suite ~10s, 271 tests)
 uv run pytest tests/ -q
 
 # All gates at once
-uv run ruff check src/ tests/ && uv run mypy src/harnessbench/ && uv run pytest tests/ -q
+uv run ruff check src/ tests/ && uv run mypy src/harness_evaluator/ && uv run pytest tests/ -q
 ```
 
 ### Running focused tests
@@ -52,7 +52,7 @@ uv run pytest tests/dashboard/ -q
 
 ### Docker integration tests
 
-Docker integration tests require the `harnessbench-runner:latest` image and are skipped if Docker is not available:
+Docker integration tests require the `harness-evaluator-runner:latest` image and are skipped if Docker is not available:
 
 ```bash
 uv run pytest tests/runner/test_docker_integration.py -q
@@ -75,7 +75,7 @@ line-length = 100
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["harnessbench"]
+known-first-party = ["harness_evaluator"]
 ```
 
 ### Mypy
@@ -89,7 +89,7 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-packages = ["harnessbench"]
+packages = ["harness_evaluator"]
 
 [[tool.mypy.overrides]]
 module = ["pandas", "statsmodels.*", "numpy.*"]
@@ -154,14 +154,14 @@ Python core that orchestrates Node.js coding harnesses running inside Docker con
 
 | Directory | Responsibility |
 |-----------|---------------|
-| `src/harnessbench/gateway/` | HTTP/SSE proxy, parsers, SQLite store, reconciliation |
-| `src/harnessbench/orchestrator/` | Matrix builder, budget engine, results store |
-| `src/harnessbench/runner/` | Docker lifecycle (container per cell, exec-based) |
-| `src/harnessbench/adapters/` | Per-harness CLI wrappers (claude, codex, opencode, pi, omp) |
-| `src/harnessbench/evaluator/` | SWE hidden-test + open-ended LLM judge tracks |
-| `src/harnessbench/dashboard/` | FastAPI dashboard with Jinja2 templates |
-| `src/harnessbench/stats/` | Mixed-effects model, variance decomposition, bootstrap CIs |
-| `src/harnessbench/cli.py` | Typer-based CLI entry point |
+| `src/harness_evaluator/gateway/` | HTTP/SSE proxy, parsers, SQLite store, reconciliation |
+| `src/harness_evaluator/orchestrator/` | Matrix builder, budget engine, results store |
+| `src/harness_evaluator/runner/` | Docker lifecycle (container per cell, exec-based) |
+| `src/harness_evaluator/adapters/` | Per-harness CLI wrappers (claude, codex, opencode, pi, omp) |
+| `src/harness_evaluator/evaluator/` | SWE hidden-test + open-ended LLM judge tracks |
+| `src/harness_evaluator/dashboard/` | FastAPI dashboard with Jinja2 templates |
+| `src/harness_evaluator/stats/` | Mixed-effects model, variance decomposition, bootstrap CIs |
+| `src/harness_evaluator/cli.py` | Typer-based CLI entry point |
 | `tasks/` | Task YAML definitions and repo fixtures |
 | `Dockerfile` | Image with all 5 harnesses (node:22-slim base) |
 
@@ -173,7 +173,7 @@ See [Architecture](architecture/) for the full component map and data flow.
 
 - **Edit `tasks/repos/*/` contents directly** — they are task fixtures. Change the source and re-init via the runner's `_git_init_fresh`.
 - **Add production dependencies without `uv add <pkg>`** — do not manually edit `pyproject.toml` dependencies.
-- **Forward internal trace headers upstream** — the gateway proxy must never forward `x-harnessbench-trace-id`, `x-trace-id`, or the `trace_id` query param to the real provider API.
+- **Forward internal trace headers upstream** — the gateway proxy must never forward `x-harness-evaluator-trace-id`, `x-trace-id`, or the `trace_id` query param to the real provider API.
 - **Expose the dashboard externally** — it has no auth, keep it localhost-only.
 
 ### Do
@@ -203,7 +203,7 @@ Adapters' `get_command()` must use bare binary names (e.g. `"claude"`), not `shu
 
 ### `_clone_repo` path resolution
 
-`_clone_repo` resolves relative paths against the project root (`Path(__file__).resolve().parents[3]`), not the current working directory. This means `repo_url: tasks/repos/swe-bugfix-001` works regardless of where `harnessbench run` is invoked.
+`_clone_repo` resolves relative paths against the project root (`Path(__file__).resolve().parents[3]`), not the current working directory. This means `repo_url: tasks/repos/swe-bugfix-001` works regardless of where `harness-evaluator run` is invoked.
 
 ## Testing
 
@@ -279,7 +279,7 @@ Runs on every push/PR to `main`. Three parallel jobs:
 | Job | Tool | Command |
 |-----|------|---------|
 | Lint | ruff | `uv run ruff check src/ tests/` |
-| Type check | mypy | `uv run mypy src/harnessbench/` |
+| Type check | mypy | `uv run mypy src/harness_evaluator/` |
 | Tests | pytest | `uv run pytest tests/ -q` |
 
 A quality-gate job depends on all three and must pass for PRs to be mergeable.
@@ -313,7 +313,7 @@ See [Configuration](configuration/#task-definitions) for the full task spec.
 
 ## Adding a new model to pricing
 
-Add an entry to `DEFAULT_PRICING` in `src/harnessbench/gateway/models.py`:
+Add an entry to `DEFAULT_PRICING` in `src/harness_evaluator/gateway/models.py`:
 
 ```python
 "my-new-model": PricingTable(

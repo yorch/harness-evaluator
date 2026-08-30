@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from harnessbench.cli import app
+from harness_evaluator.cli import app
 
 runner = CliRunner()
 
 
 class TestAdaptersCommand:
     def test_adapters_lists_all_five(self) -> None:
-        """`harnessbench adapters` should list all 5 registered adapters."""
+        """`harness-evaluator adapters` should list all 5 registered adapters."""
         result = runner.invoke(app, ["adapters"])
         assert result.exit_code == 0
         # All five adapters should appear in the output.
@@ -47,21 +47,21 @@ class TestHelpCommands:
 
 class TestInitCommand:
     def test_init_generates_runnable_config(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        """`harnessbench init` writes a config that loads and builds a matrix."""
-        cfg_path = tmp_path / "harnessbench.yaml"
+        """`harness-evaluator init` writes a config that loads and builds a matrix."""
+        cfg_path = tmp_path / "harness-evaluator.yaml"
         result = runner.invoke(app, ["init", "--filename", str(cfg_path)])
         assert result.exit_code == 0
         assert cfg_path.exists()
 
-        from harnessbench.orchestrator.config import RunConfig
+        from harness_evaluator.orchestrator.config import RunConfig
 
         cfg = RunConfig.from_yaml(str(cfg_path))
         # Uses the bundled task library + published image by default.
-        assert "ghcr.io/yorch/harnessbench-runner" in cfg.docker_image
+        assert "ghcr.io/yorch/harness-evaluator-runner" in cfg.docker_image
         assert len(cfg.build_matrix()) >= 1
 
     def test_init_refuses_overwrite_without_force(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
-        cfg_path = tmp_path / "harnessbench.yaml"
+        cfg_path = tmp_path / "harness-evaluator.yaml"
         cfg_path.write_text("existing")
         result = runner.invoke(app, ["init", "--filename", str(cfg_path)])
         assert result.exit_code == 1

@@ -1,19 +1,19 @@
 ---
 title: Architecture
-description: How harnessbench's components interact and data flows through the system from config to results.
+description: How harness-evaluator's components interact and data flows through the system from config to results.
 ---
 
 # Architecture
 
-harnessbench is a Python core that orchestrates Node.js coding harnesses running inside Docker containers, with all provider traffic routed through a custom aiohttp gateway proxy for token/cost accounting.
+harness-evaluator is a Python core that orchestrates Node.js coding harnesses running inside Docker containers, with all provider traffic routed through a custom aiohttp gateway proxy for token/cost accounting.
 
 ## Component map
 
 ```
                             ┌─────────────────────────────────────────────────┐
                             │                   CLI (Typer)                    │
-                            │  harnessbench run | gateway | canary | report | stats  │
-                            │  harnessbench results | adapters | dashboard | calibrate│
+                            │  harness-evaluator run | gateway | canary | report | stats  │
+                            │  harness-evaluator results | adapters | dashboard | calibrate│
                             └────────┬────────────────────────────────────────┘
                                      │
                     ┌────────────────┼─────────────────┐
@@ -181,7 +181,7 @@ SQLite-backed store with three tables:
 
 - `run_results` — per-cell metrics (tokens, cost, latency, success, error class, diff, test output)
 - `run_state` — cell execution state (pending, running, completed, failed, skipped) for resumability and live progress
-- `run_metadata` — full run config JSON, harnessbench version, Docker image for reproducibility
+- `run_metadata` — full run config JSON, harness-evaluator version, Docker image for reproducibility
 
 ### Reporting (`reporting/`)
 
@@ -197,12 +197,12 @@ Mixed-effects model (`success ~ C(harness) + C(model) + (1|task)`), variance dec
 
 ## Two SQLite databases
 
-harnessbench uses two separate SQLite databases:
+harness-evaluator uses two separate SQLite databases:
 
 | Database | Default path | Contents |
 |----------|-------------|----------|
-| Gateway DB | `harnessbench_gateway.db` | `captured_calls` table — every provider API call with full token/cost/latency data |
-| Results DB | `harnessbench_results.db` | `run_results`, `run_state`, `run_metadata` tables — per-cell eval results and run state |
+| Gateway DB | `harness_evaluator_gateway.db` | `captured_calls` table — every provider API call with full token/cost/latency data |
+| Results DB | `harness_evaluator_results.db` | `run_results`, `run_state`, `run_metadata` tables — per-cell eval results and run state |
 
 The gateway DB is written to by the proxy and read by the Docker runner (to aggregate per-cell token usage via `trace_id`). The results DB is written to by the orchestrator and read by reports, dashboard, and stats.
 
@@ -213,7 +213,7 @@ Every eval cell gets a unique `trace_id` (the `cell_id`: `{harness}__{model}__{t
 1. **Orchestrator** → passes `cell.cell_id` as `trace_id` to the Docker runner
 2. **Docker runner** → passes `trace_id` to the adapter constructor
 3. **Adapter** → appends `?trace_id=<cell_id>` to the gateway URL in `get_env()`
-4. **Proxy** → extracts `trace_id` from the query string or `x-harnessbench-trace-id` header, stores it with each `CapturedCall`
+4. **Proxy** → extracts `trace_id` from the query string or `x-harness-evaluator-trace-id` header, stores it with each `CapturedCall`
 5. **Docker runner** → after harness execution, queries the gateway store for all calls with this `trace_id` to aggregate token usage and cost
 
 This ensures accurate per-cell cost attribution even when a harness makes dozens of API calls during a single run.
@@ -234,9 +234,9 @@ All exit classes enter the effectiveness significance tests. Kills are recorded 
 ## Security model
 
 - **Container isolation**: `--cap-drop=ALL` removes all Linux capabilities. Harnesses only need file I/O and network access.
-- **Non-root execution**: containers run as the `harnessbench` user (UID created in Dockerfile).
+- **Non-root execution**: containers run as the `harness-evaluator` user (UID created in Dockerfile).
 - **Env allowlist**: adapters pass only a minimal set of env vars to containers (PATH, HOME, USER, SHELL, LANG, etc.) plus the gateway URL and API key — never the whole host environment.
 - **Header redaction**: the proxy redacts sensitive headers (auth, API keys, cookies, tokens) before storing to SQLite, using both an explicit list and a substring heuristic.
-- **Trace header stripping**: internal trace headers (`x-harnessbench-trace-id`, `x-trace-id`) and the `trace_id` query param are never forwarded to the real provider API.
+- **Trace header stripping**: internal trace headers (`x-harness-evaluator-trace-id`, `x-trace-id`) and the `trace_id` query param are never forwarded to the real provider API.
 - **Path traversal prevention**: identifiers (run names, harness names, model names) are validated against `[A-Za-z0-9._-]+` and sanitized before use in file paths and container names.
 - **No dashboard auth**: the dashboard has no authentication — keep it localhost-only.

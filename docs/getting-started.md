@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-description: Step-by-step guide to install harnessbench, get the Docker image, set API keys, and run your first evaluation.
+description: Step-by-step guide to install harness_evaluator, get the Docker image, set API keys, and run your first evaluation.
 ---
 
 # Getting Started
 
-This guide walks you through installing harnessbench, getting the Docker image, configuring API keys, and running your first evaluation end-to-end.
+This guide walks you through installing harness_evaluator, getting the Docker image, configuring API keys, and running your first evaluation end-to-end.
 
 ## Prerequisites
 
@@ -17,30 +17,30 @@ This guide walks you through installing harnessbench, getting the Docker image, 
 
 ## Quick start (no clone)
 
-harnessbench bundles its task library, so you can run it without cloning the
-repository. The PyPI package is `harnessbench`; it installs a `harnessbench` command.
+harness-evaluator bundles its task library, so you can run it without cloning the
+repository. The PyPI package is `harness-evaluator`; it installs a `harness-evaluator` command.
 Using [uv](https://docs.astral.sh/uv/):
 
 ```bash
 # Scaffold a starter config in the current directory
-uvx harnessbench init
+uvx harness-evaluator init
 
 # Pull the pre-built runner image
-docker pull ghcr.io/yorch/harnessbench-runner:latest
+docker pull ghcr.io/yorch/harness-evaluator-runner:latest
 
 # Set an API key
 export ANTHROPIC_API_KEY=sk-ant-...
 
 # Start the gateway (separate terminal)
-uvx harnessbench gateway --port 8877
+uvx harness-evaluator gateway --port 8877
 
 # Run the evaluation
-uvx harnessbench run harnessbench.yaml
+uvx harness-evaluator run harness-evaluator.yaml
 ```
 
-`uvx harnessbench` runs the published package in an ephemeral environment. To
-install it persistently, use `uv tool install harnessbench` or
-`pipx install harnessbench` — both provide the `harnessbench` command.
+`uvx harness-evaluator` runs the published package in an ephemeral environment. To
+install it persistently, use `uv tool install harness-evaluator` or
+`pipx install harness-evaluator` — both provide the `harness-evaluator` command.
 
 The rest of this guide covers the from-source workflow and explains each step
 in detail.
@@ -49,8 +49,8 @@ in detail.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yorch/harnessbench.git
-cd harnessbench
+git clone https://github.com/yorch/harness-evaluator.git
+cd harness-evaluator
 
 # Install Python dependencies (including dev tools)
 uv sync --extra dev
@@ -61,7 +61,7 @@ This installs all production and development dependencies: aiohttp, pydantic, ty
 Verify the installation:
 
 ```bash
-harnessbench --help
+harness-evaluator --help
 ```
 
 You should see the list of available commands.
@@ -77,13 +77,13 @@ You have two options: pull the pre-built image from GHCR (fastest) or build it l
 A pre-built image is published to the GitHub Container Registry on every push to `main`:
 
 ```bash
-docker pull ghcr.io/yorch/harnessbench-runner:latest
+docker pull ghcr.io/yorch/harness-evaluator-runner:latest
 ```
 
 Then reference it in your run config:
 
 ```yaml
-docker_image: "ghcr.io/yorch/harnessbench-runner:latest"
+docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"
 ```
 
 Available tags:
@@ -102,17 +102,17 @@ Available tags:
 ### Option B: Build the image locally
 
 ```bash
-docker build -t harnessbench-runner:latest .
+docker build -t harness-evaluator-runner:latest .
 ```
 
 This takes ~5 minutes. The image is ~1.2 GB because it carries all five harnesses.
 
-The default `docker_image` in run config is `harnessbench-runner:latest`, so local builds work without any config change.
+The default `docker_image` in run config is `harness-evaluator-runner:latest`, so local builds work without any config change.
 
 ### Verify the image
 
 ```bash
-docker run --rm ghcr.io/yorch/harnessbench-runner:latest bash -c '
+docker run --rm ghcr.io/yorch/harness-evaluator-runner:latest bash -c '
   echo "=== Harnesses ===" &&
   claude --version &&
   codex --version &&
@@ -142,14 +142,14 @@ You need at least one key for the model you plan to use. The key is passed into 
 The gateway proxy captures token usage, cost, and latency for every provider API call. Start it in a separate terminal:
 
 ```bash
-harnessbench gateway --port 8877
+harness-evaluator gateway --port 8877
 ```
 
 You should see:
 
 ```
 Starting gateway proxy on 127.0.0.1:8877
-Captured calls stored to: harnessbench_gateway.db
+Captured calls stored to: harness_evaluator_gateway.db
 Configure harnesses with:
   ANTHROPIC_BASE_URL=http://127.0.0.1:8877
   OPENAI_BASE_URL=http://127.0.0.1:8877
@@ -176,7 +176,7 @@ curl http://127.0.0.1:8877/v1/messages \
   }'
 
 # Verify token capture accuracy
-harnessbench canary --tolerance-pct 1.0
+harness-evaluator canary --tolerance-pct 1.0
 ```
 
 You should see:
@@ -195,7 +195,7 @@ If the canary fails, see [Gateway Proxy](gateway-proxy/) for troubleshooting.
 Before spending money, preview the eval matrix:
 
 ```bash
-harnessbench run runs/sample-minimal.yaml --dry-run
+harness-evaluator run runs/sample-minimal.yaml --dry-run
 ```
 
 Output:
@@ -220,7 +220,7 @@ This confirms the config is valid and shows exactly what will run.
 ## Step 7: Run the minimal eval
 
 ```bash
-harnessbench run runs/sample-minimal.yaml
+harness-evaluator run runs/sample-minimal.yaml
 ```
 
 This runs one cell: OpenCode with Claude Sonnet on the `swe-bugfix-001` task, one repeat. Budget cap is $5.
@@ -247,13 +247,13 @@ Run complete
 ### Console
 
 ```bash
-harnessbench results minimal-first-run
+harness-evaluator results minimal-first-run
 ```
 
 ### Static reports
 
 ```bash
-harnessbench report minimal-first-run --output ./reports
+harness-evaluator report minimal-first-run --output ./reports
 ```
 
 This generates three files:
@@ -266,7 +266,7 @@ Open the HTML report in a browser to see leaderboards and detailed results.
 ### Dashboard
 
 ```bash
-harnessbench dashboard --port 8080
+harness-evaluator dashboard --port 8080
 ```
 
 Open `http://127.0.0.1:8080` to explore results interactively. See [Reporting](reporting/) for dashboard features.
@@ -274,7 +274,7 @@ Open `http://127.0.0.1:8080` to explore results interactively. See [Reporting](r
 ### Statistics
 
 ```bash
-harnessbench stats minimal-first-run
+harness-evaluator stats minimal-first-run
 ```
 
 See [Statistics](statistics/) for interpretation of the output.
@@ -284,7 +284,7 @@ See [Statistics](statistics/) for interpretation of the output.
 Once the minimal run works, try the full sweep:
 
 ```bash
-harnessbench run runs/sample-run.yaml
+harness-evaluator run runs/sample-run.yaml
 ```
 
 This runs all 5 harnesses × 2 models × all tasks × 5 repeats. With 20 tasks, that's 1000 cells. Budget cap is $100.
@@ -297,7 +297,7 @@ If you're running open-ended tasks, calibrate the LLM judge first:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-harnessbench calibrate --model claude-sonnet-4-20250514
+harness-evaluator calibrate --model claude-sonnet-4-20250514
 ```
 
 This verifies the judge produces consistent scores against known anchor submissions. If calibration fails (MAE > 0.15), the open-ended track should be flagged as unreliable.
@@ -345,7 +345,7 @@ See [Configuration](configuration/) for the full schema.
 Gateway is NOT reachable on 127.0.0.1:8877.
 ```
 
-Start the gateway in a separate terminal: `harnessbench gateway --port 8877`
+Start the gateway in a separate terminal: `harness-evaluator gateway --port 8877`
 
 ### No API calls found for trace_id
 
@@ -358,17 +358,17 @@ This means the harness is not routing through the gateway proxy. Common with min
 ### Docker image not found
 
 ```
-docker run failed (exit 1): Unable to find image 'harnessbench-runner:latest' locally
+docker run failed (exit 1): Unable to find image 'harness-evaluator-runner:latest' locally
 ```
 
 Either pull the pre-built image or build it locally:
 
 ```bash
-docker pull ghcr.io/yorch/harnessbench-runner:latest   # pre-built
-docker build -t harnessbench-runner:latest .            # local build
+docker pull ghcr.io/yorch/harness-evaluator-runner:latest   # pre-built
+docker build -t harness-evaluator-runner:latest .            # local build
 ```
 
-If using the GHCR image, set `docker_image: "ghcr.io/yorch/harnessbench-runner:latest"` in your run config.
+If using the GHCR image, set `docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"` in your run config.
 
 ### No pricing found for model
 
@@ -376,14 +376,14 @@ If using the GHCR image, set `docker_image: "ghcr.io/yorch/harnessbench-runner:l
 WARNING: No pricing found for model 'my-model'; cost will be $0
 ```
 
-Add the model to `DEFAULT_PRICING` in `src/harnessbench/gateway/models.py`. See [Configuration](configuration/#pricing-tables).
+Add the model to `DEFAULT_PRICING` in `src/harness_evaluator/gateway/models.py`. See [Configuration](configuration/#pricing-tables).
 
 ### Harness binary not found in container
 
 The harness command fails with "command not found" inside the container. Verify the Docker image includes the harness:
 
 ```bash
-docker run --rm harnessbench-runner:latest <harness> --version
+docker run --rm harness-evaluator-runner:latest <harness> --version
 ```
 
 If missing, rebuild the image or check the Dockerfile.

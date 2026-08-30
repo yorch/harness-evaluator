@@ -117,9 +117,9 @@ All exit classes enter the effectiveness significance tests. Kills are recorded 
 
 ```
 CLI (Python)
-  ├── harnessbench run <config>      — execute an eval matrix
-  ├── harnessbench report <run-id>   — generate static report
-  └── harnessbench dashboard         — launch web dashboard
+  ├── harness-evaluator run <config>      — execute an eval matrix
+  ├── harness-evaluator report <run-id>   — generate static report
+  └── harness-evaluator dashboard         — launch web dashboard
 
 Orchestrator (Python)
   ├── matrix builder          — expand config into (harness × model × task × repeat) cells
@@ -166,7 +166,7 @@ Reporting + Dashboard (Python/FastAPI)
 
 ## Deliverable
 
-- **CLI** (`harnessbench`): primary interface. Run evals, generate reports, launch dashboard.
+- **CLI** (`harness-evaluator`): primary interface. Run evals, generate reports, launch dashboard.
 - **Static reports**: HTML/JSON/CSV generated per run. Portable, shareable.
 - **Web dashboard**: FastAPI backend, interactive exploration of results, live
   progress during runs.

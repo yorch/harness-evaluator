@@ -9,25 +9,25 @@ from pathlib import Path
 
 import pytest
 
-from harnessbench.evaluator.open_ended import (
+from harness_evaluator.evaluator.open_ended import (
     DEFAULT_RUBRIC,
     FrozenJudge,
     Rubric,
     RubricCriterion,
 )
-from harnessbench.evaluator.swe import ErrorClass, SWEEvaluator
-from harnessbench.orchestrator.config import (
+from harness_evaluator.evaluator.swe import ErrorClass, SWEEvaluator
+from harness_evaluator.orchestrator.config import (
     HarnessSpec,
     ModelSpec,
     RunConfig,
     TaskSpec,
     TaskTrack,
 )
-from harnessbench.reporting.static_report import (
+from harness_evaluator.reporting.static_report import (
     assert_safe_path,
     sanitize_id,
 )
-from harnessbench.runner.docker import _sanitize_container_name
+from harness_evaluator.runner.docker import _sanitize_container_name
 
 # ---------------------------------------------------------------------------
 # SWE evaluator: no-tests = perfect pass fix
@@ -237,14 +237,14 @@ class TestContainerNameSanitization:
 
     def test_basic_cell_id(self):
         assert _sanitize_container_name("opencode__claude__task1__0") == (
-            "harnessbench-opencode__claude__task1__0"
+            "harness-evaluator-opencode__claude__task1__0"
         )
 
     def test_replaces_unsafe_chars(self):
         name = _sanitize_container_name("cell with/slashes")
         assert "/" not in name
         assert " " not in name
-        assert name.startswith("harnessbench-")
+        assert name.startswith("harness-evaluator-")
 
     def test_starts_with_alphanumeric(self):
         name = _sanitize_container_name("_underscore_prefix")
@@ -260,7 +260,7 @@ class TestProgressLock:
     """Progress mutations should be protected by a lock."""
 
     def test_progress_lock_exists(self):
-        from harnessbench.orchestrator.engine import Orchestrator
+        from harness_evaluator.orchestrator.engine import Orchestrator
 
         harness = HarnessSpec(name="h", adapter="opencode", observability_tier="full")
         model = ModelSpec(name="m", provider="anthropic", api_key_env="KEY")
@@ -271,7 +271,7 @@ class TestProgressLock:
             tasks=["t"],
             task_library_path="./tasks",
         )
-        from harnessbench.orchestrator.results_store import ResultsStore
+        from harness_evaluator.orchestrator.results_store import ResultsStore
 
         store = ResultsStore(":memory:")
         orch = Orchestrator(config, store)
@@ -317,7 +317,7 @@ class TestPricingStrict:
     def test_warns_on_unknown_model(self, caplog: pytest.LogCaptureFixture):
         import logging
 
-        from harnessbench.gateway.models import get_pricing_strict
+        from harness_evaluator.gateway.models import get_pricing_strict
 
         with caplog.at_level(logging.WARNING):
             pricing = get_pricing_strict("nonexistent-model-xyz")
@@ -327,7 +327,7 @@ class TestPricingStrict:
     def test_known_model_no_warning(self, caplog: pytest.LogCaptureFixture):
         import logging
 
-        from harnessbench.gateway.models import get_pricing_strict
+        from harness_evaluator.gateway.models import get_pricing_strict
 
         with caplog.at_level(logging.WARNING):
             pricing = get_pricing_strict("claude-sonnet-4-20250514")
@@ -344,13 +344,13 @@ class TestDeleteByTrace:
     """delete_by_trace should remove calls for a trace ID."""
 
     def test_delete_by_trace_removes_calls(self, tmp_path: Path):
-        from harnessbench.gateway.models import (
+        from harness_evaluator.gateway.models import (
             CapturedCall,
             CostBreakdown,
             Provider,
             TokenUsage,
         )
-        from harnessbench.gateway.store import CallStore
+        from harness_evaluator.gateway.store import CallStore
 
         store = CallStore(tmp_path / "test.db")
         call = CapturedCall(

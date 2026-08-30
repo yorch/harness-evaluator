@@ -3,11 +3,11 @@
 # performance optimizations, and open-ended design tasks.
 #
 # This config uses the pre-built GHCR image. To use a locally built image,
-# replace the docker_image value with "harnessbench-runner:latest".
+# replace the docker_image value with "harness-evaluator-runner:latest".
 #
 # Usage:
-#   harnessbench run runs/task-mix.yaml --dry-run   # preview the matrix
-#   harnessbench run runs/task-mix.yaml             # execute (needs API keys + Docker)
+#   harness-evaluator run runs/task-mix.yaml --dry-run   # preview the matrix
+#   harness-evaluator run runs/task-mix.yaml             # execute (needs API keys + Docker)
 name: "task-mix-v1"
 description: "Curated 20-task mix: 12 SWE (Python + TypeScript) + 8 open-ended (Python + TypeScript)"
 
@@ -85,8 +85,8 @@ task_library_path: "./tasks"
 repeats: 3
 budget_usd: 50.0
 gateway_port: 8877
-gateway_db: "harnessbench_gateway.db"
-results_db: "harnessbench_results.db"
-workdir: "./harnessbench_workdir"
-docker_image: "ghcr.io/yorch/harnessbench-runner:latest"
+gateway_db: "harness_evaluator_gateway.db"
+results_db: "harness_evaluator_results.db"
+workdir: "./harness_evaluator_workdir"
+docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"
 parallel_runs: 1

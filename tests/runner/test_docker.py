@@ -12,14 +12,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from harnessbench.orchestrator.config import (
+from harness_evaluator.orchestrator.config import (
     HarnessSpec,
     ModelSpec,
     RunCell,
     TaskSpec,
     TaskTrack,
 )
-from harnessbench.runner.docker import (
+from harness_evaluator.runner.docker import (
     CONTAINER_REPO,
     CONTAINER_WORKSPACE,
     CompletedProcess,
@@ -137,13 +137,13 @@ class TestBuildRunArgs:
     def test_env_vars_passed_via_env_flag(self, runner: DockerRunner, tmp_path: Any):
         workdir = tmp_path / "wd"
         workdir.mkdir()
-        env = {"ANTHROPIC_API_KEY": "sk-secret", "HARNESSBENCH_TRACE_ID": "cell-1"}
+        env = {"ANTHROPIC_API_KEY": "sk-secret", "HARNESS_EVALUATOR_TRACE_ID": "cell-1"}
         args = runner._build_run_args(workdir, env, timeout=60, container_name="c1")
 
         # Each env var must appear as --env KEY=VALUE
         assert "--env" in args
         assert "ANTHROPIC_API_KEY=sk-secret" in args
-        assert "HARNESSBENCH_TRACE_ID=cell-1" in args
+        assert "HARNESS_EVALUATOR_TRACE_ID=cell-1" in args
 
     def test_add_host_for_gateway(self, runner: DockerRunner, tmp_path: Any):
         workdir = tmp_path / "wd"
@@ -208,7 +208,7 @@ class TestContainerLifecycle:
         workdir = tmp_path / "wd"
         workdir.mkdir()
         with patch(
-            "harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
         ) as mock_run:
             mock_run.return_value = CompletedProcess(
                 returncode=0, stdout="abc123\n", stderr=""
@@ -228,7 +228,7 @@ class TestContainerLifecycle:
         workdir = tmp_path / "wd"
         workdir.mkdir()
         with patch(
-            "harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
         ) as mock_run:
             mock_run.return_value = CompletedProcess(
                 returncode=1, stdout="", stderr="docker daemon not running"
@@ -242,7 +242,7 @@ class TestContainerLifecycle:
         self, runner: DockerRunner
     ):
         with patch(
-            "harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
         ) as mock_run:
             mock_run.return_value = CompletedProcess(
                 returncode=0, stdout="hello", stderr=""
@@ -264,7 +264,7 @@ class TestContainerLifecycle:
 
     async def test_exec_in_container_with_cwd(self, runner: DockerRunner):
         with patch(
-            "harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
         ) as mock_run:
             mock_run.return_value = CompletedProcess(
                 returncode=0, stdout="ok", stderr=""
@@ -281,7 +281,7 @@ class TestContainerLifecycle:
 
     async def test_exec_in_container_timeout(self, runner: DockerRunner):
         with patch(
-            "harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
         ) as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(
                 cmd="docker", timeout=30
@@ -297,7 +297,7 @@ class TestContainerLifecycle:
         self, runner: DockerRunner
     ):
         with patch(
-            "harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
         ) as mock_run:
             mock_run.return_value = CompletedProcess(
                 returncode=0, stdout="", stderr=""
@@ -312,7 +312,7 @@ class TestContainerLifecycle:
         self, runner: DockerRunner
     ):
         with patch(
-            "harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
         ) as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired(
                 cmd="docker", timeout=30
@@ -327,8 +327,8 @@ class TestContainerLifecycle:
 
 
 class TestRunHarness:
-    @patch("harnessbench.runner.docker.subprocess.run")
-    @patch("harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock)
+    @patch("harness_evaluator.runner.docker.subprocess.run")
+    @patch("harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock)
     async def test_run_harness_full_flow(
         self,
         mock_run_async: AsyncMock,
@@ -388,8 +388,8 @@ class TestRunHarness:
         stop_cmds = [c[0][0] for c in run_calls if "stop" in c[0][0]]
         assert len(stop_cmds) >= 1
 
-    @patch("harnessbench.runner.docker.subprocess.run")
-    @patch("harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock)
+    @patch("harness_evaluator.runner.docker.subprocess.run")
+    @patch("harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock)
     async def test_run_harness_timeout_kills_container(
         self,
         mock_run_async: AsyncMock,
@@ -423,7 +423,7 @@ class TestRunHarness:
 
         # A harness timeout now raises RetryableError so the orchestrator
         # can retry with backoff instead of silently scoring as NO_CHANGE.
-        from harnessbench.orchestrator.engine import RetryableError
+        from harness_evaluator.orchestrator.engine import RetryableError
 
         with pytest.raises(RetryableError, match="timed out"):
             await runner._run_harness(cell, workdir)
@@ -436,7 +436,7 @@ class TestRunHarness:
         ]
         assert len(stop_cmds) >= 1
 
-    @patch("harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock)
+    @patch("harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock)
     async def test_run_harness_no_adapter(
         self,
         mock_run_async: AsyncMock,
@@ -489,7 +489,7 @@ class TestSecretInjection:
         workdir = tmp_path / "wd"
         workdir.mkdir()
 
-        from harnessbench.adapters.registry import create_adapter
+        from harness_evaluator.adapters.registry import create_adapter
 
         model = ModelSpec(
             name="claude-sonnet-4-20250514",
@@ -523,7 +523,7 @@ class TestSecretInjection:
         workdir = tmp_path / "wd"
         workdir.mkdir()
 
-        from harnessbench.adapters.registry import create_adapter
+        from harness_evaluator.adapters.registry import create_adapter
 
         model = ModelSpec(
             name="claude-sonnet-4-20250514",
@@ -574,8 +574,8 @@ class TestGatewayReachability:
 
 
 class TestWorkdirPreservation:
-    @patch("harnessbench.runner.docker.subprocess.run")
-    @patch("harnessbench.runner.docker._run_subprocess", new_callable=AsyncMock)
+    @patch("harness_evaluator.runner.docker.subprocess.run")
+    @patch("harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock)
     async def test_workdir_mounted_and_persists(
         self,
         mock_run_async: AsyncMock,
@@ -628,13 +628,13 @@ class TestWorkdirPreservation:
 
 class TestAdapterGetCommand:
     def test_base_adapter_get_command_raises(self, tmp_path: Any):
-        from harnessbench.adapters.base import BaseAdapter
+        from harness_evaluator.adapters.base import BaseAdapter
 
         # Cannot instantiate ABC directly; create a minimal subclass
         class DummyAdapter(BaseAdapter):
             @staticmethod
             def info():
-                from harnessbench.adapters.base import AdapterInfo
+                from harness_evaluator.adapters.base import AdapterInfo
 
                 return AdapterInfo(
                     name="dummy",
@@ -655,7 +655,7 @@ class TestAdapterGetCommand:
             adapter.get_command("do something")
 
     def test_claude_code_get_command(self, tmp_path: Any, anthropic_model: ModelSpec):
-        from harnessbench.adapters.claude_code import ClaudeCodeAdapter
+        from harness_evaluator.adapters.claude_code import ClaudeCodeAdapter
 
         adapter = ClaudeCodeAdapter(
             workdir=str(tmp_path),
@@ -670,7 +670,7 @@ class TestAdapterGetCommand:
         assert "--model" in cmd
 
     def test_codex_get_command(self, tmp_path: Any):
-        from harnessbench.adapters.codex import CodexAdapter
+        from harness_evaluator.adapters.codex import CodexAdapter
 
         model = ModelSpec(name="gpt-4o", provider="openai", api_key_env="OPENAI_API_KEY")
         adapter = CodexAdapter(
@@ -684,7 +684,7 @@ class TestAdapterGetCommand:
         assert "implement feature" in cmd
 
     def test_opencode_get_command(self, tmp_path: Any, anthropic_model: ModelSpec):
-        from harnessbench.adapters.opencode import OpenCodeAdapter
+        from harness_evaluator.adapters.opencode import OpenCodeAdapter
 
         adapter = OpenCodeAdapter(
             workdir=str(tmp_path), model=anthropic_model
@@ -696,7 +696,7 @@ class TestAdapterGetCommand:
         assert "--model" in cmd
 
     def test_pi_get_command(self, tmp_path: Any, anthropic_model: ModelSpec):
-        from harnessbench.adapters.pi import PiAdapter
+        from harness_evaluator.adapters.pi import PiAdapter
 
         adapter = PiAdapter(workdir=str(tmp_path), model=anthropic_model)
         cmd = adapter.get_command("write tests")
@@ -705,7 +705,7 @@ class TestAdapterGetCommand:
         assert "write tests" in cmd
 
     def test_omp_get_command(self, tmp_path: Any, anthropic_model: ModelSpec):
-        from harnessbench.adapters.omp import OMPAdapter
+        from harness_evaluator.adapters.omp import OMPAdapter
 
         adapter = OMPAdapter(workdir=str(tmp_path), model=anthropic_model)
         cmd = adapter.get_command("write tests")

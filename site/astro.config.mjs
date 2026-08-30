@@ -3,18 +3,18 @@ import starlight from '@astrojs/starlight';
 
 export default defineConfig({
   site: 'https://yorch.github.io',
-  base: '/harnessbench',
+  base: '/harness-evaluator',
   trailingSlash: 'always',
   build: {
     format: 'directory',
   },
   integrations: [
     starlight({
-      title: 'harnessbench',
+      title: 'harness-evaluator',
       description:
         'Compare agentic coding harnesses on token efficiency, task effectiveness, and time efficiency.',
       social: [
-        { label: 'GitHub', icon: 'github', href: 'https://github.com/yorch/harnessbench' },
+        { label: 'GitHub', icon: 'github', href: 'https://github.com/yorch/harness-evaluator' },
       ],
       head: [
         {

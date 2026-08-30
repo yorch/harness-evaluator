@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from harnessbench.evaluator.open_ended import (
+from harness_evaluator.evaluator.open_ended import (
     DEFAULT_RUBRIC,
     CalibrationSet,
     FrozenJudge,
@@ -17,7 +17,7 @@ from harnessbench.evaluator.open_ended import (
     RubricCriterion,
     StructuralChecker,
 )
-from harnessbench.orchestrator.config import TaskSpec, TaskTrack
+from harness_evaluator.orchestrator.config import TaskSpec, TaskTrack
 
 
 @pytest.fixture

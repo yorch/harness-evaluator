@@ -9,7 +9,7 @@ Adapters wrap each coding harness with a uniform interface for the Docker runner
 
 ## Base adapter interface
 
-All adapters extend `BaseAdapter` (`src/harnessbench/adapters/base.py`):
+All adapters extend `BaseAdapter` (`src/harness_evaluator/adapters/base.py`):
 
 ```python
 class BaseAdapter(ABC):
@@ -57,7 +57,7 @@ allowlist = {"PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TERM", "TMPDIR"
 # Plus:
 # - ANTHROPIC_BASE_URL or OPENAI_BASE_URL → gateway URL with trace_id
 # - ANTHROPIC_API_KEY or OPENAI_API_KEY → from host environment
-# - HARNESSBENCH_TRACE_ID → cell trace ID
+# - HARNESS_EVALUATOR_TRACE_ID → cell trace ID
 ```
 
 The gateway URL has `?trace_id=<cell_id>` appended so the proxy can attribute calls to the correct eval cell. For OpenAI provider, `/v1` is appended to the path so the base URL ends with `/v1`.
@@ -94,7 +94,7 @@ class AdapterResult:
 
 ## Adapter registry
 
-The registry (`src/harnessbench/adapters/registry.py`) maps adapter names to classes:
+The registry (`src/harness_evaluator/adapters/registry.py`) maps adapter names to classes:
 
 ```python
 # Registration (at module import time)
@@ -255,7 +255,7 @@ The adapter's `get_env()` sets `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` to the 
 ## Listing adapters
 
 ```bash
-harnessbench adapters
+harness-evaluator adapters
 ```
 
 Output:
@@ -275,7 +275,7 @@ Output:
 
 ## Adding a new adapter
 
-1. Create a new file in `src/harnessbench/adapters/` (e.g. `my_harness.py`)
+1. Create a new file in `src/harness_evaluator/adapters/` (e.g. `my_harness.py`)
 2. Implement a class extending `BaseAdapter`
 3. Implement `info()`, `prepare()`, `run()`, and `get_command()`
 4. Call `register_adapter("my-harness", MyHarnessAdapter)` at module level
@@ -286,8 +286,8 @@ Output:
 ### Example minimal adapter
 
 ```python
-from harnessbench.adapters.base import AdapterInfo, BaseAdapter
-from harnessbench.adapters.registry import register_adapter
+from harness_evaluator.adapters.base import AdapterInfo, BaseAdapter
+from harness_evaluator.adapters.registry import register_adapter
 
 class MyHarnessAdapter(BaseAdapter):
     @staticmethod
@@ -325,11 +325,11 @@ register_adapter("my-harness", MyHarnessAdapter)
 
 | File | Description |
 |------|-------------|
-| `src/harnessbench/adapters/base.py` | `BaseAdapter`, `AdapterInfo`, `AdapterResult`, `AdapterNotInstalledError` |
-| `src/harnessbench/adapters/registry.py` | `register_adapter`, `get_adapter_class`, `create_adapter`, `list_adapters` |
-| `src/harnessbench/adapters/utils.py` | `run_command()` — async subprocess execution with timeout |
-| `src/harnessbench/adapters/claude_code.py` | Claude Code adapter |
-| `src/harnessbench/adapters/codex.py` | Codex adapter |
-| `src/harnessbench/adapters/opencode.py` | OpenCode adapter |
-| `src/harnessbench/adapters/pi.py` | Pi adapter |
-| `src/harnessbench/adapters/omp.py` | OMP adapter |
+| `src/harness_evaluator/adapters/base.py` | `BaseAdapter`, `AdapterInfo`, `AdapterResult`, `AdapterNotInstalledError` |
+| `src/harness_evaluator/adapters/registry.py` | `register_adapter`, `get_adapter_class`, `create_adapter`, `list_adapters` |
+| `src/harness_evaluator/adapters/utils.py` | `run_command()` — async subprocess execution with timeout |
+| `src/harness_evaluator/adapters/claude_code.py` | Claude Code adapter |
+| `src/harness_evaluator/adapters/codex.py` | Codex adapter |
+| `src/harness_evaluator/adapters/opencode.py` | OpenCode adapter |
+| `src/harness_evaluator/adapters/pi.py` | Pi adapter |
+| `src/harness_evaluator/adapters/omp.py` | OMP adapter |

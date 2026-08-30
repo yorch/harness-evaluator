@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from harnessbench.adapters.registry import create_adapter, get_adapter_class
-from harnessbench.orchestrator.config import ModelSpec
+from harness_evaluator.adapters.registry import create_adapter, get_adapter_class
+from harness_evaluator.orchestrator.config import ModelSpec
 
 
 @pytest.fixture
@@ -55,13 +55,13 @@ class TestCodexGetCommand:
     ) -> None:
         """get_command() embeds the trace-aware gateway URL with trace_id=.
 
-        When HARNESSBENCH_TRACE_ID is set in the env (mirrored from the adapter's
+        When HARNESS_EVALUATOR_TRACE_ID is set in the env (mirrored from the adapter's
         trace_id), the gateway URL passed to codex via ``-c
         openai_base_url=...`` must include the ``trace_id=`` query param so
         the gateway can attribute provider calls to this cell.
         """
         trace_id = "codex-cell-abc-123"
-        monkeypatch.setenv("HARNESSBENCH_TRACE_ID", trace_id)
+        monkeypatch.setenv("HARNESS_EVALUATOR_TRACE_ID", trace_id)
 
         cls = _codex_cls()
         adapter = cls(

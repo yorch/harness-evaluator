@@ -5,11 +5,11 @@ description: Run YAML config, task definitions, pricing tables, environment vari
 
 # Configuration
 
-harnessbench is configured through YAML files for run configs and task definitions, with pricing tables and environment variables for cost accounting and API access.
+harness-evaluator is configured through YAML files for run configs and task definitions, with pricing tables and environment variables for cost accounting and API access.
 
 ## Run configuration
 
-Run configs are YAML files passed to `harnessbench run`. See `runs/sample-run.yaml` and `runs/sample-minimal.yaml` for examples.
+Run configs are YAML files passed to `harness-evaluator run`. See `runs/sample-run.yaml` and `runs/sample-minimal.yaml` for examples.
 
 ### Full schema
 
@@ -35,11 +35,11 @@ repeats: 5                         # Optional. Default: 5.
 budget_usd: 100.0                  # Optional. Max total spend in USD. null = no cap.
 gateway_host: "host.docker.internal" # Optional. Gateway host from inside Docker.
 gateway_port: 8877                 # Optional. Gateway port. Default: 8877.
-gateway_db: "harnessbench_gateway.db"     # Optional. Gateway SQLite DB path.
-results_db: "harnessbench_results.db"     # Optional. Results SQLite DB path.
-workdir: "./harnessbench_workdir"         # Optional. Host workdir for cell repos.
+gateway_db: "harness_evaluator_gateway.db"     # Optional. Gateway SQLite DB path.
+results_db: "harness_evaluator_results.db"     # Optional. Results SQLite DB path.
+workdir: "./harness_evaluator_workdir"         # Optional. Host workdir for cell repos.
 docker_image: "..."                # Optional. Defaults to the version-pinned
-                                   #   ghcr.io/yorch/harnessbench-runner:<harnessbench version>.
+                                   #   ghcr.io/yorch/harness-evaluator-runner:<harness-evaluator version>.
 parallel_runs: 1                   # Optional. Parallel container runs. Default: 1.
 ```
 
@@ -69,14 +69,14 @@ a specific harness version, set a per-harness image. Precedence is
 `docker_image` > `version` > the run-level `docker_image`:
 
 ```yaml
-docker_image: "ghcr.io/yorch/harnessbench-runner:0.1.0"   # run-level default
+docker_image: "ghcr.io/yorch/harness-evaluator-runner:0.1.0"   # run-level default
 harnesses:
   # Explicit image (built with a harness build arg — see Docker image config)
   - name: claude-code-2.0
     adapter: claude-code
-    docker_image: "ghcr.io/yorch/harnessbench-runner:cc-2.0.0"
+    docker_image: "ghcr.io/yorch/harness-evaluator-runner:cc-2.0.0"
   # `version` shorthand: uses this as the tag on the run-level image's repo,
-  # i.e. ghcr.io/yorch/harnessbench-runner:cc-2.1.0
+  # i.e. ghcr.io/yorch/harness-evaluator-runner:cc-2.1.0
   - name: claude-code-2.1
     adapter: claude-code
     version: "cc-2.1.0"
@@ -105,7 +105,7 @@ List of task IDs to run, or `["*"]` to run all tasks in the library. Task IDs ar
 
 #### `task_library_path`
 
-Path to a directory containing task YAML files. All `*.yaml` files in this directory are loaded as the task library. Optional — defaults to the task library bundled inside the installed `harnessbench` package (`harnessbench/tasks`), so an installed harnessbench works without a repo checkout. Local `repo_url` fixtures are resolved relative to this directory.
+Path to a directory containing task YAML files. All `*.yaml` files in this directory are loaded as the task library. Optional — defaults to the task library bundled inside the installed `harness-evaluator` package (`harness_evaluator/tasks`), so an installed harness-evaluator works without a repo checkout. Local `repo_url` fixtures are resolved relative to this directory.
 
 #### `repeats`
 
@@ -393,7 +393,7 @@ tasks:
 
 ## Pricing tables
 
-Cost is calculated from per-token pricing tables in `src/harnessbench/gateway/models.py`. Prices are in USD per 1 million tokens.
+Cost is calculated from per-token pricing tables in `src/harness_evaluator/gateway/models.py`. Prices are in USD per 1 million tokens.
 
 ### Default pricing
 
@@ -419,7 +419,7 @@ Add the model to DEFAULT_PRICING to fix this.
 
 ### Adding a new model
 
-Add an entry to `DEFAULT_PRICING` in `src/harnessbench/gateway/models.py`:
+Add an entry to `DEFAULT_PRICING` in `src/harness_evaluator/gateway/models.py`:
 
 ```python
 DEFAULT_PRICING: dict[str, PricingTable] = {
@@ -450,7 +450,7 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
 | `OPENAI_BASE_URL` | Gateway proxy URL for OpenAI (with `/v1` and `?trace_id=`) |
 | `ANTHROPIC_API_KEY` | Passed through from host |
 | `OPENAI_API_KEY` | Passed through from host |
-| `HARNESSBENCH_TRACE_ID` | Cell trace ID for cost attribution |
+| `HARNESS_EVALUATOR_TRACE_ID` | Cell trace ID for cost attribution |
 
 ### Allowlisted (passed from host to container)
 
@@ -476,29 +476,29 @@ The runner image contains all five harnesses and their dependencies. You can eit
 ### Pull the pre-built image (recommended)
 
 ```bash
-docker pull ghcr.io/yorch/harnessbench-runner:latest
+docker pull ghcr.io/yorch/harness-evaluator-runner:latest
 ```
 
 Then reference it in your run config:
 
 ```yaml
-docker_image: "ghcr.io/yorch/harnessbench-runner:latest"
+docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"
 ```
 
 Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), semver tags
 like `1.2.3` and `1.2` (published from `v*` release tags), and `main`.
 
-The default `docker_image` is version-pinned to the installed harnessbench version
-(`ghcr.io/yorch/harnessbench-runner:<harnessbench version>`) so a given harnessbench release pairs
+The default `docker_image` is version-pinned to the installed harness-evaluator version
+(`ghcr.io/yorch/harness-evaluator-runner:<harness-evaluator version>`) so a given harness-evaluator release pairs
 with a matching runner image for reproducibility.
 
 ### Build locally
 
 ```bash
-docker build -t harnessbench-runner:latest .
+docker build -t harness-evaluator-runner:latest .
 ```
 
-Then set `docker_image: "harnessbench-runner:latest"` (or any custom name) in the run config.
+Then set `docker_image: "harness-evaluator-runner:latest"` (or any custom name) in the run config.
 
 ### Building a specific harness version
 
@@ -506,12 +506,12 @@ Harness versions are build args, so you can build an image that pins a specific
 harness release to compare versions:
 
 ```bash
-docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harnessbench-runner:cc-2.0.0 .
+docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harness-evaluator-runner:cc-2.0.0 .
 ```
 
 Available build args (defaulting to the verified pinned set): `CLAUDE_CODE_VERSION`,
 `CODEX_VERSION`, `OPENCODE_VERSION`, `PI_VERSION`, `OMP_VERSION`, `BUN_VERSION`.
-The installed versions are recorded as `io.harnessbench.*` OCI image labels, and the
+The installed versions are recorded as `io.harness-evaluator.*` OCI image labels, and the
 image name is stored in each run's metadata, so results trace to exact versions.
 Reference the built image via `docker_image:` in the run config.
 
@@ -527,7 +527,7 @@ resulting image is pushed to GHCR and can be referenced directly:
 harnesses:
   - name: claude-code-2.0
     adapter: claude-code
-    docker_image: "ghcr.io/yorch/harnessbench-runner:claude-code-2.0.0"
+    docker_image: "ghcr.io/yorch/harness-evaluator-runner:claude-code-2.0.0"
 ```
 
 ## Task trust model
@@ -536,7 +536,7 @@ Task YAMLs — including `test_command`, `setup_script`, and `repo_url` — are
 treated as **trusted input**. The SWE evaluator and the open-ended structural
 checker run a task's `test_command` on the **host** (not inside the container),
 and `setup_script` runs inside the container. Do not load task libraries from
-untrusted sources. harnessbench still validates task `id` and `repo_commit` against a
+untrusted sources. harness-evaluator still validates task `id` and `repo_commit` against a
 safe charset and skips symlinked untracked files during diff extraction as
 defense in depth, but a hostile task definition can execute arbitrary commands.
 

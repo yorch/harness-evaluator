@@ -8,9 +8,9 @@ import aiohttp
 import pytest
 from aiohttp import web
 
-from harnessbench.gateway.models import Provider
-from harnessbench.gateway.proxy import _redact_headers, create_proxy_app
-from harnessbench.gateway.store import CallStore
+from harness_evaluator.gateway.models import Provider
+from harness_evaluator.gateway.proxy import _redact_headers, create_proxy_app
+from harness_evaluator.gateway.store import CallStore
 
 
 class TestHeaderRedaction:
@@ -66,7 +66,7 @@ class TestStoreRoundTrip:
         """Test that a captured call survives a save→retrieve round-trip."""
         from datetime import datetime
 
-        from harnessbench.gateway.models import (
+        from harness_evaluator.gateway.models import (
             CapturedCall,
             CostBreakdown,
             TokenUsage,
@@ -128,7 +128,7 @@ class TestStoreRoundTrip:
 
     async def test_store_get_by_trace(self, tmp_db):
         """Test retrieving calls by trace ID."""
-        from harnessbench.gateway.models import CapturedCall
+        from harness_evaluator.gateway.models import CapturedCall
 
         store = CallStore(tmp_db)
         for i in range(3):

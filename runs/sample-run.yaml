@@ -1,4 +1,4 @@
-# Sample run configuration for harnessbench
+# Sample run configuration for harness-evaluator
 # Full sweep: all 5 harnesses, 2 providers, both task tracks.
 # For a minimal first run, see sample-minimal.yaml.
 name: "broad-first-pass"
@@ -52,8 +52,8 @@ task_library_path: "./tasks"
 repeats: 5
 budget_usd: 100.0
 gateway_port: 8877
-gateway_db: "harnessbench_gateway.db"
-results_db: "harnessbench_results.db"
-workdir: "./harnessbench_workdir"
-docker_image: "harnessbench-runner:latest"
+gateway_db: "harness_evaluator_gateway.db"
+results_db: "harness_evaluator_results.db"
+workdir: "./harness_evaluator_workdir"
+docker_image: "harness-evaluator-runner:latest"
 parallel_runs: 1

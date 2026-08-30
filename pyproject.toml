@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "harnessbench"
+name = "harness-evaluator"
 version = "0.1.0"
 description = "Harness evaluator: compare agentic coding harnesses on token/time/cost effectiveness"
 readme = "README.md"
@@ -43,24 +43,24 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yorch/harnessbench"
-Documentation = "https://yorch.github.io/harnessbench/"
-Source = "https://github.com/yorch/harnessbench"
-Issues = "https://github.com/yorch/harnessbench/issues"
+Homepage = "https://github.com/yorch/harness-evaluator"
+Documentation = "https://yorch.github.io/harness-evaluator/"
+Source = "https://github.com/yorch/harness-evaluator"
+Issues = "https://github.com/yorch/harness-evaluator/issues"
 
 [project.scripts]
-harnessbench = "harnessbench.cli:app"
+harness-evaluator = "harness_evaluator.cli:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/harnessbench"]
+packages = ["src/harness_evaluator"]
 
 # Bundle the task library (YAMLs + repo fixtures) into the wheel at
-# harnessbench/tasks so an installed `harnessbench` can run without a repo checkout.
+# harness_evaluator/tasks so an installed `harness-evaluator` can run without a repo checkout.
 [tool.hatch.build.targets.wheel.force-include]
-"tasks" = "harnessbench/tasks"
+"tasks" = "harness_evaluator/tasks"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/harnessbench", "tasks", "runs", "README.md", "LICENSE", "pyproject.toml"]
+include = ["src/harness_evaluator", "tasks", "runs", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.ruff]
 src = ["src", "tests"]
@@ -70,7 +70,7 @@ line-length = 100
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["harnessbench"]
+known-first-party = ["harness_evaluator"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -78,7 +78,7 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
-packages = ["harnessbench"]
+packages = ["harness_evaluator"]
 
 [[tool.mypy.overrides]]
 module = ["pandas", "statsmodels.*", "numpy.*"]

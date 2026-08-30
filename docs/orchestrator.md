@@ -5,7 +5,7 @@ description: Eval matrix building, budget caps with atomic reservation, retry lo
 
 # Orchestrator
 
-The orchestrator (`src/harnessbench/orchestrator/`) is the central execution engine. It takes a run configuration, expands it into a full eval matrix, executes each cell with budget tracking and retry logic, and stores results for reporting and analysis.
+The orchestrator (`src/harness_evaluator/orchestrator/`) is the central execution engine. It takes a run configuration, expands it into a full eval matrix, executes each cell with budget tracking and retry logic, and stores results for reporting and analysis.
 
 ## Components
 
@@ -134,8 +134,8 @@ Resumability is **cell-level only**:
 3. On re-run, only incomplete cells are executed
 
 ```
-harnessbench run runs/sample-run.yaml     # Runs 1000 cells, crashes after 500
-harnessbench run runs/sample-run.yaml     # Skips 500 completed, runs remaining 500
+harness-evaluator run runs/sample-run.yaml     # Runs 1000 cells, crashes after 500
+harness-evaluator run runs/sample-run.yaml     # Skips 500 completed, runs remaining 500
 ```
 
 > **Note**: There is no mid-flight agent process resumption. Incomplete cells are re-run from scratch — the workdir is cleaned, the gateway calls for that trace_id are deleted, and the container starts fresh.
@@ -214,7 +214,7 @@ Stores the full run config for reproducibility:
 |--------|------|-------------|
 | `run_name` | TEXT PK | Run name |
 | `config_json` | TEXT | Full `RunConfig` as JSON |
-| `harnessbench_version` | TEXT | harnessbench package version |
+| `harness_evaluator_version` | TEXT | harness-evaluator package version |
 | `docker_image` | TEXT | Docker image used |
 | `created_at` | TEXT | ISO timestamp |
 
@@ -226,7 +226,7 @@ At the start of each run, the orchestrator saves run metadata:
 self.store.save_run_metadata(
     run_name=self.config.name,
     config_json=self.config.model_dump_json(indent=2),
-    harnessbench_version=harnessbench.__version__,
+    harness_evaluator_version=harness_evaluator.__version__,
     docker_image=self.config.docker_image,
 )
 ```
@@ -238,21 +238,21 @@ This allows exact reproduction of a run: the config JSON can be written back to 
 Use `--dry-run` to print the matrix without executing:
 
 ```bash
-harnessbench run runs/sample-run.yaml --dry-run
+harness-evaluator run runs/sample-run.yaml --dry-run
 ```
 
 This prints a table with the first 20 cells (Cell ID, Harness, Model, Task, Repeat) and the total cell count.
 
 ## Gateway preflight check
 
-Before executing, `harnessbench run` checks that the gateway proxy is reachable on the configured port:
+Before executing, `harness-evaluator run` checks that the gateway proxy is reachable on the configured port:
 
 ```bash
 # If gateway is not running:
-$ harnessbench run runs/sample-minimal.yaml
+$ harness-evaluator run runs/sample-minimal.yaml
 Gateway is NOT reachable on 127.0.0.1:8877.
 Start it in another terminal with:
-  harnessbench gateway --port 8877
+  harness-evaluator gateway --port 8877
 Then re-run this command.
 ```
 

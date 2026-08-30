@@ -5,15 +5,15 @@ description: Mixed-effects models, variance decomposition, bootstrap confidence 
 
 # Statistics
 
-harnessbench provides statistical analysis of evaluation results to determine whether differences between harnesses are statistically significant or could be explained by sampling variance.
+harness-evaluator provides statistical analysis of evaluation results to determine whether differences between harnesses are statistically significant or could be explained by sampling variance.
 
 ## Overview
 
 ```bash
-harnessbench stats my-run --db harnessbench_results.db
+harness-evaluator stats my-run --db harness_evaluator_results.db
 ```
 
-The statistics module (`src/harnessbench/stats/__init__.py`) provides four analyses:
+The statistics module (`src/harness_evaluator/stats/__init__.py`) provides four analyses:
 
 1. **Variance decomposition** — how much variance in success is explained by harness, model, task, and residual
 2. **Mixed-effects model** — fixed effects for harness and model, random effect for task
@@ -232,7 +232,7 @@ These are listed in `pyproject.toml` as production dependencies.
 
 | File | Description |
 |------|-------------|
-| `src/harnessbench/stats/__init__.py` | `StatsAnalyzer`, `StatisticalReport`, all result dataclasses, `analyze_results()` |
+| `src/harness_evaluator/stats/__init__.py` | `StatsAnalyzer`, `StatisticalReport`, all result dataclasses, `analyze_results()` |
 
 ## Honest limitations
 

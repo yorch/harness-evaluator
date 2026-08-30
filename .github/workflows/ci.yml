@@ -48,7 +48,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Mypy
-        run: uv run mypy src/harnessbench/
+        run: uv run mypy src/harness_evaluator/
 
   test:
     name: Tests (pytest)

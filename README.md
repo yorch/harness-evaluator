@@ -1,26 +1,26 @@
-# harnessbench
+# harness-evaluator
 
-[![CI](https://github.com/yorch/harnessbench/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/harnessbench/actions/workflows/ci.yml)
-[![Docker](https://github.com/yorch/harnessbench/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/harnessbench/actions/workflows/docker.yml)
-[![Docs Site](https://github.com/yorch/harnessbench/actions/workflows/astro.yml/badge.svg)](https://yorch.github.io/harnessbench/)
+[![CI](https://github.com/yorch/harness-evaluator/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/harness-evaluator/actions/workflows/ci.yml)
+[![Docker](https://github.com/yorch/harness-evaluator/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/harness-evaluator/actions/workflows/docker.yml)
+[![Docs Site](https://github.com/yorch/harness-evaluator/actions/workflows/astro.yml/badge.svg)](https://yorch.github.io/harness-evaluator/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Harness evaluator: compare agentic coding harnesses (Claude Code, Codex, Pi,
 OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.
 
 See [DESIGN.md](DESIGN.md) for the full design specification and
-[the docs site](https://yorch.github.io/harnessbench/) for comprehensive documentation.
+[the docs site](https://yorch.github.io/harness-evaluator/) for comprehensive documentation.
 
 ## Quick start
 
-No clone required — harnessbench bundles its task library and publishes to PyPI as `harnessbench`:
+No clone required — harness-evaluator bundles its task library and publishes to PyPI as `harness-evaluator`:
 
 ```bash
-uvx harnessbench init                            # scaffold harnessbench.yaml
-docker pull ghcr.io/yorch/harnessbench-runner:latest   # pull the runner image
+uvx harness-evaluator init                            # scaffold harness-evaluator.yaml
+docker pull ghcr.io/yorch/harness-evaluator-runner:latest   # pull the runner image
 export ANTHROPIC_API_KEY=sk-ant-...
-uvx harnessbench gateway --port 8877             # separate terminal
-uvx harnessbench run harnessbench.yaml
+uvx harness-evaluator gateway --port 8877             # separate terminal
+uvx harness-evaluator run harness-evaluator.yaml
 ```
 
 ### From source
@@ -29,24 +29,24 @@ uvx harnessbench run harnessbench.yaml
 # 1. Install dependencies
 uv sync --extra dev
 
-# 2. Pull the pre-built Docker image (or build locally with: docker build -t harnessbench-runner:latest .)
-docker pull ghcr.io/yorch/harnessbench-runner:latest
+# 2. Pull the pre-built Docker image (or build locally with: docker build -t harness-evaluator-runner:latest .)
+docker pull ghcr.io/yorch/harness-evaluator-runner:latest
 
 # 3. Set API keys
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 
 # 4. Start the gateway proxy (in a separate terminal)
-harnessbench gateway --port 8877
+harness-evaluator gateway --port 8877
 
 # 5. Run a minimal evaluation (1 harness, 1 model, 1 task, 1 repeat)
-harnessbench run runs/sample-minimal.yaml
+harness-evaluator run runs/sample-minimal.yaml
 
 # Or dry-run to see the matrix without executing
-harnessbench run runs/sample-minimal.yaml --dry-run
+harness-evaluator run runs/sample-minimal.yaml --dry-run
 
 # Curated 20-task mix (5 harnesses × 2 models × 20 tasks × 3 repeats = 600 cells)
-harnessbench run runs/task-mix.yaml --dry-run
+harness-evaluator run runs/task-mix.yaml --dry-run
 ```
 
 ## Docker image
@@ -56,10 +56,10 @@ image is available on GHCR (recommended), or you can build locally:
 
 ```bash
 # Pull the pre-built image (recommended)
-docker pull ghcr.io/yorch/harnessbench-runner:latest
+docker pull ghcr.io/yorch/harness-evaluator-runner:latest
 
 # Or build locally
-docker build -t harnessbench-runner:latest .
+docker build -t harness-evaluator-runner:latest .
 ```
 
 ## M1: Gateway Proxy (completed)
@@ -74,7 +74,7 @@ reference.
 ### Running the proxy
 
 ```bash
-harnessbench gateway --port 8877
+harness-evaluator gateway --port 8877
 ```
 
 Configure harnesses to route through the proxy:
@@ -87,7 +87,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:8877
 
 After sending a request through the proxy, verify token capture accuracy:
 ```bash
-harnessbench canary --tolerance 1.0
+harness-evaluator canary --tolerance 1.0
 ```
 
 ### What the proxy captures
@@ -118,16 +118,16 @@ The core pipeline handles eval matrix building, execution, and reporting.
 
 ```bash
 # Dry run (print the matrix without executing)
-harnessbench run runs/sample-run.yaml --dry-run
+harness-evaluator run runs/sample-run.yaml --dry-run
 
 # Execute the eval
-harnessbench run runs/sample-run.yaml
+harness-evaluator run runs/sample-run.yaml
 
 # Generate reports
-harnessbench report broad-first-pass --output ./reports
+harness-evaluator report broad-first-pass --output ./reports
 
 # View results in console
-harnessbench results broad-first-pass
+harness-evaluator results broad-first-pass
 ```
 
 ### Run configuration
@@ -177,7 +177,7 @@ Adapters wrap each coding harness with a uniform interface for the runner.
 ### Listing adapters
 
 ```bash
-harnessbench adapters
+harness-evaluator adapters
 ```
 
 ### Observability tiers
@@ -197,7 +197,7 @@ Each adapter implements:
 - `cleanup()`: Clean up after the run
 - `get_env()`: Set gateway proxy env vars and API keys
 
-The adapter registry (`harnessbench.adapters.registry`) loads adapters by name and
+The adapter registry (`harness_evaluator.adapters.registry`) loads adapters by name and
 the Docker runner uses it to dispatch to the correct adapter based on the
 run config's `harness.adapter` field.
 
@@ -224,7 +224,7 @@ frozen LLM judge, structured rubric, and structural checks.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-harnessbench calibrate --model claude-sonnet-4-20250514
+harness-evaluator calibrate --model claude-sonnet-4-20250514
 ```
 
 ### Evaluation flow
@@ -242,7 +242,7 @@ Interactive FastAPI web dashboard for exploring eval results.
 ### Starting the dashboard
 
 ```bash
-harnessbench dashboard --port 8080
+harness-evaluator dashboard --port 8080
 ```
 
 Then open http://127.0.0.1:8080 in your browser.
@@ -266,7 +266,7 @@ variance decomposition, bootstrap confidence intervals, and consistency analysis
 ### Running stats
 
 ```bash
-harnessbench stats my-run --db harnessbench_results.db
+harness-evaluator stats my-run --db harness_evaluator_results.db
 ```
 
 ### Components

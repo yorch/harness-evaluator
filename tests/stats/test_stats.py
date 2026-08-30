@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from harnessbench.stats import (
+from harness_evaluator.stats import (
     BootstrapResult,
     ConsistencyResult,
     StatsAnalyzer,

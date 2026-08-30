@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from harnessbench.adapters.registry import create_adapter, get_adapter_class
-from harnessbench.orchestrator.config import ModelSpec
+from harness_evaluator.adapters.registry import create_adapter, get_adapter_class
+from harness_evaluator.orchestrator.config import ModelSpec
 
 
 @pytest.fixture

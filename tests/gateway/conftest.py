@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 from aiohttp import web
 
-from harnessbench.gateway.models import Provider
-from harnessbench.gateway.proxy import create_proxy_app
-from harnessbench.gateway.store import CallStore
+from harness_evaluator.gateway.models import Provider
+from harness_evaluator.gateway.proxy import create_proxy_app
+from harness_evaluator.gateway.store import CallStore
 
 
 @pytest.fixture

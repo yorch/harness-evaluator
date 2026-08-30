@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from harnessbench.gateway.models import TokenUsage
-from harnessbench.gateway.parsers.openai import _usage_from_openai_dict, parse_sse_chunk
-from harnessbench.gateway.proxy import _validate_upstream_url
-from harnessbench.orchestrator.config import TaskSpec, TaskTrack
+from harness_evaluator.gateway.models import TokenUsage
+from harness_evaluator.gateway.parsers.openai import _usage_from_openai_dict, parse_sse_chunk
+from harness_evaluator.gateway.proxy import _validate_upstream_url
+from harness_evaluator.orchestrator.config import TaskSpec, TaskTrack
 
 
 class TestTaskSpecValidation:
@@ -49,30 +49,32 @@ class TestTaskSpecValidation:
 
 class TestHarnessImageResolution:
     def _harness(self, **kw):  # type: ignore[no-untyped-def]
-        from harnessbench.orchestrator.config import HarnessSpec
+        from harness_evaluator.orchestrator.config import HarnessSpec
 
         return HarnessSpec(name="claude-code", adapter="claude-code", **kw)
 
     def test_defaults_to_run_image(self) -> None:
         h = self._harness()
-        assert h.resolve_image("ghcr.io/yorch/harnessbench-runner:0.1.0") == (
-            "ghcr.io/yorch/harnessbench-runner:0.1.0"
+        assert h.resolve_image("ghcr.io/yorch/harness-evaluator-runner:0.1.0") == (
+            "ghcr.io/yorch/harness-evaluator-runner:0.1.0"
         )
 
     def test_explicit_docker_image_wins(self) -> None:
         h = self._harness(docker_image="myrepo/custom:tag", version="cc-2.0.0")
-        assert h.resolve_image("ghcr.io/yorch/harnessbench-runner:0.1.0") == "myrepo/custom:tag"
+        assert h.resolve_image(
+            "ghcr.io/yorch/harness-evaluator-runner:0.1.0"
+        ) == "myrepo/custom:tag"
 
     def test_version_becomes_tag_on_run_repo(self) -> None:
         h = self._harness(version="cc-2.0.0")
-        assert h.resolve_image("ghcr.io/yorch/harnessbench-runner:0.1.0") == (
-            "ghcr.io/yorch/harnessbench-runner:cc-2.0.0"
+        assert h.resolve_image("ghcr.io/yorch/harness-evaluator-runner:0.1.0") == (
+            "ghcr.io/yorch/harness-evaluator-runner:cc-2.0.0"
         )
 
     def test_version_preserves_registry_port(self) -> None:
         h = self._harness(version="v9")
-        assert h.resolve_image("localhost:5000/harnessbench-runner:0.1.0") == (
-            "localhost:5000/harnessbench-runner:v9"
+        assert h.resolve_image("localhost:5000/harness-evaluator-runner:0.1.0") == (
+            "localhost:5000/harness-evaluator-runner:v9"
         )
 
     def test_invalid_version_rejected(self) -> None:
@@ -138,7 +140,7 @@ class TestOpenAIResponsesUsage:
 
 class TestBunTestParsing:
     def _evaluator(self):  # type: ignore[no-untyped-def]
-        from harnessbench.evaluator.swe import SWEEvaluator
+        from harness_evaluator.evaluator.swe import SWEEvaluator
 
         return SWEEvaluator.__new__(SWEEvaluator)
 
@@ -163,7 +165,7 @@ class TestBunTestParsing:
 
 class TestSymlinkSafeDiff:
     def test_untracked_symlink_skipped(self, tmp_path: Path) -> None:
-        from harnessbench.evaluator.utils import get_workdir_diff
+        from harness_evaluator.evaluator.utils import get_workdir_diff
 
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -185,7 +187,7 @@ class TestSymlinkSafeDiff:
 
 class TestCsvInjectionSanitization:
     def test_formula_prefixes_neutralized(self) -> None:
-        from harnessbench.reporting.static_report import sanitize_csv_field
+        from harness_evaluator.reporting.static_report import sanitize_csv_field
 
         assert sanitize_csv_field("=cmd|'/C calc'!A0").startswith("'=")
         assert sanitize_csv_field("+1").startswith("'+")
@@ -193,7 +195,7 @@ class TestCsvInjectionSanitization:
         assert sanitize_csv_field("@x").startswith("'@")
 
     def test_normal_values_untouched(self) -> None:
-        from harnessbench.reporting.static_report import sanitize_csv_field
+        from harness_evaluator.reporting.static_report import sanitize_csv_field
 
         assert sanitize_csv_field("hello") == "hello"
         assert sanitize_csv_field(42) == 42

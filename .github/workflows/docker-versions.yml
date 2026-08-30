@@ -6,7 +6,7 @@ name: Docker — per-harness version images
 # every push to main.
 #
 # The resulting image is tagged `<harness>-<version>` on the runner repository,
-# e.g. ghcr.io/yorch/harnessbench-runner:claude-code-2.0.0. Reference it in a run
+# e.g. ghcr.io/yorch/harness-evaluator-runner:claude-code-2.0.0. Reference it in a run
 # config via HarnessSpec.docker_image or the `version` shorthand.
 
 on:
@@ -81,7 +81,7 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/harnessbench-runner:${{ steps.tag.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/harness-evaluator-runner:${{ steps.tag.outputs.tag }}
           build-args: |
             ${{ inputs.harness }}=${{ inputs.version }}
           cache-from: type=gha
@@ -89,7 +89,7 @@ jobs:
 
       - name: Verify the harness is installed at the requested version
         run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/harnessbench-runner:${{ steps.tag.outputs.tag }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/harness-evaluator-runner:${{ steps.tag.outputs.tag }}"
           docker pull "$IMAGE"
           # The image labels record the installed versions.
           docker inspect "$IMAGE" --format='{{json .Config.Labels}}' | \

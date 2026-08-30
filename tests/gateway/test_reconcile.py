@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from harnessbench.gateway.models import TokenUsage
-from harnessbench.gateway.reconcile import (
+from harness_evaluator.gateway.models import TokenUsage
+from harness_evaluator.gateway.reconcile import (
     ReconciliationStatus,
     reconcile_usage,
 )

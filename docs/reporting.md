@@ -5,14 +5,14 @@ description: Static reports (HTML/JSON/CSV), interactive FastAPI dashboard, and 
 
 # Reporting
 
-harnessbench provides three ways to explore evaluation results: static reports (HTML/JSON/CSV), an interactive web dashboard, and a console results table.
+harness-evaluator provides three ways to explore evaluation results: static reports (HTML/JSON/CSV), an interactive web dashboard, and a console results table.
 
 ## Static reports
 
-Generate static reports with `harnessbench report`:
+Generate static reports with `harness-evaluator report`:
 
 ```bash
-harnessbench report broad-first-pass --output ./reports
+harness-evaluator report broad-first-pass --output ./reports
 ```
 
 ### Output files
@@ -95,20 +95,20 @@ Run names are sanitized before use in filenames (`sanitize_id()`), and output pa
 
 ## Console results
 
-View results in the console with `harnessbench results`:
+View results in the console with `harness-evaluator results`:
 
 ```bash
-harnessbench results broad-first-pass
+harness-evaluator results broad-first-pass
 ```
 
 Prints a Rich table with columns: Harness, Model, Task, Exit, Success, Tokens, Cost, Time(s).
 
 ## Dashboard
 
-Start the interactive dashboard with `harnessbench dashboard`:
+Start the interactive dashboard with `harness-evaluator dashboard`:
 
 ```bash
-harnessbench dashboard --port 8080
+harness-evaluator dashboard --port 8080
 ```
 
 Then open `http://127.0.0.1:8080` in your browser.
@@ -239,7 +239,7 @@ Paginated results use parameterized SQL queries with `LIMIT` and `OFFSET`. Colum
 
 ### Templates
 
-Dashboard templates are in `src/harnessbench/dashboard/templates/`:
+Dashboard templates are in `src/harness_evaluator/dashboard/templates/`:
 
 | Template | Description |
 |----------|-------------|
@@ -252,7 +252,7 @@ All templates use Jinja2 with `select_autoescape(["html", "xml"])` for XSS safet
 
 | File | Description |
 |------|-------------|
-| `src/harnessbench/reporting/static_report.py` | `ReportGenerator` — HTML/JSON/CSV generation |
-| `src/harnessbench/dashboard/app.py` | `create_app()` — FastAPI dashboard factory |
-| `src/harnessbench/dashboard/templates/index.html` | Run overview template |
-| `src/harnessbench/dashboard/templates/run_detail.html` | Run detail template |
+| `src/harness_evaluator/reporting/static_report.py` | `ReportGenerator` — HTML/JSON/CSV generation |
+| `src/harness_evaluator/dashboard/app.py` | `create_app()` — FastAPI dashboard factory |
+| `src/harness_evaluator/dashboard/templates/index.html` | Run overview template |
+| `src/harness_evaluator/dashboard/templates/run_detail.html` | Run detail template |

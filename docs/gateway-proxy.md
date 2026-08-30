@@ -38,7 +38,7 @@ verification.
  │     │                                            │               │
  │     │  3. Strip hop-by-hop & trace headers        │               │
  │     │     Keep: Authorization, Content-Type       │               │
- │     │     Strip: x-harnessbench-trace-id, trace_id param │               │
+ │     │     Strip: x-harness-evaluator-trace-id, trace_id param │               │
  │     │                                            │               │
  │     │  4. Forward to upstream over HTTPS ─────────┼──►  Real Provider API
  │     │                                            │       (api.anthropic.com
@@ -52,7 +52,7 @@ verification.
  │     │     get_pricing_strict(model) → warns on    │               │
  │     │     unknown models (no silent $0)           │               │
  │     │                                            │               │
- │     │  8. Save CapturedCall to SQLite ────────────┼──►  harnessbench_gateway.db
+ │     │  8. Save CapturedCall to SQLite ────────────┼──►  harness_evaluator_gateway.db
  │     │     (offloaded via asyncio.to_thread)       │               │
  │     │                                            │               │
  │     │  9. Return response to harness ◄────────────│               │
@@ -85,7 +85,7 @@ then forwards the request to the real provider API over HTTPS. It:
 
 - **Keeps** auth headers (`Authorization`, `x-api-key`) and `Content-Type`
 - **Strips** hop-by-hop headers (`Connection`, `Transfer-Encoding`, etc.)
-- **Strips** internal trace headers (`x-harnessbench-trace-id`) and the `trace_id`
+- **Strips** internal trace headers (`x-harness-evaluator-trace-id`) and the `trace_id`
   query parameter so they never reach the real provider
 - **Sets** the `Host` header to the upstream provider's domain
 
@@ -94,7 +94,7 @@ then forwards the request to the real provider API over HTTPS. It:
 Each eval cell is assigned a unique `trace_id`. The Docker runner passes this
 to the harness via environment variables, and the adapter appends
 `?trace_id=<cell-id>` to the gateway URL. The proxy extracts it from either
-the `x-harnessbench-trace-id` header or the query string, and stores it with the
+the `x-harness-evaluator-trace-id` header or the query string, and stores it with the
 `CapturedCall` so calls can be attributed back to specific eval cells.
 
 ### 4. Non-streaming responses
@@ -129,13 +129,13 @@ For Server-Sent Events responses (e.g. `stream: true`):
 
 The proxy uses provider-specific parsers:
 
-**Anthropic** (`harnessbench.gateway.parsers.anthropic`):
+**Anthropic** (`harness_evaluator.gateway.parsers.anthropic`):
 - SSE: parses `event: message_delta` and `data: {...}` lines to extract
   `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, and
   `cache_read_input_tokens`
 - Non-streaming: reads `usage` from the response JSON
 
-**OpenAI** (`harnessbench.gateway.parsers.openai`):
+**OpenAI** (`harness_evaluator.gateway.parsers.openai`):
 - SSE: parses the final chunk's `usage` object (OpenAI sends usage on the
   last chunk when `stream_options.include_usage` is set)
 - Non-streaming: reads `usage` from the response JSON
@@ -151,7 +151,7 @@ Both parsers produce a `TokenUsage` object with:
 ### 7. Cost calculation
 
 Cost is calculated using `get_pricing_strict(model)` from
-`harnessbench.gateway.models`. If the model is not in the pricing table, a warning is
+`harness_evaluator.gateway.models`. If the model is not in the pricing table, a warning is
 logged and zero-cost is returned — but the warning ensures unknown models are
 visible rather than silently bypassing budget accounting.
 
@@ -162,7 +162,7 @@ token counts by the corresponding rate.
 ### 8. Storage
 
 Each captured call is saved as a `CapturedCall` record in SQLite
-(`harnessbench_gateway.db`) with:
+(`harness_evaluator_gateway.db`) with:
 
 | Field             | Description                                              |
 |-------------------|----------------------------------------------------------|
@@ -219,10 +219,10 @@ TLS verification is enabled by default. It can be disabled via the
 
 ```bash
 # Start the gateway proxy on port 8877
-harnessbench gateway --port 8877
+harness-evaluator gateway --port 8877
 
 # Or with a custom host and database path
-harnessbench gateway --host 0.0.0.0 --port 8877 --db ./harnessbench_gateway.db
+harness-evaluator gateway --host 0.0.0.0 --port 8877 --db ./harness_evaluator_gateway.db
 ```
 
 ## How harnesses connect
@@ -250,7 +250,7 @@ After sending a request through the proxy, verify token capture accuracy
 against the provider's own usage reporting:
 
 ```bash
-harnessbench canary --tolerance-pct 1.0
+harness-evaluator canary --tolerance-pct 1.0
 ```
 
 This sends a test request through the proxy and compares the proxy's captured
@@ -282,13 +282,13 @@ Discrepancies are flagged as a transparency metric in the final report.
 
 ## Configuration reference
 
-CLI options for `harnessbench gateway`:
+CLI options for `harness-evaluator gateway`:
 
 | Parameter  | Default            | Description                |
 |------------|--------------------|----------------------------|
 | `--host`   | `127.0.0.1`        | Bind address               |
 | `--port`   | `8877`             | Listen port                |
-| `--db`     | `harnessbench_gateway.db` | SQLite database path       |
+| `--db`     | `harness_evaluator_gateway.db` | SQLite database path       |
 
 The proxy also accepts `verify_ssl` and `upstream_overrides` as keyword
 arguments to `run_proxy()` (used programmatically by the orchestrator), but
@@ -298,10 +298,10 @@ these are not exposed as CLI flags.
 
 | File                                  | Description                          |
 |---------------------------------------|--------------------------------------|
-| `src/harnessbench/gateway/proxy.py`          | Proxy server and request handler     |
-| `src/harnessbench/gateway/models.py`         | `CapturedCall`, `TokenUsage`, pricing|
-| `src/harnessbench/gateway/store.py`          | SQLite-backed call storage           |
-| `src/harnessbench/gateway/parsers/anthropic.py` | Anthropic SSE/JSON usage parser   |
-| `src/harnessbench/gateway/parsers/openai.py` | OpenAI SSE/JSON usage parser         |
-| `src/harnessbench/gateway/canary.py`         | Proxy accuracy verification          |
-| `src/harnessbench/gateway/reconcile.py`      | Multi-source token reconciliation    |
+| `src/harness_evaluator/gateway/proxy.py`          | Proxy server and request handler     |
+| `src/harness_evaluator/gateway/models.py`         | `CapturedCall`, `TokenUsage`, pricing|
+| `src/harness_evaluator/gateway/store.py`          | SQLite-backed call storage           |
+| `src/harness_evaluator/gateway/parsers/anthropic.py` | Anthropic SSE/JSON usage parser   |
+| `src/harness_evaluator/gateway/parsers/openai.py` | OpenAI SSE/JSON usage parser         |
+| `src/harness_evaluator/gateway/canary.py`         | Proxy accuracy verification          |
+| `src/harness_evaluator/gateway/reconcile.py`      | Multi-source token reconciliation    |

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from harnessbench.gateway.models import TokenUsage
-from harnessbench.gateway.parsers.anthropic import (
+from harness_evaluator.gateway.models import TokenUsage
+from harness_evaluator.gateway.parsers.anthropic import (
     parse_non_streaming_usage,
     parse_sse_event,
     parse_sse_line,

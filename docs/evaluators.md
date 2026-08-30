@@ -5,7 +5,7 @@ description: SWE-bench-style hidden-test evaluator and open-ended LLM judge trac
 
 # Evaluators
 
-harnessbench has two evaluation tracks, each with separate leaderboards. They are never cross-compared.
+harness-evaluator has two evaluation tracks, each with separate leaderboards. They are never cross-compared.
 
 ## Track overview
 
@@ -16,7 +16,7 @@ harnessbench has two evaluation tracks, each with separate leaderboards. They ar
 
 ## SWE-bench-style track
 
-The SWE evaluator (`src/harnessbench/evaluator/swe.py`) evaluates tasks with hidden tests, similar to [SWE-bench](https://www.swebench.com/).
+The SWE evaluator (`src/harness_evaluator/evaluator/swe.py`) evaluates tasks with hidden tests, similar to [SWE-bench](https://www.swebench.com/).
 
 ### Evaluation flow
 
@@ -110,7 +110,7 @@ If no test output is parseable and the return code is 0, the evaluator returns `
 
 ## Open-ended track
 
-The open-ended evaluator (`src/harnessbench/evaluator/open_ended.py`) evaluates tasks without a single correct answer using a frozen LLM judge, structured rubric, and structural checks.
+The open-ended evaluator (`src/harness_evaluator/evaluator/open_ended.py`) evaluates tasks without a single correct answer using a frozen LLM judge, structured rubric, and structural checks.
 
 ### Components
 
@@ -183,7 +183,7 @@ The judge prompt explicitly instructs the LLM to treat diff content as data, not
 
 ### Gateway routing
 
-The judge routes through the gateway proxy when `gateway_url` is set, sending the `x-harnessbench-trace-id` header so token usage is captured and attributed to the trace. Direct API calls (without gateway) are a fallback for testing only.
+The judge routes through the gateway proxy when `gateway_url` is set, sending the `x-harness-evaluator-trace-id` header so token usage is captured and attributed to the trace. Direct API calls (without gateway) are a fallback for testing only.
 
 ### Structural checks
 
@@ -200,7 +200,7 @@ If any structural check fails, the composite success is capped at 0.5 — regard
 Calibration verifies the judge produces consistent scores against known anchor submissions:
 
 ```bash
-harnessbench calibrate --model claude-sonnet-4-20250514
+harness-evaluator calibrate --model claude-sonnet-4-20250514
 ```
 
 The calibration set includes anchor submissions with known expected scores:
@@ -289,5 +289,5 @@ tasks:
 
 | File | Description |
 |------|-------------|
-| `src/harnessbench/evaluator/swe.py` | `SWEEvaluator`, `ErrorClass`, `EvaluationResult` |
-| `src/harnessbench/evaluator/open_ended.py` | `FrozenJudge`, `Rubric`, `StructuralChecker`, `CalibrationSet`, `OpenEndedEvaluator` |
+| `src/harness_evaluator/evaluator/swe.py` | `SWEEvaluator`, `ErrorClass`, `EvaluationResult` |
+| `src/harness_evaluator/evaluator/open_ended.py` | `FrozenJudge`, `Rubric`, `StructuralChecker`, `CalibrationSet`, `OpenEndedEvaluator` |

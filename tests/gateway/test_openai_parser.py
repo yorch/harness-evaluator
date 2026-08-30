@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from harnessbench.gateway.models import TokenUsage
-from harnessbench.gateway.parsers.openai import (
+from harness_evaluator.gateway.models import TokenUsage
+from harness_evaluator.gateway.parsers.openai import (
     parse_non_streaming_usage,
     parse_sse_chunk,
 )

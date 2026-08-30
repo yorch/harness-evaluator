@@ -11,7 +11,7 @@ import { z } from 'astro/zod';
  * - For entries without a frontmatter `title`, extracts it from the first
  *   H1 heading in the markdown body (e.g. `gateway-proxy.md`).
  */
-function harnessbenchDocsLoader(): Loader {
+function harnessEvaluatorDocsLoader(): Loader {
   const inner = glob({
     pattern: ['**/*.md', '!index.md'],
     base: '../docs',
@@ -27,7 +27,7 @@ function harnessbenchDocsLoader(): Loader {
   });
 
   return {
-    name: 'harnessbench-docs-loader',
+    name: 'harness-evaluator-docs-loader',
     load: async (context) => {
       await inner.load(context);
 
@@ -71,7 +71,7 @@ function harnessbenchDocsLoader(): Loader {
 
 export const collections = {
   docs: defineCollection({
-    loader: harnessbenchDocsLoader(),
+    loader: harnessEvaluatorDocsLoader(),
     schema: docsSchema({
       extend: z.object({
         title: z.string().optional(),
