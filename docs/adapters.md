@@ -62,6 +62,56 @@ allowlist = {"PATH", "HOME", "USER", "SHELL", "LANG", "LC_ALL", "TERM", "TMPDIR"
 
 The gateway URL has `?trace_id=<cell_id>` appended so the proxy can attribute calls to the correct eval cell. For OpenAI provider, `/v1` is appended to the path so the base URL ends with `/v1`.
 
+### OAuth / subscription authentication
+
+In addition to the default API-key auth, `get_env()` branches on the model's
+`auth_mode` field to support subscription-based harness access:
+
+#### Claude Code OAuth (`auth_mode: claude_oauth`)
+
+Claude Code can authenticate via an OAuth token instead of an API key. In this
+mode:
+
+- `ANTHROPIC_BASE_URL` is set to the gateway proxy URL (so traffic is still
+  captured).
+- `ANTHROPIC_API_KEY` is **not** set.
+- If the `CLAUDE_CODE_OAUTH_TOKEN` environment variable is present on the host,
+  it is passed through to the container.
+- The Docker runner copies `~/.claude/` (or the parent of the path in
+  `credentials_path`) to a temp directory and mounts it writable into the
+  container at `/workspace/.claude`, setting `CLAUDE_CONFIG_DIR` so Claude
+  Code finds its credentials and can refresh expired tokens.
+
+#### Codex ChatGPT (`auth_mode: codex_chatgpt`)
+
+Codex can use a ChatGPT subscription instead of an OpenAI API key. In this
+mode:
+
+- `OPENAI_API_KEY` and `OPENAI_BASE_URL` are **not** set.
+- The Codex adapter's `get_command()` passes `chatgpt_base_url` (with a
+  `/codex` path) via the `-c` config flag instead of `openai_base_url`.
+- The Docker runner copies `~/.codex/` (or the parent of the path in
+  `credentials_path`) to a temp directory and mounts it writable into the
+  container at `/workspace/.codex`, setting `CODEX_HOME` so Codex finds its
+  credentials and can refresh expired tokens.
+
+#### Gateway routing for the ChatGPT backend
+
+The gateway proxy detects ChatGPT-backend requests by path and routes them to
+`https://chatgpt.com/backend-api` (the `/codex/responses` path is appended
+naturally) instead of `https://api.openai.com`:
+
+| Request path | Provider | Upstream |
+|--------------|----------|----------|
+| `/codex/responses` | `OPENAI_CHATGPT` | `chatgpt.com/backend-api` |
+| `/v1/chat/completions` | `OPENAI` | `api.openai.com` |
+| `/v1/responses` | `OPENAI` | `api.openai.com` |
+| `/v1/messages` | `ANTHROPIC` | `api.anthropic.com` |
+
+The `OPENAI_CHATGPT` provider uses the same OpenAI response parser as
+`OPENAI` (the ChatGPT backend returns OpenAI-format responses), so token
+usage and cost are captured the same way.
+
 ### `AdapterInfo`
 
 Each adapter provides metadata via `info()`:

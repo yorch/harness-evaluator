@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from harness_evaluator.orchestrator.config import RunCell, RunConfig
+from harness_evaluator.orchestrator.config import CostMode, RunCell, RunConfig
 from harness_evaluator.orchestrator.results_store import ResultsStore
 
 logger = logging.getLogger(__name__)
@@ -373,7 +373,13 @@ class Orchestrator:
         across all matrix cells (using the real cell count from
         ``build_matrix()``, not ``len(config.tasks)`` which is wrong
         when tasks is ``["*"]``).
+
+        Subscription-mode cells (``cost_mode == "subscription"``) are
+        zero-dollar: token usage is still tracked but does not count
+        against the dollar budget.
         """
+        if cell.model.cost_mode == CostMode.SUBSCRIPTION:
+            return 0.0
         if cell.budget is not None:
             return cell.budget
         if self.config.budget_usd is not None:

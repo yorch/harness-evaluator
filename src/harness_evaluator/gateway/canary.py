@@ -156,7 +156,7 @@ def _extract_usage_from_response(
 
         if "usage" in body:
             return parse_non_streaming_usage(body)
-    elif provider == Provider.OPENAI:
+    elif provider in (Provider.OPENAI, Provider.OPENAI_CHATGPT):
         from harness_evaluator.gateway.parsers.openai import parse_non_streaming_usage
 
         if "usage" in body:

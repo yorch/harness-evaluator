@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 class Provider(StrEnum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
+    OPENAI_CHATGPT = "openai_chatgpt"
 
 
 class ObservabilityTier(StrEnum):

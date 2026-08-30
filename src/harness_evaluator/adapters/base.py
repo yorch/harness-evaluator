@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from harness_evaluator.orchestrator.config import ModelSpec
+from harness_evaluator.orchestrator.config import AuthMode, ModelSpec
 
 
 class AdapterNotInstalledError(RuntimeError):
@@ -164,23 +164,28 @@ class BaseAdapter(ABC):
                 env[key] = val
 
         if self.gateway_url:
-            # Route provider traffic through the gateway proxy.
-            # Append trace_id as a query parameter so the gateway can
-            # attribute calls to this cell without relying on headers
-            # (which the harness subprocesses don't reliably inject).
             gateway_url = self._gateway_url_with_trace()
-            if self.model.provider == "anthropic":
+
+            if self.model.auth_mode == AuthMode.CLAUDE_OAUTH:
+                env["ANTHROPIC_BASE_URL"] = gateway_url
+            elif self.model.auth_mode == AuthMode.CODEX_CHATGPT:
+                pass
+            elif self.model.provider == "anthropic":
                 env["ANTHROPIC_BASE_URL"] = gateway_url
             elif self.model.provider == "openai":
                 env["OPENAI_BASE_URL"] = gateway_url
 
-        # Set API key from the configured env var
-        api_key = os.environ.get(self.model.api_key_env, "")
-        if api_key:
-            if self.model.provider == "anthropic":
-                env["ANTHROPIC_API_KEY"] = api_key
-            elif self.model.provider == "openai":
-                env["OPENAI_API_KEY"] = api_key
+        if self.model.auth_mode == AuthMode.API_KEY:
+            api_key = os.environ.get(self.model.api_key_env, "")
+            if api_key:
+                if self.model.provider == "anthropic":
+                    env["ANTHROPIC_API_KEY"] = api_key
+                elif self.model.provider == "openai":
+                    env["OPENAI_API_KEY"] = api_key
+        elif self.model.auth_mode == AuthMode.CLAUDE_OAUTH:
+            oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+            if oauth_token:
+                env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
 
         # Set trace_id for per-cell cost attribution
         if self.trace_id:

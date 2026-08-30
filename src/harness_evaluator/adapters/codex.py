@@ -26,8 +26,11 @@ Limitations:
 
 from __future__ import annotations
 
+from urllib.parse import urlparse, urlunparse
+
 from harness_evaluator.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from harness_evaluator.adapters.registry import register_adapter
+from harness_evaluator.orchestrator.config import AuthMode
 
 
 class CodexAdapter(BaseAdapter):
@@ -65,6 +68,19 @@ class CodexAdapter(BaseAdapter):
         """Run Codex with the given task prompt using `codex exec`."""
         return await self._run_binary("codex", task_prompt, timeout)
 
+    def _codex_gateway_url(self, url: str) -> str:
+        """Replace the ``/v1`` path segment with ``/codex`` for ChatGPT auth.
+
+        ``_gateway_url_with_trace`` appends ``/v1`` for the openai provider;
+        the Codex ChatGPT auth mode routes through ``/codex`` instead.
+        """
+        parsed = urlparse(url)
+        path = parsed.path.rstrip("/")
+        if path.endswith("/v1"):
+            path = path[:-3]
+        parsed = parsed._replace(path=path + "/codex")
+        return urlunparse(parsed)
+
     def get_command(self, task_prompt: str) -> list[str]:
         """Return the codex command list for execution inside a container."""
         # When running inside Docker, the binary is on the container PATH.
@@ -83,10 +99,13 @@ class CodexAdapter(BaseAdapter):
 
         # If we have a gateway URL, pass it via config override
         # since OPENAI_BASE_URL may be ignored by current Codex.
-        # Use _gateway_url_with_trace() to propagate trace_id and /v1.
         gateway_url = self._gateway_url_with_trace()
         if gateway_url:
-            cmd.extend(["-c", f"openai_base_url={gateway_url}"])
+            if self.model.auth_mode == AuthMode.CODEX_CHATGPT:
+                codex_url = self._codex_gateway_url(gateway_url)
+                cmd.extend(["-c", f"chatgpt_base_url={codex_url}"])
+            else:
+                cmd.extend(["-c", f"openai_base_url={gateway_url}"])
 
         # Add any extra config overrides
         extra_config = self.config.get("config_overrides", {})

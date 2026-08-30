@@ -15,6 +15,8 @@ from harness_evaluator.gateway.models import ObservabilityTier
 
 __all__ = [
     "ObservabilityTier",
+    "AuthMode",
+    "CostMode",
     "TaskTrack",
     "TaskDifficulty",
     "TaskSpec",
@@ -85,6 +87,17 @@ def default_docker_image() -> str:
         return f"ghcr.io/yorch/harness-evaluator-runner:{__version__}"
     except Exception:
         return "ghcr.io/yorch/harness-evaluator-runner:latest"
+
+
+class AuthMode(StrEnum):
+    API_KEY = "api_key"
+    CLAUDE_OAUTH = "claude_oauth"
+    CODEX_CHATGPT = "codex_chatgpt"
+
+
+class CostMode(StrEnum):
+    PLATFORM = "platform"
+    SUBSCRIPTION = "subscription"
 
 
 class TaskTrack(StrEnum):
@@ -263,6 +276,13 @@ class ModelSpec(BaseModel):
     """Provider ('anthropic' or 'openai')."""
     api_key_env: str
     """Environment variable name for the API key."""
+    auth_mode: AuthMode = AuthMode.API_KEY
+    """Authentication mode: api_key, claude_oauth, or codex_chatgpt."""
+    credentials_path: str | None = None
+    """Path to an OAuth credential file on the host (for subscription auth)."""
+    cost_mode: CostMode = CostMode.PLATFORM
+    """Cost accounting mode: 'platform' (pay-per-token) or 'subscription'
+    (zero-dollar token-only accounting)."""
     config: dict[str, Any] = Field(default_factory=dict)
     """Model-specific configuration (temperature, max_tokens, etc.)."""
 

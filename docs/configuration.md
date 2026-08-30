@@ -465,6 +465,118 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
 | `TERM` | Terminal type |
 | `TMPDIR` | Temporary directory |
 
+## Authentication modes
+
+By default, harness-evaluator authenticates to provider APIs using API keys
+(`auth_mode: api_key`). For harnesses that support subscription-based access
+(Claude Code OAuth, Codex with a ChatGPT subscription), you can switch to an
+OAuth/subscription auth mode so the harness uses your existing subscription
+instead of pay-per-token API billing.
+
+### The three auth modes
+
+| Mode | Value | Description |
+|------|-------|-------------|
+| API key | `api_key` | Default. Uses the env var named in `api_key_env` (e.g. `ANTHROPIC_API_KEY`). |
+| Claude Code OAuth | `claude_oauth` | Uses a Claude Code OAuth token or credential file. No API key is sent. |
+| Codex ChatGPT | `codex_chatgpt` | Uses a Codex/ChatGPT subscription credential file. Routes through the ChatGPT backend. |
+
+### Model spec fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `auth_mode` | string | No | `api_key` (default), `claude_oauth`, or `codex_chatgpt` |
+| `credentials_path` | string | No | Path to an OAuth credential file on the host (for subscription auth) |
+| `cost_mode` | string | No | `platform` (default, pay-per-token) or `subscription` (zero-dollar token-only accounting) |
+
+### `credentials_path`
+
+For `claude_oauth` and `codex_chatgpt` modes, `credentials_path` points to the
+OAuth credential file on the host. The Docker runner copies the credential
+file's parent directory to a temp directory and mounts it writable into the
+container so the harness can refresh expired access tokens. The original
+credential files on the host are never modified or mounted directly.
+
+The appropriate config env var is set so the harness finds its tokens:
+
+- `claude_oauth` → mounts to `/workspace/.claude`, sets `CLAUDE_CONFIG_DIR`
+- `codex_chatgpt` → mounts to `/workspace/.codex`, sets `CODEX_HOME`
+
+If the file does not exist, the runner logs a warning and skips the mount (the
+harness will likely fail to authenticate).
+
+### `cost_mode`
+
+- `platform` (default): Standard pay-per-token cost accounting. Token usage is
+  priced against the `DEFAULT_PRICING` table and counts against `budget_usd`.
+- `subscription`: The harness runs on a flat-rate subscription. Token usage is
+  still captured for analysis, but cost is recorded as $0 and does not count
+  against `budget_usd`. Use this when running on a ChatGPT or Claude Pro
+  subscription where you are not billed per token.
+
+### Security considerations
+
+OAuth credential files contain **refresh tokens** that grant ongoing access to
+your account. Treat them with the same care as API keys:
+
+- Store credential files with restrictive permissions (`chmod 600`).
+- Never commit credential files to a repository.
+- The Docker runner copies credentials to a temp directory and mounts that
+  (not the original) so the harness can refresh tokens without touching your
+  real credential files. The mount is writable so token refresh works.
+- A writable mount means the harness process can read the refresh token.
+  Task YAMLs are trusted input (see [Task trust model](#task-trust-model)),
+  but be aware that a malicious task could exfiltrate OAuth tokens via the
+  network. This is the same risk as API keys — the container has network
+  access to the gateway.
+- Credential mount points (`.claude`, `.codex`) are excluded from the git
+  commit diff (including nested paths) as defense in depth, so tokens never
+  appear in evaluation diffs.
+
+### Example: API key (default)
+
+```yaml
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+```
+
+### Example: Claude Code OAuth
+
+```yaml
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    auth_mode: claude_oauth
+    credentials_path: "~/.claude/.credentials.json"
+    cost_mode: subscription
+```
+
+With `claude_oauth`, the adapter sets `ANTHROPIC_BASE_URL` to the gateway
+proxy but does **not** set `ANTHROPIC_API_KEY`. If the `CLAUDE_CODE_OAUTH_TOKEN`
+environment variable is present on the host, it is passed through to the
+container.
+
+### Example: Codex ChatGPT subscription
+
+```yaml
+models:
+  - name: gpt-4o
+    provider: openai
+    api_key_env: OPENAI_API_KEY
+    auth_mode: codex_chatgpt
+    credentials_path: "~/.codex/auth.json"
+    cost_mode: subscription
+```
+
+With `codex_chatgpt`, the Codex adapter passes `chatgpt_base_url` (with a
+`/codex` path) via the `-c` config flag instead of `openai_base_url`. The
+gateway proxy routes `/codex/responses` and `/codex/` paths to the ChatGPT
+backend (`https://chatgpt.com/backend-api/codex`). `OPENAI_API_KEY` and
+`OPENAI_BASE_URL` are not set.
+
 ## Identifier validation
 
 All identifiers (run names, harness names, model names) are validated against `[A-Za-z0-9._-]+` to prevent path traversal and shell injection. Invalid characters cause a `ValueError` at config load time.
