@@ -95,6 +95,7 @@ _SENSITIVE_HEADER_SUBSTRINGS = ("key", "token", "secret", "auth", "cookie", "pas
 UPSTREAM_URLS: dict[Provider, str] = {
     Provider.ANTHROPIC: "https://api.anthropic.com",
     Provider.OPENAI: "https://api.openai.com",
+    Provider.OPENAI_CHATGPT: "https://chatgpt.com/backend-api",
 }
 
 # Spoofable routing headers that must never be forwarded upstream (a harness
@@ -207,6 +208,8 @@ class GatewayProxy:
             return Provider.ANTHROPIC
         if path.startswith("/v1/chat/completions") or path.startswith("/v1/responses"):
             return Provider.OPENAI
+        if path.startswith("/codex/responses"):
+            return Provider.OPENAI_CHATGPT
         return None
 
     def _extract_model(self, provider: Provider, body: dict[str, Any]) -> str:
@@ -606,7 +609,7 @@ class GatewayProxy:
                 accumulated = anthropic_parser.parse_sse_event(
                     current_event, data, accumulated
                 )
-        elif provider == Provider.OPENAI:
+        elif provider in (Provider.OPENAI, Provider.OPENAI_CHATGPT):
             _, data = openai_parser.parse_sse_line(line)
             if data:
                 accumulated = openai_parser.parse_sse_chunk(data, accumulated)
@@ -619,7 +622,7 @@ class GatewayProxy:
         """Parse usage from a non-streaming response body."""
         if provider == Provider.ANTHROPIC:
             return anthropic_parser.parse_non_streaming_usage(body)
-        elif provider == Provider.OPENAI:
+        elif provider in (Provider.OPENAI, Provider.OPENAI_CHATGPT):
             return openai_parser.parse_non_streaming_usage(body)
         return TokenUsage()
 

@@ -19,13 +19,14 @@ import logging
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from harness_evaluator.adapters.base import AdapterResult
-from harness_evaluator.orchestrator.config import RunCell
+from harness_evaluator.orchestrator.config import AuthMode, RunCell
 from harness_evaluator.orchestrator.engine import RetryableError
 
 logger = logging.getLogger(__name__)
@@ -433,6 +434,59 @@ class DockerRunner:
     # Docker container lifecycle
     # ------------------------------------------------------------------
 
+    def _resolve_credential_mounts(
+        self, auth_mode: AuthMode, credentials_path: str | None
+    ) -> tuple[list[tuple[str, str]], dict[str, str], list[str]]:
+        """Resolve Docker volume mounts and env vars for OAuth credentials.
+
+        Returns a tuple of (volume_mounts, env_vars, git_exclude_paths).
+        ``volume_mounts`` are (host_path, container_path) pairs for ``-v``
+        flags. ``env_vars`` point the harness at the mounted credential
+        directory. ``git_exclude_paths`` are workdir-relative names to keep
+        out of the commit diff.
+
+        The credential directory is copied to a temp directory on the host
+        and mounted writable so the harness can refresh expired access
+        tokens. The original credential files on the host are never
+        modified or mounted directly.
+        """
+        if credentials_path is None:
+            return [], {}, []
+
+        cred_file = Path(credentials_path).expanduser().resolve()
+        if not cred_file.exists():
+            logger.warning(
+                "Credential file not found, skipping mount: %s",
+                credentials_path,
+            )
+            return [], {}, []
+
+        cred_dir = cred_file.parent
+
+        if auth_mode == AuthMode.CLAUDE_OAUTH:
+            container_dir = f"{CONTAINER_WORKSPACE}/.claude"
+            dest_name = ".claude"
+        elif auth_mode == AuthMode.CODEX_CHATGPT:
+            container_dir = f"{CONTAINER_WORKSPACE}/.codex"
+            dest_name = ".codex"
+        else:
+            return [], {}, []
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="harness-eval-cred-"))
+        tmp_cred_dir = tmp_dir / dest_name
+        shutil.copytree(cred_dir, tmp_cred_dir, dirs_exist_ok=True)
+
+        env_key = (
+            "CLAUDE_CONFIG_DIR"
+            if auth_mode == AuthMode.CLAUDE_OAUTH
+            else "CODEX_HOME"
+        )
+        return (
+            [(str(tmp_cred_dir), container_dir)],
+            {env_key: container_dir},
+            [dest_name],
+        )
+
     def _build_run_args(
         self,
         workdir: Path,
@@ -440,6 +494,7 @@ class DockerRunner:
         timeout: int,
         container_name: str,
         image: str | None = None,
+        credential_mounts: list[tuple[str, str]] | None = None,
     ) -> list[str]:
         """Build the ``docker run`` argument list for a detached container.
 
@@ -464,9 +519,16 @@ class DockerRunner:
             "--cap-drop=ALL",
             "-v",
             f"{workdir.resolve()}:{CONTAINER_WORKSPACE}",
-            "-w",
-            CONTAINER_WORKSPACE,
         ]
+
+        # Mount OAuth credential directories writable so subscription-
+        # authenticated harnesses can refresh expired access tokens.
+        # The mounted directory is a copy of the original (see
+        # _resolve_credential_mounts), so the original is never modified.
+        for host_path, container_path in credential_mounts or []:
+            args.extend(["-v", f"{host_path}:{container_path}"])
+
+        args.extend(["-w", CONTAINER_WORKSPACE])
 
         # Pass allowlisted env vars via --env (NOT the whole host env)
         for key, value in env.items():
@@ -502,12 +564,15 @@ class DockerRunner:
         timeout: int,
         name: str,
         image: str | None = None,
+        credential_mounts: list[tuple[str, str]] | None = None,
     ) -> str:
         """Launch a detached container and return its container ID.
 
         Raises ``RuntimeError`` if the container fails to start.
         """
-        args = self._build_run_args(workdir, env, timeout, name, image)
+        args = self._build_run_args(
+            workdir, env, timeout, name, image, credential_mounts
+        )
         result = await _run_subprocess(args, timeout=60)
         if result.returncode != 0:
             raise RuntimeError(
@@ -635,6 +700,14 @@ class DockerRunner:
         # These are passed to the container via --env, NOT the whole host env.
         env = adapter.get_env()
 
+        # Resolve OAuth credential directory mounts for subscription auth.
+        credential_mounts, cred_env, git_excludes = (
+            self._resolve_credential_mounts(
+                cell.model.auth_mode, cell.model.credentials_path
+            )
+        )
+        env.update(cred_env)
+
         # Write the setup script to the workdir so it is available inside
         # the container at /workspace/setup.sh (the workdir is mounted there).
         if cell.task.setup_script:
@@ -676,7 +749,8 @@ class DockerRunner:
         container_id: str | None = None
         try:
             container_id = await self._start_container(
-                workdir, env, timeout, container_name, image
+                workdir, env, timeout, container_name, image,
+                credential_mounts,
             )
 
             # Run setup script inside the container if present.
@@ -711,7 +785,7 @@ class DockerRunner:
                 logger.warning("Adapter cleanup failed for %s: %s", cell.cell_id, e)
 
         # Ensure git tracks the changes on the host (for diff/evaluation)
-        await self._commit_changes(repo_dir)
+        await self._commit_changes(repo_dir, git_excludes)
 
         # Surface harness timeout as a retryable error so the orchestrator
         # can retry with backoff instead of scoring it as NO_CHANGE or
@@ -730,15 +804,21 @@ class DockerRunner:
             duration_ms=(time.monotonic() - start) * 1000,
         )
 
-    async def _commit_changes(self, repo_dir: Path) -> None:
+    async def _commit_changes(
+        self, repo_dir: Path, exclude_paths: list[str] | None = None
+    ) -> None:
         """Stage and commit harness changes on the host for diff evaluation.
 
         Uses ``asyncio.to_thread`` to avoid blocking the event loop with
         synchronous ``subprocess.run`` calls.
         """
-        await asyncio.to_thread(self._commit_changes_sync, repo_dir)
+        await asyncio.to_thread(
+            self._commit_changes_sync, repo_dir, exclude_paths
+        )
 
-    def _commit_changes_sync(self, repo_dir: Path) -> None:
+    def _commit_changes_sync(
+        self, repo_dir: Path, exclude_paths: list[str] | None = None
+    ) -> None:
         """Synchronous implementation of _commit_changes."""
         if not (repo_dir / ".git").exists():
             subprocess.run(["git", "init"], cwd=repo_dir, capture_output=True)
@@ -760,7 +840,15 @@ class DockerRunner:
             cwd=repo_dir,
             capture_output=True,
         )
-        subprocess.run(["git", "add", "-A"], cwd=repo_dir, capture_output=True)
+        # Exclude OAuth credential mount points from the commit so
+        # tokens are never captured in the diff (defense in depth).
+        add_args: list[str] = ["git", "add", "-A"]
+        if exclude_paths:
+            add_args.append("--")
+            add_args.append(".")
+            add_args.extend(f":(exclude){p}" for p in exclude_paths)
+            add_args.extend(f":(exclude)**/{p}" for p in exclude_paths)
+        subprocess.run(add_args, cwd=repo_dir, capture_output=True)
         commit_proc = subprocess.run(
             ["git", "commit", "-m", commit_msg],
             cwd=repo_dir,
