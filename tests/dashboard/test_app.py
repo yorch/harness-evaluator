@@ -58,7 +58,7 @@ class TestDashboardHome:
         resp = client.get("/")
         assert resp.status_code == 200
         assert "text/html" in resp.headers.get("content-type", "")
-        assert "heval Dashboard" in resp.text
+        assert "harnessbench Dashboard" in resp.text
 
     def test_home_shows_runs(self, client):
         resp = client.get("/")

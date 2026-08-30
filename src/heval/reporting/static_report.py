@@ -64,7 +64,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>heval Report — {{ run_name }}</title>
+    <title>harnessbench Report — {{ run_name }}</title>
     <style>
         body { font-family: -apple-system, sans-serif; margin: 2rem; background: #f8f9fa; }
         h1 { color: #1a1a1a; }
@@ -86,7 +86,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h1>heval Report — {{ run_name }}</h1>
+    <h1>harnessbench Report — {{ run_name }}</h1>
     <p>Generated: {{ timestamp }}</p>
 
     <div class="summary">

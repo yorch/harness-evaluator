@@ -51,8 +51,8 @@ def _sanitize_container_name(cell_id: str) -> str:
     name = _SAFE_NAME_RE.sub("-", cell_id)
     # Docker names must start with an alphanumeric character.
     if name and not name[0].isalnum():
-        name = "heval-" + name
-    return f"heval-{name}"
+        name = "harnessbench-" + name
+    return f"harnessbench-{name}"
 
 
 @dataclass
@@ -335,7 +335,7 @@ class DockerRunner:
         3. Local paths that are plain directories (no ``.git``):
            ``shutil.copytree`` is used, then the copy is initialized as a
            fresh git repo with a single initial commit. This supports
-           repos stored in the heval repo without embedded ``.git`` dirs.
+           repos stored in the harnessbench repo without embedded ``.git`` dirs.
         """
         import shutil
 
@@ -417,8 +417,8 @@ class DockerRunner:
         """Init a fresh git repo and create an initial commit."""
         for args in (
             ["git", "init"],
-            ["git", "config", "user.email", "heval@local"],
-            ["git", "config", "user.name", "heval"],
+            ["git", "config", "user.email", "harnessbench@local"],
+            ["git", "config", "user.name", "harnessbench"],
             ["git", "add", "-A"],
             ["git", "commit", "-m", "Initial repo state"],
         ):

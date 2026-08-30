@@ -5,14 +5,14 @@ description: Static reports (HTML/JSON/CSV), interactive FastAPI dashboard, and 
 
 # Reporting
 
-heval provides three ways to explore evaluation results: static reports (HTML/JSON/CSV), an interactive web dashboard, and a console results table.
+harnessbench provides three ways to explore evaluation results: static reports (HTML/JSON/CSV), an interactive web dashboard, and a console results table.
 
 ## Static reports
 
-Generate static reports with `heval report`:
+Generate static reports with `harnessbench report`:
 
 ```bash
-heval report broad-first-pass --output ./reports
+harnessbench report broad-first-pass --output ./reports
 ```
 
 ### Output files
@@ -95,20 +95,20 @@ Run names are sanitized before use in filenames (`sanitize_id()`), and output pa
 
 ## Console results
 
-View results in the console with `heval results`:
+View results in the console with `harnessbench results`:
 
 ```bash
-heval results broad-first-pass
+harnessbench results broad-first-pass
 ```
 
 Prints a Rich table with columns: Harness, Model, Task, Exit, Success, Tokens, Cost, Time(s).
 
 ## Dashboard
 
-Start the interactive dashboard with `heval dashboard`:
+Start the interactive dashboard with `harnessbench dashboard`:
 
 ```bash
-heval dashboard --port 8080
+harnessbench dashboard --port 8080
 ```
 
 Then open `http://127.0.0.1:8080` in your browser.

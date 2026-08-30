@@ -237,14 +237,14 @@ class TestContainerNameSanitization:
 
     def test_basic_cell_id(self):
         assert _sanitize_container_name("opencode__claude__task1__0") == (
-            "heval-opencode__claude__task1__0"
+            "harnessbench-opencode__claude__task1__0"
         )
 
     def test_replaces_unsafe_chars(self):
         name = _sanitize_container_name("cell with/slashes")
         assert "/" not in name
         assert " " not in name
-        assert name.startswith("heval-")
+        assert name.startswith("harnessbench-")
 
     def test_starts_with_alphanumeric(self):
         name = _sanitize_container_name("_underscore_prefix")

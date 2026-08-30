@@ -1,4 +1,4 @@
-# AGENTS.md — heval
+# AGENTS.md — harnessbench
 
 ## Commands
 
@@ -19,7 +19,7 @@ uv run pytest tests/ -q
 uv run ruff check src/ tests/ && uv run mypy src/heval/ && uv run pytest tests/ -q
 
 # Build Docker image (slow, ~5 min — only needed when changing Dockerfile)
-docker build -t heval-runner:latest .
+docker build -t harnessbench-runner:latest .
 ```
 
 ## Verification
@@ -43,7 +43,7 @@ proxy for token/cost accounting.
 - `src/heval/stats/` — Mixed-effects model, variance decomposition, bootstrap CIs
 - `src/heval/cli.py` — Typer-based CLI entry point
 - `tasks/` — Task YAML definitions and repo fixtures (bundled into the wheel
-  at `heval/tasks` so an installed heval runs without a repo checkout)
+  at `heval/tasks` so an installed harnessbench runs without a repo checkout)
 - `Dockerfile` — Image with all 5 harnesses + Bun (node:22-slim base). Harness
   versions are build args (`CLAUDE_CODE_VERSION`, etc.) with pinned defaults.
 

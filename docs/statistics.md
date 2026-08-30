@@ -5,12 +5,12 @@ description: Mixed-effects models, variance decomposition, bootstrap confidence 
 
 # Statistics
 
-heval provides statistical analysis of evaluation results to determine whether differences between harnesses are statistically significant or could be explained by sampling variance.
+harnessbench provides statistical analysis of evaluation results to determine whether differences between harnesses are statistically significant or could be explained by sampling variance.
 
 ## Overview
 
 ```bash
-heval stats my-run --db heval_results.db
+harnessbench stats my-run --db heval_results.db
 ```
 
 The statistics module (`src/heval/stats/__init__.py`) provides four analyses:

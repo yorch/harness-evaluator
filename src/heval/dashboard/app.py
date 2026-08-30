@@ -97,7 +97,7 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
         results_db: Path to the results SQLite database.
     """
     app = FastAPI(
-        title="heval Dashboard",
+        title="harnessbench Dashboard",
         description="Interactive dashboard for harness evaluation results",
         version="0.1.0",
     )

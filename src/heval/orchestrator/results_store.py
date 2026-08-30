@@ -226,7 +226,7 @@ class ResultsStore:
     ) -> None:
         """Save run metadata for reproducibility.
 
-        Stores the full run config, heval version, and Docker image
+        Stores the full run config, harnessbench version, and Docker image
         so a run can be reproduced exactly.
         """
         now = datetime.now(UTC).isoformat()

@@ -1,37 +1,37 @@
 ---
 title: CLI Reference
-description: All heval CLI commands, flags, and options with examples.
+description: All harnessbench CLI commands, flags, and options with examples.
 ---
 
 # CLI Reference
 
-heval uses [Typer](https://typer.tiangolo.com/) for its CLI. The entry point is `heval` (defined in `pyproject.toml` as `heval = "heval.cli:app"`).
+harnessbench uses [Typer](https://typer.tiangolo.com/) for its CLI. The entry point is `harnessbench` (defined in `pyproject.toml` as `harnessbench = "heval.cli:app"`).
 
 ## Commands overview
 
 | Command | Description |
 |---------|-------------|
-| [`heval init`](#heval-init) | Scaffold a starter run config (no clone needed) |
-| [`heval run`](#heval-run) | Execute an evaluation run from a config file |
-| [`heval gateway`](#heval-gateway) | Start the gateway proxy server |
-| [`heval canary`](#heval-canary) | Verify proxy token capture accuracy |
-| [`heval report`](#heval-report) | Generate static reports (HTML/JSON/CSV) |
-| [`heval results`](#heval-results) | Show results summary in the console |
-| [`heval adapters`](#heval-adapters) | List available harness adapters |
-| [`heval stats`](#heval-stats) | Generate statistical analysis for a run |
-| [`heval dashboard`](#heval-dashboard) | Start the interactive web dashboard |
-| [`heval calibrate`](#heval-calibrate) | Run judge calibration against anchor set |
+| [`harnessbench init`](#harnessbench-init) | Scaffold a starter run config (no clone needed) |
+| [`harnessbench run`](#harnessbench-run) | Execute an evaluation run from a config file |
+| [`harnessbench gateway`](#harnessbench-gateway) | Start the gateway proxy server |
+| [`harnessbench canary`](#harnessbench-canary) | Verify proxy token capture accuracy |
+| [`harnessbench report`](#harnessbench-report) | Generate static reports (HTML/JSON/CSV) |
+| [`harnessbench results`](#harnessbench-results) | Show results summary in the console |
+| [`harnessbench adapters`](#harnessbench-adapters) | List available harness adapters |
+| [`harnessbench stats`](#harnessbench-stats) | Generate statistical analysis for a run |
+| [`harnessbench dashboard`](#harnessbench-dashboard) | Start the interactive web dashboard |
+| [`harnessbench calibrate`](#harnessbench-calibrate) | Run judge calibration against anchor set |
 
-## heval init
+## harnessbench init
 
-Scaffold a starter run config in the current directory so you can run heval
+Scaffold a starter run config in the current directory so you can run harnessbench
 without cloning the repository. The generated config uses the bundled task
 library and the version-pinned published runner image by default.
 
 ### Usage
 
 ```bash
-heval init [options]
+harnessbench init [options]
 ```
 
 ### Options
@@ -48,17 +48,17 @@ heval init [options]
 uvx harnessbench init
 
 # Custom filename, overwrite if present
-heval init --filename my-run.yaml --force
+harnessbench init --filename my-run.yaml --force
 ```
 
-## heval run
+## harnessbench run
 
 Execute an evaluation run from a YAML config file.
 
 ### Usage
 
 ```bash
-heval run <config> [options]
+harnessbench run <config> [options]
 ```
 
 ### Arguments
@@ -78,16 +78,16 @@ heval run <config> [options]
 
 ```bash
 # Dry run — print the matrix without executing
-heval run runs/sample-run.yaml --dry-run
+harnessbench run runs/sample-run.yaml --dry-run
 
 # Minimal run (1 harness, 1 model, 1 task, 1 repeat)
-heval run runs/sample-minimal.yaml
+harnessbench run runs/sample-minimal.yaml
 
 # Full sweep (all 5 harnesses, 2 providers, all tasks)
-heval run runs/sample-run.yaml
+harnessbench run runs/sample-run.yaml
 
 # Skip gateway preflight check
-heval run runs/sample-run.yaml --no-check-gateway
+harnessbench run runs/sample-run.yaml --no-check-gateway
 ```
 
 ### Output
@@ -128,23 +128,23 @@ Run: broad-first-pass
 
 ### Gateway preflight
 
-By default, `heval run` checks that the gateway proxy is reachable on `127.0.0.1:<gateway_port>` before executing. If the gateway is not running:
+By default, `harnessbench run` checks that the gateway proxy is reachable on `127.0.0.1:<gateway_port>` before executing. If the gateway is not running:
 
 ```
 Gateway is NOT reachable on 127.0.0.1:8877.
 Start it in another terminal with:
-  heval gateway --port 8877
+  harnessbench gateway --port 8877
 Then re-run this command.
 ```
 
-## heval gateway
+## harnessbench gateway
 
 Start the gateway proxy server for token accounting. See [Gateway Proxy](gateway-proxy/) for full details.
 
 ### Usage
 
 ```bash
-heval gateway [options]
+harnessbench gateway [options]
 ```
 
 ### Options
@@ -159,23 +159,23 @@ heval gateway [options]
 
 ```bash
 # Start on default port
-heval gateway
+harnessbench gateway
 
 # Custom host and port
-heval gateway --host 0.0.0.0 --port 8877
+harnessbench gateway --host 0.0.0.0 --port 8877
 
 # Custom database path
-heval gateway --db /data/heval_gateway.db
+harnessbench gateway --db /data/heval_gateway.db
 ```
 
-## heval canary
+## harnessbench canary
 
 Verify that the gateway proxy accurately captures token usage. Reads the last captured call from the gateway DB and compares proxy-captured usage against the provider's response.
 
 ### Usage
 
 ```bash
-heval canary [options]
+harnessbench canary [options]
 ```
 
 ### Options
@@ -189,13 +189,13 @@ heval canary [options]
 
 ```bash
 # Default tolerance (1%)
-heval canary
+harnessbench canary
 
 # Stricter tolerance (0.5%)
-heval canary --tolerance-pct 0.5
+harnessbench canary --tolerance-pct 0.5
 
 # Custom DB path
-heval canary --db /data/heval_gateway.db
+harnessbench canary --db /data/heval_gateway.db
 ```
 
 ### Output
@@ -215,14 +215,14 @@ Canary PASSED (single source): only proxy usage available.
 Tokens: 129. This is expected for streaming responses.
 ```
 
-## heval report
+## harnessbench report
 
 Generate static reports (HTML, JSON, CSV) for a completed run.
 
 ### Usage
 
 ```bash
-heval report <run_name> [options]
+harnessbench report <run_name> [options]
 ```
 
 ### Arguments
@@ -242,13 +242,13 @@ heval report <run_name> [options]
 
 ```bash
 # Generate reports for a run
-heval report broad-first-pass
+harnessbench report broad-first-pass
 
 # Custom output directory
-heval report broad-first-pass --output ./my-reports
+harnessbench report broad-first-pass --output ./my-reports
 
 # Custom DB path
-heval report broad-first-pass --db /data/heval_results.db
+harnessbench report broad-first-pass --db /data/heval_results.db
 ```
 
 ### Output
@@ -262,14 +262,14 @@ Reports generated:
 
 See [Reporting](reporting/) for report format details.
 
-## heval results
+## harnessbench results
 
 Show results summary for a run in the console as a Rich table.
 
 ### Usage
 
 ```bash
-heval results <run_name> [options]
+harnessbench results <run_name> [options]
 ```
 
 ### Arguments
@@ -287,8 +287,8 @@ heval results <run_name> [options]
 ### Examples
 
 ```bash
-heval results broad-first-pass
-heval results minimal-first-run --db /data/heval_results.db
+harnessbench results broad-first-pass
+harnessbench results minimal-first-run --db /data/heval_results.db
 ```
 
 ### Output
@@ -303,14 +303,14 @@ heval results minimal-first-run --db /data/heval_results.db
 └───────────┴────────────────────┴──────────────────┴────────┴─────────┴─────────┴──────────┴─────────┘
 ```
 
-## heval adapters
+## harnessbench adapters
 
 List available harness adapters and their observability tiers.
 
 ### Usage
 
 ```bash
-heval adapters
+harnessbench adapters
 ```
 
 No arguments or options.
@@ -319,14 +319,14 @@ No arguments or options.
 
 See [Adapters](adapters/#listing-adapters) for example output.
 
-## heval stats
+## harnessbench stats
 
 Generate statistical analysis for a run. See [Statistics](statistics/) for details on the models.
 
 ### Usage
 
 ```bash
-heval stats <run_name> [options]
+harnessbench stats <run_name> [options]
 ```
 
 ### Arguments
@@ -344,8 +344,8 @@ heval stats <run_name> [options]
 ### Examples
 
 ```bash
-heval stats broad-first-pass
-heval stats minimal-first-run --db /data/heval_results.db
+harnessbench stats broad-first-pass
+harnessbench stats minimal-first-run --db /data/heval_results.db
 ```
 
 ### Output
@@ -359,14 +359,14 @@ The command prints:
 
 See [Statistics](statistics/) for interpretation.
 
-## heval dashboard
+## harnessbench dashboard
 
 Start the interactive web dashboard. See [Reporting](reporting/) for dashboard details.
 
 ### Usage
 
 ```bash
-heval dashboard [options]
+harnessbench dashboard [options]
 ```
 
 ### Options
@@ -381,25 +381,25 @@ heval dashboard [options]
 
 ```bash
 # Start on default port
-heval dashboard
+harnessbench dashboard
 
 # Custom port
-heval dashboard --port 3000
+harnessbench dashboard --port 3000
 
 # Allow external connections (not recommended — no auth)
-heval dashboard --host 0.0.0.0
+harnessbench dashboard --host 0.0.0.0
 ```
 
 Then open `http://127.0.0.1:8080` in your browser.
 
-## heval calibrate
+## harnessbench calibrate
 
 Run judge calibration against the anchor set. Verifies the frozen LLM judge produces consistent scores.
 
 ### Usage
 
 ```bash
-heval calibrate [options]
+harnessbench calibrate [options]
 ```
 
 ### Options
@@ -416,10 +416,10 @@ Requires `ANTHROPIC_API_KEY` environment variable to be set.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-heval calibrate
+harnessbench calibrate
 
 # Use a different judge model
-heval calibrate --model claude-opus-4-20250514
+harnessbench calibrate --model claude-opus-4-20250514
 ```
 
 ### Output

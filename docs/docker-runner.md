@@ -16,7 +16,7 @@ The runner image contains all five harnesses, Node.js 22, Python 3, Git, and Bun
 A pre-built image is published to the GitHub Container Registry on every push to `main`:
 
 ```bash
-docker pull ghcr.io/yorch/heval-runner:latest
+docker pull ghcr.io/yorch/harnessbench-runner:latest
 ```
 
 Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), and `main`.
@@ -24,20 +24,20 @@ Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), and `main`.
 Reference it in your run config:
 
 ```yaml
-docker_image: "ghcr.io/yorch/heval-runner:latest"
+docker_image: "ghcr.io/yorch/harnessbench-runner:latest"
 ```
 
 ### Build locally
 
 ```bash
-docker build -t heval-runner:latest .
+docker build -t harnessbench-runner:latest .
 ```
 
 Harness (and Bun) versions are build args, so you can pin a specific harness
 release to compare versions:
 
 ```bash
-docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t heval-runner:cc-2.0.0 .
+docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harnessbench-runner:cc-2.0.0 .
 ```
 
 Build args: `CLAUDE_CODE_VERSION`, `CODEX_VERSION`, `OPENCODE_VERSION`,
@@ -178,7 +178,7 @@ The runner supports three repo types:
 
 ### Relative path resolution
 
-`_clone_repo` resolves relative `repo_url` paths against the project root (`Path(__file__).resolve().parents[3]`), not the current working directory. This means `repo_url: tasks/repos/swe-bugfix-001` works regardless of where `heval run` is invoked.
+`_clone_repo` resolves relative `repo_url` paths against the project root (`Path(__file__).resolve().parents[3]`), not the current working directory. This means `repo_url: tasks/repos/swe-bugfix-001` works regardless of where `harnessbench run` is invoked.
 
 ### Setup scripts
 

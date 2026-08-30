@@ -42,7 +42,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository_owner }}/heval-runner
+          images: ghcr.io/${{ github.repository_owner }}/harnessbench-runner
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-
@@ -68,9 +68,9 @@ jobs:
           # On PRs the image is loaded locally; on main it's pushed.
           # Pull the sha-tagged image for verification so both paths work.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            IMAGE="heval-runner:latest"
+            IMAGE="harnessbench-runner:latest"
           else
-            IMAGE="ghcr.io/${{ github.repository_owner }}/heval-runner:sha-$(git rev-parse --short HEAD)"
+            IMAGE="ghcr.io/${{ github.repository_owner }}/harnessbench-runner:sha-$(git rev-parse --short HEAD)"
             docker pull "$IMAGE"
           fi
           docker run --rm "$IMAGE" bash -c '

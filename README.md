@@ -1,4 +1,4 @@
-# heval
+# harnessbench
 
 [![CI](https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/ci.yml)
 [![Docker](https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/docker.yml)
@@ -13,11 +13,11 @@ See [DESIGN.md](DESIGN.md) for the full design specification and
 
 ## Quick start
 
-No clone required — heval bundles its task library and publishes to PyPI as `harnessbench`:
+No clone required — harnessbench bundles its task library and publishes to PyPI as `harnessbench`:
 
 ```bash
 uvx harnessbench init                            # scaffold heval.yaml
-docker pull ghcr.io/yorch/heval-runner:latest   # pull the runner image
+docker pull ghcr.io/yorch/harnessbench-runner:latest   # pull the runner image
 export ANTHROPIC_API_KEY=sk-ant-...
 uvx harnessbench gateway --port 8877             # separate terminal
 uvx harnessbench run heval.yaml
@@ -29,24 +29,24 @@ uvx harnessbench run heval.yaml
 # 1. Install dependencies
 uv sync --extra dev
 
-# 2. Pull the pre-built Docker image (or build locally with: docker build -t heval-runner:latest .)
-docker pull ghcr.io/yorch/heval-runner:latest
+# 2. Pull the pre-built Docker image (or build locally with: docker build -t harnessbench-runner:latest .)
+docker pull ghcr.io/yorch/harnessbench-runner:latest
 
 # 3. Set API keys
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 
 # 4. Start the gateway proxy (in a separate terminal)
-heval gateway --port 8877
+harnessbench gateway --port 8877
 
 # 5. Run a minimal evaluation (1 harness, 1 model, 1 task, 1 repeat)
-heval run runs/sample-minimal.yaml
+harnessbench run runs/sample-minimal.yaml
 
 # Or dry-run to see the matrix without executing
-heval run runs/sample-minimal.yaml --dry-run
+harnessbench run runs/sample-minimal.yaml --dry-run
 
 # Curated 20-task mix (5 harnesses × 2 models × 20 tasks × 3 repeats = 600 cells)
-heval run runs/task-mix.yaml --dry-run
+harnessbench run runs/task-mix.yaml --dry-run
 ```
 
 ## Docker image
@@ -56,10 +56,10 @@ image is available on GHCR (recommended), or you can build locally:
 
 ```bash
 # Pull the pre-built image (recommended)
-docker pull ghcr.io/yorch/heval-runner:latest
+docker pull ghcr.io/yorch/harnessbench-runner:latest
 
 # Or build locally
-docker build -t heval-runner:latest .
+docker build -t harnessbench-runner:latest .
 ```
 
 ## M1: Gateway Proxy (completed)
@@ -74,7 +74,7 @@ reference.
 ### Running the proxy
 
 ```bash
-heval gateway --port 8877
+harnessbench gateway --port 8877
 ```
 
 Configure harnesses to route through the proxy:
@@ -87,7 +87,7 @@ export OPENAI_BASE_URL=http://127.0.0.1:8877
 
 After sending a request through the proxy, verify token capture accuracy:
 ```bash
-heval canary --tolerance 1.0
+harnessbench canary --tolerance 1.0
 ```
 
 ### What the proxy captures
@@ -118,16 +118,16 @@ The core pipeline handles eval matrix building, execution, and reporting.
 
 ```bash
 # Dry run (print the matrix without executing)
-heval run runs/sample-run.yaml --dry-run
+harnessbench run runs/sample-run.yaml --dry-run
 
 # Execute the eval
-heval run runs/sample-run.yaml
+harnessbench run runs/sample-run.yaml
 
 # Generate reports
-heval report broad-first-pass --output ./reports
+harnessbench report broad-first-pass --output ./reports
 
 # View results in console
-heval results broad-first-pass
+harnessbench results broad-first-pass
 ```
 
 ### Run configuration
@@ -177,7 +177,7 @@ Adapters wrap each coding harness with a uniform interface for the runner.
 ### Listing adapters
 
 ```bash
-heval adapters
+harnessbench adapters
 ```
 
 ### Observability tiers
@@ -224,7 +224,7 @@ frozen LLM judge, structured rubric, and structural checks.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-heval calibrate --model claude-sonnet-4-20250514
+harnessbench calibrate --model claude-sonnet-4-20250514
 ```
 
 ### Evaluation flow
@@ -242,7 +242,7 @@ Interactive FastAPI web dashboard for exploring eval results.
 ### Starting the dashboard
 
 ```bash
-heval dashboard --port 8080
+harnessbench dashboard --port 8080
 ```
 
 Then open http://127.0.0.1:8080 in your browser.
@@ -266,7 +266,7 @@ variance decomposition, bootstrap confidence intervals, and consistency analysis
 ### Running stats
 
 ```bash
-heval stats my-run --db heval_results.db
+harnessbench stats my-run --db heval_results.db
 ```
 
 ### Components

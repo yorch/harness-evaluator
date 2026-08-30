@@ -55,5 +55,5 @@ gateway_port: 8877
 gateway_db: "heval_gateway.db"
 results_db: "heval_results.db"
 workdir: "./heval_workdir"
-docker_image: "heval-runner:latest"
+docker_image: "harnessbench-runner:latest"
 parallel_runs: 1

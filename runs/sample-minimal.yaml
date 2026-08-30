@@ -1,6 +1,6 @@
 # Minimal run configuration for heval — safe first run.
 # Uses one harness, one model, one task, one repeat.
-# Requires: heval-runner:latest Docker image and ANTHROPIC_API_KEY env var.
+# Requires: harnessbench-runner:latest Docker image and ANTHROPIC_API_KEY env var.
 name: "minimal-first-run"
 description: "Minimal first run: one harness, one model, one task"
 
@@ -28,5 +28,5 @@ gateway_port: 8877
 gateway_db: "heval_gateway.db"
 results_db: "heval_results.db"
 workdir: "./heval_workdir"
-docker_image: "heval-runner:latest"
+docker_image: "harnessbench-runner:latest"
 parallel_runs: 1

@@ -57,7 +57,7 @@ HOP_BY_HOP = frozenset(
     }
 )
 
-# Internal heval trace headers — extracted for attribution but never
+# Internal harnessbench trace headers — extracted for attribution but never
 # forwarded to the real upstream provider API.
 INTERNAL_TRACE_HEADERS = frozenset(
     {

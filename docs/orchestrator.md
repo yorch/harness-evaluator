@@ -134,8 +134,8 @@ Resumability is **cell-level only**:
 3. On re-run, only incomplete cells are executed
 
 ```
-heval run runs/sample-run.yaml     # Runs 1000 cells, crashes after 500
-heval run runs/sample-run.yaml     # Skips 500 completed, runs remaining 500
+harnessbench run runs/sample-run.yaml     # Runs 1000 cells, crashes after 500
+harnessbench run runs/sample-run.yaml     # Skips 500 completed, runs remaining 500
 ```
 
 > **Note**: There is no mid-flight agent process resumption. Incomplete cells are re-run from scratch — the workdir is cleaned, the gateway calls for that trace_id are deleted, and the container starts fresh.
@@ -214,7 +214,7 @@ Stores the full run config for reproducibility:
 |--------|------|-------------|
 | `run_name` | TEXT PK | Run name |
 | `config_json` | TEXT | Full `RunConfig` as JSON |
-| `heval_version` | TEXT | heval package version |
+| `heval_version` | TEXT | harnessbench package version |
 | `docker_image` | TEXT | Docker image used |
 | `created_at` | TEXT | ISO timestamp |
 
@@ -238,21 +238,21 @@ This allows exact reproduction of a run: the config JSON can be written back to 
 Use `--dry-run` to print the matrix without executing:
 
 ```bash
-heval run runs/sample-run.yaml --dry-run
+harnessbench run runs/sample-run.yaml --dry-run
 ```
 
 This prints a table with the first 20 cells (Cell ID, Harness, Model, Task, Repeat) and the total cell count.
 
 ## Gateway preflight check
 
-Before executing, `heval run` checks that the gateway proxy is reachable on the configured port:
+Before executing, `harnessbench run` checks that the gateway proxy is reachable on the configured port:
 
 ```bash
 # If gateway is not running:
-$ heval run runs/sample-minimal.yaml
+$ harnessbench run runs/sample-minimal.yaml
 Gateway is NOT reachable on 127.0.0.1:8877.
 Start it in another terminal with:
-  heval gateway --port 8877
+  harnessbench gateway --port 8877
 Then re-run this command.
 ```
 

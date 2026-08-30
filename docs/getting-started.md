@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-description: Step-by-step guide to install heval, get the Docker image, set API keys, and run your first evaluation.
+description: Step-by-step guide to install harnessbench, get the Docker image, set API keys, and run your first evaluation.
 ---
 
 # Getting Started
 
-This guide walks you through installing heval, getting the Docker image, configuring API keys, and running your first evaluation end-to-end.
+This guide walks you through installing harnessbench, getting the Docker image, configuring API keys, and running your first evaluation end-to-end.
 
 ## Prerequisites
 
@@ -17,8 +17,8 @@ This guide walks you through installing heval, getting the Docker image, configu
 
 ## Quick start (no clone)
 
-heval bundles its task library, so you can run it without cloning the
-repository. The PyPI package is `harnessbench`; it installs a `heval` command.
+harnessbench bundles its task library, so you can run it without cloning the
+repository. The PyPI package is `harnessbench`; it installs a `harnessbench` command.
 Using [uv](https://docs.astral.sh/uv/):
 
 ```bash
@@ -26,7 +26,7 @@ Using [uv](https://docs.astral.sh/uv/):
 uvx harnessbench init
 
 # Pull the pre-built runner image
-docker pull ghcr.io/yorch/heval-runner:latest
+docker pull ghcr.io/yorch/harnessbench-runner:latest
 
 # Set an API key
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -40,7 +40,9 @@ uvx harnessbench run heval.yaml
 
 `uvx harnessbench` runs the published package in an ephemeral environment. To
 install it persistently, use `uv tool install harnessbench` or
-`pipx install harnessbench` — both provide the `heval` command.
+`pipx install harnessbench` — both provide the `harnessbench` command.
+
+> **Note**: The `heval` command also works as an alias for `harnessbench`. Examples in this documentation use `harnessbench`, but either name can be used interchangeably.
 
 The rest of this guide covers the from-source workflow and explains each step
 in detail.
@@ -61,7 +63,7 @@ This installs all production and development dependencies: aiohttp, pydantic, ty
 Verify the installation:
 
 ```bash
-heval --help
+harnessbench --help
 ```
 
 You should see the list of available commands.
@@ -77,13 +79,13 @@ You have two options: pull the pre-built image from GHCR (fastest) or build it l
 A pre-built image is published to the GitHub Container Registry on every push to `main`:
 
 ```bash
-docker pull ghcr.io/yorch/heval-runner:latest
+docker pull ghcr.io/yorch/harnessbench-runner:latest
 ```
 
 Then reference it in your run config:
 
 ```yaml
-docker_image: "ghcr.io/yorch/heval-runner:latest"
+docker_image: "ghcr.io/yorch/harnessbench-runner:latest"
 ```
 
 Available tags:
@@ -102,17 +104,17 @@ Available tags:
 ### Option B: Build the image locally
 
 ```bash
-docker build -t heval-runner:latest .
+docker build -t harnessbench-runner:latest .
 ```
 
 This takes ~5 minutes. The image is ~1.2 GB because it carries all five harnesses.
 
-The default `docker_image` in run config is `heval-runner:latest`, so local builds work without any config change.
+The default `docker_image` in run config is `harnessbench-runner:latest`, so local builds work without any config change.
 
 ### Verify the image
 
 ```bash
-docker run --rm ghcr.io/yorch/heval-runner:latest bash -c '
+docker run --rm ghcr.io/yorch/harnessbench-runner:latest bash -c '
   echo "=== Harnesses ===" &&
   claude --version &&
   codex --version &&
@@ -142,7 +144,7 @@ You need at least one key for the model you plan to use. The key is passed into 
 The gateway proxy captures token usage, cost, and latency for every provider API call. Start it in a separate terminal:
 
 ```bash
-heval gateway --port 8877
+harnessbench gateway --port 8877
 ```
 
 You should see:
@@ -176,7 +178,7 @@ curl http://127.0.0.1:8877/v1/messages \
   }'
 
 # Verify token capture accuracy
-heval canary --tolerance-pct 1.0
+harnessbench canary --tolerance-pct 1.0
 ```
 
 You should see:
@@ -195,7 +197,7 @@ If the canary fails, see [Gateway Proxy](gateway-proxy/) for troubleshooting.
 Before spending money, preview the eval matrix:
 
 ```bash
-heval run runs/sample-minimal.yaml --dry-run
+harnessbench run runs/sample-minimal.yaml --dry-run
 ```
 
 Output:
@@ -220,7 +222,7 @@ This confirms the config is valid and shows exactly what will run.
 ## Step 7: Run the minimal eval
 
 ```bash
-heval run runs/sample-minimal.yaml
+harnessbench run runs/sample-minimal.yaml
 ```
 
 This runs one cell: OpenCode with Claude Sonnet on the `swe-bugfix-001` task, one repeat. Budget cap is $5.
@@ -247,13 +249,13 @@ Run complete
 ### Console
 
 ```bash
-heval results minimal-first-run
+harnessbench results minimal-first-run
 ```
 
 ### Static reports
 
 ```bash
-heval report minimal-first-run --output ./reports
+harnessbench report minimal-first-run --output ./reports
 ```
 
 This generates three files:
@@ -266,7 +268,7 @@ Open the HTML report in a browser to see leaderboards and detailed results.
 ### Dashboard
 
 ```bash
-heval dashboard --port 8080
+harnessbench dashboard --port 8080
 ```
 
 Open `http://127.0.0.1:8080` to explore results interactively. See [Reporting](reporting/) for dashboard features.
@@ -274,7 +276,7 @@ Open `http://127.0.0.1:8080` to explore results interactively. See [Reporting](r
 ### Statistics
 
 ```bash
-heval stats minimal-first-run
+harnessbench stats minimal-first-run
 ```
 
 See [Statistics](statistics/) for interpretation of the output.
@@ -284,7 +286,7 @@ See [Statistics](statistics/) for interpretation of the output.
 Once the minimal run works, try the full sweep:
 
 ```bash
-heval run runs/sample-run.yaml
+harnessbench run runs/sample-run.yaml
 ```
 
 This runs all 5 harnesses × 2 models × all tasks × 5 repeats. With 20 tasks, that's 1000 cells. Budget cap is $100.
@@ -297,7 +299,7 @@ If you're running open-ended tasks, calibrate the LLM judge first:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-heval calibrate --model claude-sonnet-4-20250514
+harnessbench calibrate --model claude-sonnet-4-20250514
 ```
 
 This verifies the judge produces consistent scores against known anchor submissions. If calibration fails (MAE > 0.15), the open-ended track should be flagged as unreliable.
@@ -345,7 +347,7 @@ See [Configuration](configuration/) for the full schema.
 Gateway is NOT reachable on 127.0.0.1:8877.
 ```
 
-Start the gateway in a separate terminal: `heval gateway --port 8877`
+Start the gateway in a separate terminal: `harnessbench gateway --port 8877`
 
 ### No API calls found for trace_id
 
@@ -358,17 +360,17 @@ This means the harness is not routing through the gateway proxy. Common with min
 ### Docker image not found
 
 ```
-docker run failed (exit 1): Unable to find image 'heval-runner:latest' locally
+docker run failed (exit 1): Unable to find image 'harnessbench-runner:latest' locally
 ```
 
 Either pull the pre-built image or build it locally:
 
 ```bash
-docker pull ghcr.io/yorch/heval-runner:latest   # pre-built
-docker build -t heval-runner:latest .            # local build
+docker pull ghcr.io/yorch/harnessbench-runner:latest   # pre-built
+docker build -t harnessbench-runner:latest .            # local build
 ```
 
-If using the GHCR image, set `docker_image: "ghcr.io/yorch/heval-runner:latest"` in your run config.
+If using the GHCR image, set `docker_image: "ghcr.io/yorch/harnessbench-runner:latest"` in your run config.
 
 ### No pricing found for model
 
@@ -383,7 +385,7 @@ Add the model to `DEFAULT_PRICING` in `src/heval/gateway/models.py`. See [Config
 The harness command fails with "command not found" inside the container. Verify the Docker image includes the harness:
 
 ```bash
-docker run --rm heval-runner:latest <harness> --version
+docker run --rm harnessbench-runner:latest <harness> --version
 ```
 
 If missing, rebuild the image or check the Dockerfile.

@@ -1,13 +1,13 @@
-# Docker image for heval harness execution.
+# Docker image for harnessbench harness execution.
 #
 # Contains all five supported harnesses plus a Python runtime for task
 # repos that need pytest.  Built on node:22-slim because Pi requires
 # Node.js >= 22.19 and OMP/Codex/Claude/OpenCode all distribute via npm.
 #
 # Build:
-#   docker build -t heval-runner:latest .
-# Run (used by heval's DockerRunner):
-#   docker run -d --rm heval-runner:latest sleep infinity
+#   docker build -t harnessbench-runner:latest .
+# Run (used by harnessbench's DockerRunner):
+#   docker run -d --rm harnessbench-runner:latest sleep infinity
 #   docker exec <id> claude -p "..." --model claude-sonnet-4-20250514
 #
 # The image is intentionally large (~1.2 GB) because it carries five
@@ -51,7 +51,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 # ---------------------------------------------------------------------------
 # Versions are customizable at build time and default to a pinned, verified
 # set for reproducibility. Override to evaluate a specific harness version:
-#   docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t heval-runner:cc-2.0.0 .
+#   docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harnessbench-runner:cc-2.0.0 .
 # then reference that image via `docker_image:` in the run config.
 ARG CLAUDE_CODE_VERSION=2.1.251
 ARG CODEX_VERSION=0.151.0
@@ -76,8 +76,8 @@ RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent@${PI_VERSION
 # Bun runtime — required by OMP's CLI entry point AND used to run
 # TypeScript task repos (`bun test`, `bun install`). Installed to
 # /usr/local so it is on PATH and readable/executable by the non-root
-# `heval` user (a prior version installed to /root/.bun, which is 0700
-# and unreadable by heval, breaking every TypeScript task and OMP).
+# `harnessbench` user (a prior version installed to /root/.bun, which is 0700
+# and unreadable by harnessbench, breaking every TypeScript task and OMP).
 ENV BUN_INSTALL=/usr/local
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
     && chmod -R a+rX /usr/local/bin/bun /usr/local/cache 2>/dev/null || true
@@ -87,7 +87,7 @@ RUN npm install -g @oh-my-pi/pi-coding-agent@${OMP_VERSION}
 
 # Record the installed harness versions as image labels so a built image is
 # self-describing (and reproducible runs can be traced to exact versions).
-LABEL org.opencontainers.image.title="heval-runner" \
+LABEL org.opencontainers.image.title="harnessbench-runner" \
       io.heval.claude-code="${CLAUDE_CODE_VERSION}" \
       io.heval.codex="${CODEX_VERSION}" \
       io.heval.opencode="${OPENCODE_VERSION}" \
@@ -118,13 +118,13 @@ RUN echo "=== Installed harnesses ===" \
 # ---------------------------------------------------------------------------
 WORKDIR /workspace
 
-# Create a non-root user for the harness execution. The heval DockerRunner
-# mounts the host workdir at /workspace; the heval user needs write access.
-RUN groupadd -r heval && useradd -r -g heval -d /workspace -s /bin/bash heval \
-    && chown -R heval:heval /workspace
+# Create a non-root user for the harness execution. The harnessbench DockerRunner
+# mounts the host workdir at /workspace; the harnessbench user needs write access.
+RUN groupadd -r harnessbench && useradd -r -g harnessbench -d /workspace -s /bin/bash harnessbench \
+    && chown -R harnessbench:harnessbench /workspace
 
-USER heval
+USER harnessbench
 
-# The heval DockerRunner launches the container with `sleep infinity`
+# The harnessbench DockerRunner launches the container with `sleep infinity`
 # and then uses `docker exec` for setup and harness execution.
 CMD ["sleep", "infinity"]

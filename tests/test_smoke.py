@@ -57,7 +57,7 @@ class TestInitCommand:
 
         cfg = RunConfig.from_yaml(str(cfg_path))
         # Uses the bundled task library + published image by default.
-        assert "ghcr.io/yorch/heval-runner" in cfg.docker_image
+        assert "ghcr.io/yorch/harnessbench-runner" in cfg.docker_image
         assert len(cfg.build_matrix()) >= 1
 
     def test_init_refuses_overwrite_without_force(self, tmp_path) -> None:  # type: ignore[no-untyped-def]

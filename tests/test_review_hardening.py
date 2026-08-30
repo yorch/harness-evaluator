@@ -55,24 +55,24 @@ class TestHarnessImageResolution:
 
     def test_defaults_to_run_image(self) -> None:
         h = self._harness()
-        assert h.resolve_image("ghcr.io/yorch/heval-runner:0.1.0") == (
-            "ghcr.io/yorch/heval-runner:0.1.0"
+        assert h.resolve_image("ghcr.io/yorch/harnessbench-runner:0.1.0") == (
+            "ghcr.io/yorch/harnessbench-runner:0.1.0"
         )
 
     def test_explicit_docker_image_wins(self) -> None:
         h = self._harness(docker_image="myrepo/custom:tag", version="cc-2.0.0")
-        assert h.resolve_image("ghcr.io/yorch/heval-runner:0.1.0") == "myrepo/custom:tag"
+        assert h.resolve_image("ghcr.io/yorch/harnessbench-runner:0.1.0") == "myrepo/custom:tag"
 
     def test_version_becomes_tag_on_run_repo(self) -> None:
         h = self._harness(version="cc-2.0.0")
-        assert h.resolve_image("ghcr.io/yorch/heval-runner:0.1.0") == (
-            "ghcr.io/yorch/heval-runner:cc-2.0.0"
+        assert h.resolve_image("ghcr.io/yorch/harnessbench-runner:0.1.0") == (
+            "ghcr.io/yorch/harnessbench-runner:cc-2.0.0"
         )
 
     def test_version_preserves_registry_port(self) -> None:
         h = self._harness(version="v9")
-        assert h.resolve_image("localhost:5000/heval-runner:0.1.0") == (
-            "localhost:5000/heval-runner:v9"
+        assert h.resolve_image("localhost:5000/harnessbench-runner:0.1.0") == (
+            "localhost:5000/harnessbench-runner:v9"
         )
 
     def test_invalid_version_rejected(self) -> None:

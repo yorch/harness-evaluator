@@ -219,10 +219,10 @@ TLS verification is enabled by default. It can be disabled via the
 
 ```bash
 # Start the gateway proxy on port 8877
-heval gateway --port 8877
+harnessbench gateway --port 8877
 
 # Or with a custom host and database path
-heval gateway --host 0.0.0.0 --port 8877 --db ./heval_gateway.db
+harnessbench gateway --host 0.0.0.0 --port 8877 --db ./heval_gateway.db
 ```
 
 ## How harnesses connect
@@ -250,7 +250,7 @@ After sending a request through the proxy, verify token capture accuracy
 against the provider's own usage reporting:
 
 ```bash
-heval canary --tolerance-pct 1.0
+harnessbench canary --tolerance-pct 1.0
 ```
 
 This sends a test request through the proxy and compares the proxy's captured
@@ -282,7 +282,7 @@ Discrepancies are flagged as a transparency metric in the final report.
 
 ## Configuration reference
 
-CLI options for `heval gateway`:
+CLI options for `harnessbench gateway`:
 
 | Parameter  | Default            | Description                |
 |------------|--------------------|----------------------------|

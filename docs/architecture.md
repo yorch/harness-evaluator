@@ -1,19 +1,19 @@
 ---
 title: Architecture
-description: How heval's components interact and data flows through the system from config to results.
+description: How harnessbench's components interact and data flows through the system from config to results.
 ---
 
 # Architecture
 
-heval is a Python core that orchestrates Node.js coding harnesses running inside Docker containers, with all provider traffic routed through a custom aiohttp gateway proxy for token/cost accounting.
+harnessbench is a Python core that orchestrates Node.js coding harnesses running inside Docker containers, with all provider traffic routed through a custom aiohttp gateway proxy for token/cost accounting.
 
 ## Component map
 
 ```
                             ┌─────────────────────────────────────────────────┐
                             │                   CLI (Typer)                    │
-                            │  heval run | gateway | canary | report | stats  │
-                            │  heval results | adapters | dashboard | calibrate│
+                            │  harnessbench run | gateway | canary | report | stats  │
+                            │  harnessbench results | adapters | dashboard | calibrate│
                             └────────┬────────────────────────────────────────┘
                                      │
                     ┌────────────────┼─────────────────┐
@@ -181,7 +181,7 @@ SQLite-backed store with three tables:
 
 - `run_results` — per-cell metrics (tokens, cost, latency, success, error class, diff, test output)
 - `run_state` — cell execution state (pending, running, completed, failed, skipped) for resumability and live progress
-- `run_metadata` — full run config JSON, heval version, Docker image for reproducibility
+- `run_metadata` — full run config JSON, harnessbench version, Docker image for reproducibility
 
 ### Reporting (`reporting/`)
 
@@ -197,7 +197,7 @@ Mixed-effects model (`success ~ C(harness) + C(model) + (1|task)`), variance dec
 
 ## Two SQLite databases
 
-heval uses two separate SQLite databases:
+harnessbench uses two separate SQLite databases:
 
 | Database | Default path | Contents |
 |----------|-------------|----------|

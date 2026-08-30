@@ -1,4 +1,4 @@
-/* heval custom theme — overrides Starlight's CSS variables */
+/* harnessbench custom theme — overrides Starlight's CSS variables */
 
 /* Fonts */
 :root {
@@ -8,7 +8,7 @@
 
 /* Dark mode (Starlight's :root defaults are dark) */
 :root {
-  /* Gray scale mapped to heval's palette */
+  /* Gray scale mapped to harnessbench's palette */
   --sl-color-white: #F8FAFC;
   --sl-color-gray-1: #F8FAFC;
   --sl-color-gray-2: #F8FAFC;

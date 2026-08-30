@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0F172A">
-  <meta name="description" content="heval — Compare agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.">
-  <title>heval — Harness Evaluator</title>
+  <meta name="description" content="harnessbench — Compare agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.">
+  <title>harnessbench — Harness Evaluator</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -474,8 +474,8 @@
   <!-- Navigation -->
   <nav class="top-nav" aria-label="Main navigation">
     <div class="container">
-      <a href="#" class="nav-brand" aria-label="heval home">
-        heval<span class="dot">.</span>
+      <a href="#" class="nav-brand" aria-label="harnessbench home">
+        harnessbench<span class="dot">.</span>
       </a>
       <div class="nav-links">
         <a href="#features" class="nav-hide-sm">Features</a>
@@ -495,7 +495,7 @@
     <!-- Hero -->
     <section class="hero">
       <div class="container">
-        <h1><span class="accent">heval</span></h1>
+        <h1><span class="accent">harnessbench</span></h1>
         <p class="tagline">
           Compare agentic coding harnesses on token efficiency, task effectiveness, and time efficiency.
         </p>
@@ -655,7 +655,7 @@
           <h2>Quick Start</h2>
           <p>Up and running in five commands.</p>
         </div>
-        <div class="code-block reveal" role="region" aria-label="Quick start commands"><span class="line"><span class="comment"># 1. Install dependencies</span></span><span class="line"><span class="cmd">uv</span> sync --extra dev</span><span class="line"> </span><span class="line"><span class="comment"># 2. Build the Docker image (all 5 harnesses + Python + Git)</span></span><span class="line"><span class="cmd">docker</span> build -t heval-runner:latest .</span><span class="line"> </span><span class="line"><span class="comment"># 3. Set API keys</span></span><span class="line"><span class="cmd">export</span> ANTHROPIC_API_KEY=<span class="str">sk-ant-…</span></span><span class="line"><span class="cmd">export</span> OPENAI_API_KEY=<span class="str">sk-…</span></span><span class="line"> </span><span class="line"><span class="comment"># 4. Start the gateway proxy (separate terminal)</span></span><span class="line"><span class="cmd">heval</span> gateway <span class="flag">--port</span> 8877</span><span class="line"> </span><span class="line"><span class="comment"># 5. Run a minimal evaluation</span></span><span class="line"><span class="cmd">heval</span> run runs/sample-minimal.yaml</span><span class="line"> </span><span class="line"><span class="comment"># Or dry-run to see the matrix without executing</span></span><span class="line"><span class="cmd">heval</span> run runs/sample-minimal.yaml <span class="flag">--dry-run</span></span></div>
+        <div class="code-block reveal" role="region" aria-label="Quick start commands"><span class="line"><span class="comment"># 1. Install dependencies</span></span><span class="line"><span class="cmd">uv</span> sync --extra dev</span><span class="line"> </span><span class="line"><span class="comment"># 2. Build the Docker image (all 5 harnesses + Python + Git)</span></span><span class="line"><span class="cmd">docker</span> build -t harnessbench-runner:latest .</span><span class="line"> </span><span class="line"><span class="comment"># 3. Set API keys</span></span><span class="line"><span class="cmd">export</span> ANTHROPIC_API_KEY=<span class="str">sk-ant-…</span></span><span class="line"><span class="cmd">export</span> OPENAI_API_KEY=<span class="str">sk-…</span></span><span class="line"> </span><span class="line"><span class="comment"># 4. Start the gateway proxy (separate terminal)</span></span><span class="line"><span class="cmd">harnessbench</span> gateway <span class="flag">--port</span> 8877</span><span class="line"> </span><span class="line"><span class="comment"># 5. Run a minimal evaluation</span></span><span class="line"><span class="cmd">harnessbench</span> run runs/sample-minimal.yaml</span><span class="line"> </span><span class="line"><span class="comment"># Or dry-run to see the matrix without executing</span></span><span class="line"><span class="cmd">harnessbench</span> run runs/sample-minimal.yaml <span class="flag">--dry-run</span></span></div>
       </div>
     </section>
 

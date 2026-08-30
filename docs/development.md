@@ -1,11 +1,11 @@
 ---
 title: Development
-description: Contributing to heval, quality gates, code style, testing, project conventions, and CI.
+description: Contributing to harnessbench, quality gates, code style, testing, project conventions, and CI.
 ---
 
 # Development
 
-This guide covers everything you need to contribute to heval: setting up the dev environment, running quality gates, understanding code style, writing tests, and following project conventions.
+This guide covers everything you need to contribute to harnessbench: setting up the dev environment, running quality gates, understanding code style, writing tests, and following project conventions.
 
 ## Setup
 
@@ -14,7 +14,7 @@ This guide covers everything you need to contribute to heval: setting up the dev
 uv sync --extra dev
 
 # Build the Docker image (only needed when changing the Dockerfile)
-docker build -t heval-runner:latest .
+docker build -t harnessbench-runner:latest .
 ```
 
 ## Quality gates
@@ -52,7 +52,7 @@ uv run pytest tests/dashboard/ -q
 
 ### Docker integration tests
 
-Docker integration tests require the `heval-runner:latest` image and are skipped if Docker is not available:
+Docker integration tests require the `harnessbench-runner:latest` image and are skipped if Docker is not available:
 
 ```bash
 uv run pytest tests/runner/test_docker_integration.py -q
@@ -203,7 +203,7 @@ Adapters' `get_command()` must use bare binary names (e.g. `"claude"`), not `shu
 
 ### `_clone_repo` path resolution
 
-`_clone_repo` resolves relative paths against the project root (`Path(__file__).resolve().parents[3]`), not the current working directory. This means `repo_url: tasks/repos/swe-bugfix-001` works regardless of where `heval run` is invoked.
+`_clone_repo` resolves relative paths against the project root (`Path(__file__).resolve().parents[3]`), not the current working directory. This means `repo_url: tasks/repos/swe-bugfix-001` works regardless of where `harnessbench run` is invoked.
 
 ## Testing
 

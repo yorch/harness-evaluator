@@ -255,7 +255,7 @@ The adapter's `get_env()` sets `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` to the 
 ## Listing adapters
 
 ```bash
-heval adapters
+harnessbench adapters
 ```
 
 Output:

@@ -56,7 +56,7 @@ def default_task_library() -> str:
     """Return the path to the bundled task library.
 
     Tasks are shipped inside the wheel at ``heval/tasks`` (see the hatchling
-    force-include in pyproject.toml), so an installed heval can run without a
+    force-include in pyproject.toml), so an installed harnessbench can run without a
     repository checkout. Falls back to the repo-root ``tasks/`` directory when
     running from a source tree without the bundled copy.
     """
@@ -73,18 +73,18 @@ def default_task_library() -> str:
 
 
 def default_docker_image() -> str:
-    """Return the default runner image, pinned to the installed heval version.
+    """Return the default runner image, pinned to the installed harnessbench version.
 
-    A given heval version pairs with the matching published runner image so
+    A given harnessbench version pairs with the matching published runner image so
     runs are reproducible. Falls back to ``:latest`` if the version is
     unavailable.
     """
     try:
         from heval import __version__
 
-        return f"ghcr.io/yorch/heval-runner:{__version__}"
+        return f"ghcr.io/yorch/harnessbench-runner:{__version__}"
     except Exception:
-        return "ghcr.io/yorch/heval-runner:latest"
+        return "ghcr.io/yorch/harnessbench-runner:latest"
 
 
 class TaskTrack(StrEnum):
@@ -202,8 +202,8 @@ class HarnessSpec(BaseModel):
     harness version (e.g. an image built with a harness build arg)."""
     version: str | None = None
     """Optional shorthand: use this value as the image tag on the run-level
-    image's repository (e.g. run image ``ghcr.io/yorch/heval-runner:0.1.0`` +
-    ``version: cc-2.0.0`` -> ``ghcr.io/yorch/heval-runner:cc-2.0.0``). Ignored
+    image's repository (e.g. run image ``ghcr.io/yorch/harnessbench-runner:0.1.0`` +
+    ``version: cc-2.0.0`` -> ``ghcr.io/yorch/harnessbench-runner:cc-2.0.0``). Ignored
     when ``docker_image`` is set. You are responsible for building/pushing the
     tagged image (see the Dockerfile harness build args)."""
 
@@ -290,7 +290,7 @@ class RunConfig(BaseModel):
     """Task IDs to run. Use '*' for all tasks in the library."""
     task_library_path: str = Field(default_factory=default_task_library)
     """Path to the task library. Defaults to the bundled library so an
-    installed heval works without a repo checkout."""
+    installed harnessbench works without a repo checkout."""
     repeats: int = 5
     budget_usd: float | None = None
     """Maximum total spend in USD. None = no cap."""

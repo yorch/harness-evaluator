@@ -3,7 +3,7 @@
 # performance optimizations, and open-ended design tasks.
 #
 # This config uses the pre-built GHCR image. To use a locally built image,
-# replace the docker_image value with "heval-runner:latest".
+# replace the docker_image value with "harnessbench-runner:latest".
 #
 # Usage:
 #   heval run runs/task-mix.yaml --dry-run   # preview the matrix
@@ -88,5 +88,5 @@ gateway_port: 8877
 gateway_db: "heval_gateway.db"
 results_db: "heval_results.db"
 workdir: "./heval_workdir"
-docker_image: "ghcr.io/yorch/heval-runner:latest"
+docker_image: "ghcr.io/yorch/harnessbench-runner:latest"
 parallel_runs: 1

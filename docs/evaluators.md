@@ -5,7 +5,7 @@ description: SWE-bench-style hidden-test evaluator and open-ended LLM judge trac
 
 # Evaluators
 
-heval has two evaluation tracks, each with separate leaderboards. They are never cross-compared.
+harnessbench has two evaluation tracks, each with separate leaderboards. They are never cross-compared.
 
 ## Track overview
 
@@ -200,7 +200,7 @@ If any structural check fails, the composite success is capped at 0.5 — regard
 Calibration verifies the judge produces consistent scores against known anchor submissions:
 
 ```bash
-heval calibrate --model claude-sonnet-4-20250514
+harnessbench calibrate --model claude-sonnet-4-20250514
 ```
 
 The calibration set includes anchor submissions with known expected scores:
