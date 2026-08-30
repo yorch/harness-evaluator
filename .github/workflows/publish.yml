@@ -1,5 +1,9 @@
 name: Publish to PyPI
 
+# Triggered by tags created by release-please (Release Please workflow).
+# release-please creates the tag + GitHub Release with the changelog;
+# this workflow builds the wheel/sdist, publishes to PyPI, and uploads
+# the artifacts to the existing GitHub Release.
 on:
   push:
     tags: ["v*"]
@@ -44,48 +48,62 @@ jobs:
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
 
-  release:
-    name: Create GitHub Release
+  upload-assets:
+    name: Upload artifacts to GitHub Release
     needs: [build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist/
-      - name: Create GitHub Release
+      - name: Upload wheel and sdist to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
           version="${tag#v}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists, uploading assets"
-            gh release upload "$tag" dist/*.whl dist/*.tar.gz --clobber
-          else
-            # Generate release notes, then append artifact links
-            gh release create "$tag" \
-              --title "$version" \
-              --generate-notes \
-              dist/*.whl dist/*.tar.gz
+          # release-please creates the release with changelog notes;
+          # we just attach the build artifacts and append artifact links.
+          gh release upload "$tag" dist/*.whl dist/*.tar.gz --clobber
 
-            # Append artifact footer to the auto-generated notes
-            gh release view "$tag" --json body --jq '.body' > /tmp/release_body.md
-            {
-              cat /tmp/release_body.md
-              echo ""
-              echo "## Artifacts"
-              echo ""
-              echo "- **PyPI**: [\`harness-evaluator==${version}\`](https://pypi.org/project/harness-evaluator/${version}/)"
-              echo "- **Docker**: \`ghcr.io/yorch/harness-evaluator-runner:${version}\` and \`:latest\`"
-              echo "- **Docs**: https://yorch.github.io/harness-evaluator/"
-              echo ""
-              echo "Install with \`uvx harness-evaluator\` or \`pip install harness-evaluator==${version}\`."
-              echo ""
-              echo "Generated with [Devin](https://devin.ai)"
-            } > /tmp/release_final.md
-            gh release edit "$tag" --notes-file /tmp/release_final.md
-          fi
+          # Append artifact footer to the release notes
+          gh release view "$tag" --json body --jq '.body' > /tmp/release_body.md
+          {
+            cat /tmp/release_body.md
+            echo ""
+            echo "## Artifacts"
+            echo ""
+            echo "- **PyPI**: [\`harness-evaluator==${version}\`](https://pypi.org/project/harness-evaluator/${version}/)"
+            echo "- **Docker**: \`ghcr.io/yorch/harness-evaluator-runner:${version}\` and \`:latest\`"
+            echo "- **Docs**: https://yorch.github.io/harness-evaluator/"
+            echo ""
+            echo "Install with \`uvx harness-evaluator\` or \`pip install harness-evaluator==${version}\`."
+          } > /tmp/release_final.md
+          gh release edit "$tag" --notes-file /tmp/release_final.md
+
+  verify-pypi:
+    name: Verify PyPI publication
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm package is live on PyPI
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          attempts=8
+          delay=15
+          for attempt in $(seq "$attempts"); do
+            actual=$(curl -sf "https://pypi.org/pypi/harness-evaluator/${version}/json" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])" 2>/dev/null || true)
+            if [ "$actual" = "$version" ]; then
+              echo "harness-evaluator==${version} is live on PyPI"
+              exit 0
+            fi
+            echo "Attempt $attempt: PyPI shows ${actual:-<none>}, expected $version"
+            [ "$attempt" -eq "$attempts" ] || sleep "$delay"
+          done
+          echo "PyPI publication verification failed" >&2
+          exit 1

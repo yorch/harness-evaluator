@@ -1,0 +1,27 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "package-name": "harness-evaluator",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "include-path-in-changelog": false,
+      "extra-files": [
+        "site/src/pages/index.astro"
+      ]
+    }
+  },
+  "bootstrap-sha": "7ecb51a",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features", "hidden": false },
+    { "type": "fix", "section": "Bug Fixes", "hidden": false },
+    { "type": "perf", "section": "Performance", "hidden": false },
+    { "type": "docs", "section": "Documentation", "hidden": false },
+    { "type": "ci", "section": "CI/CD", "hidden": false },
+    { "type": "chore", "section": "Miscellaneous", "hidden": true },
+    { "type": "refactor", "section": "Refactoring", "hidden": false },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build", "hidden": true },
+    { "type": "style", "section": "Styles", "hidden": true }
+  ]
+}

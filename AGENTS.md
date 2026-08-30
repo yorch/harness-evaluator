@@ -112,13 +112,29 @@ ci: bump actions/checkout to v7
 ## CI
 
 - `.github/workflows/ci.yml` — ruff + mypy + pytest on every push/PR to main
+- `.github/workflows/release-please.yml` — runs on push to main, opens a
+  "Release Please" PR with version bump + changelog from conventional commits;
+  merging that PR creates the `v*` tag and GitHub Release
+- `.github/workflows/publish.yml` — triggered by `v*` tags (created by
+  release-please): builds wheel/sdist, publishes to PyPI (trusted publishing /
+  OIDC), uploads artifacts to the GitHub Release, and verifies PyPI publication
 - `.github/workflows/docker.yml` — builds and verifies the Docker image on
-  Dockerfile changes (main only for push, PRs verify build)
+  Dockerfile changes (main only for push, PRs verify build); also pushes a
+  version-tagged runner image on `v*` tags
 - `.github/workflows/astro.yml` — builds and deploys the Astro+Starlight docs
   site to GitHub Pages on changes to `site/`, `docs/`, or the workflow
-- `.github/workflows/publish.yml` — builds and publishes the wheel/sdist to
-  PyPI (trusted publishing / OIDC) on `v*` tags; docker.yml also pushes a
-  version-tagged runner image on `v*` tags
 - `.github/workflows/docker-versions.yml` — manually-triggered workflow that
   builds and publishes a per-harness-version runner image (single harness
   build-arg override, tagged `<harness>-<version>`)
+
+## Releases
+
+Releases are managed by [release-please](https://github.com/googleapis/release-please):
+
+1. Merge PRs to `main` with conventional commit titles (`feat:`, `fix:`, etc.)
+2. release-please automatically opens a "Release Please" PR that bumps
+   `pyproject.toml` version and updates `CHANGELOG.md`
+3. Merge the Release Please PR → creates a `v*` tag + GitHub Release
+4. The tag triggers `publish.yml` (PyPI + artifacts) and `docker.yml` (image)
+
+Do not manually tag or bump versions — let release-please handle it.
