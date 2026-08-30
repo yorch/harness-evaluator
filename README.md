@@ -1,15 +1,15 @@
 # harnessbench
 
-[![CI](https://github.com/yorch/heval/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/ci.yml)
-[![Docker](https://github.com/yorch/heval/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/heval/actions/workflows/docker.yml)
-[![Docs Site](https://github.com/yorch/heval/actions/workflows/astro.yml/badge.svg)](https://yorch.github.io/heval/)
+[![CI](https://github.com/yorch/harnessbench/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/harnessbench/actions/workflows/ci.yml)
+[![Docker](https://github.com/yorch/harnessbench/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/harnessbench/actions/workflows/docker.yml)
+[![Docs Site](https://github.com/yorch/harnessbench/actions/workflows/astro.yml/badge.svg)](https://yorch.github.io/harnessbench/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Harness evaluator: compare agentic coding harnesses (Claude Code, Codex, Pi,
 OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.
 
 See [DESIGN.md](DESIGN.md) for the full design specification and
-[the docs site](https://yorch.github.io/heval/) for comprehensive documentation.
+[the docs site](https://yorch.github.io/harnessbench/) for comprehensive documentation.
 
 ## Quick start
 

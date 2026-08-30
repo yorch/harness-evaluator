@@ -43,10 +43,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yorch/heval"
-Documentation = "https://yorch.github.io/heval/"
-Source = "https://github.com/yorch/heval"
-Issues = "https://github.com/yorch/heval/issues"
+Homepage = "https://github.com/yorch/harnessbench"
+Documentation = "https://yorch.github.io/harnessbench/"
+Source = "https://github.com/yorch/harnessbench"
+Issues = "https://github.com/yorch/harnessbench/issues"
 
 [project.scripts]
 harnessbench = "harnessbench.cli:app"

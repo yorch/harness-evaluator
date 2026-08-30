@@ -42,8 +42,6 @@ uvx harnessbench run harnessbench.yaml
 install it persistently, use `uv tool install harnessbench` or
 `pipx install harnessbench` — both provide the `harnessbench` command.
 
-> **Note**: The `harnessbench` command also works as an alias for `harnessbench`. Examples in this documentation use `harnessbench`, but either name can be used interchangeably.
-
 The rest of this guide covers the from-source workflow and explains each step
 in detail.
 
@@ -51,8 +49,8 @@ in detail.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yorch/heval.git
-cd heval
+git clone https://github.com/yorch/harnessbench.git
+cd harnessbench
 
 # Install Python dependencies (including dev tools)
 uv sync --extra dev

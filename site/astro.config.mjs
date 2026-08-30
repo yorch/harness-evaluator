@@ -3,7 +3,7 @@ import starlight from '@astrojs/starlight';
 
 export default defineConfig({
   site: 'https://yorch.github.io',
-  base: '/heval',
+  base: '/harnessbench',
   trailingSlash: 'always',
   build: {
     format: 'directory',
@@ -14,7 +14,7 @@ export default defineConfig({
       description:
         'Compare agentic coding harnesses on token efficiency, task effectiveness, and time efficiency.',
       social: [
-        { label: 'GitHub', icon: 'github', href: 'https://github.com/yorch/heval' },
+        { label: 'GitHub', icon: 'github', href: 'https://github.com/yorch/harnessbench' },
       ],
       head: [
         {
