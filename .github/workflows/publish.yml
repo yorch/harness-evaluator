@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -35,6 +35,7 @@ jobs:
     environment: release
     permissions:
       id-token: write
+      contents: read
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -42,3 +43,49 @@ jobs:
           path: dist/
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  release:
+    name: Create GitHub Release
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists, uploading assets"
+            gh release upload "$tag" dist/*.whl dist/*.tar.gz --clobber
+          else
+            # Generate release notes, then append artifact links
+            gh release create "$tag" \
+              --title "$version" \
+              --generate-notes \
+              dist/*.whl dist/*.tar.gz
+
+            # Append artifact footer to the auto-generated notes
+            gh release view "$tag" --json body --jq '.body' > /tmp/release_body.md
+            {
+              cat /tmp/release_body.md
+              echo ""
+              echo "## Artifacts"
+              echo ""
+              echo "- **PyPI**: [\`harness-evaluator==${version}\`](https://pypi.org/project/harness-evaluator/${version}/)"
+              echo "- **Docker**: \`ghcr.io/yorch/harness-evaluator-runner:${version}\` and \`:latest\`"
+              echo "- **Docs**: https://yorch.github.io/harness-evaluator/"
+              echo ""
+              echo "Install with \`uvx harness-evaluator\` or \`pip install harness-evaluator==${version}\`."
+              echo ""
+              echo "Generated with [Devin](https://devin.ai)"
+            } > /tmp/release_final.md
+            gh release edit "$tag" --notes-file /tmp/release_final.md
+          fi
