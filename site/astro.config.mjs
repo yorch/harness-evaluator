@@ -1,5 +1,6 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import llms from 'astro-llms-md';
 
 export default defineConfig({
   site: 'https://yorch.github.io',
@@ -63,6 +64,19 @@ export default defineConfig({
         { label: 'Development', slug: 'docs/development' },
       ],
       customCss: ['./src/styles/custom.css'],
+    }),
+    llms({
+      siteUrl: 'https://yorch.github.io/harness-evaluator',
+      name: 'harness-evaluator',
+      description:
+        'Compare agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) on token efficiency, task effectiveness, time efficiency, and cost.',
+      generateIndividualMd: false,
+      generateLlmsTxt: true,
+      generateLlmsFullTxt: true,
+      contentSelector: 'main',
+      excludeSelectors: ['aside', 'nav', '.sidebar', '[data-llms-ignore]'],
+      exclude: ['404', '404.html', '_astro', '**.xml', '**.txt', 'node_modules', 'pagefind'],
+      trailingSlash: 'always',
     }),
   ],
 });
