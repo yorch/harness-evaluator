@@ -32,6 +32,24 @@ _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 # Git ref / SHA charset. Must not start with '-' (would be read as an option
 # by git checkout) and disallows shell metacharacters and whitespace.
 _SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+# Docker image reference charset (registry/repo[:tag][@digest]). No shell
+# metacharacters; a leading '-' is additionally rejected by the validator.
+_IMAGE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:@-]*$")
+
+
+def _strip_image_tag(ref: str) -> str:
+    """Return the image reference without its ``:tag`` or ``@digest``.
+
+    Keeps a registry port intact (a ``:`` before the last ``/`` is a port,
+    not a tag).
+    """
+    if "@" in ref:
+        ref = ref.split("@", 1)[0]
+    last_slash = ref.rfind("/")
+    last_colon = ref.rfind(":")
+    if last_colon > last_slash:
+        return ref[:last_colon]
+    return ref
 
 
 def default_task_library() -> str:
@@ -178,6 +196,16 @@ class HarnessSpec(BaseModel):
     """Harness-specific configuration."""
     observability_tier: ObservabilityTier = ObservabilityTier.PARTIAL
     """Expected observability level."""
+    docker_image: str | None = None
+    """Optional per-harness runner image override. Takes precedence over
+    ``version`` and the run-level ``docker_image``. Use this to pin a specific
+    harness version (e.g. an image built with a harness build arg)."""
+    version: str | None = None
+    """Optional shorthand: use this value as the image tag on the run-level
+    image's repository (e.g. run image ``ghcr.io/yorch/heval-runner:0.1.0`` +
+    ``version: cc-2.0.0`` -> ``ghcr.io/yorch/heval-runner:cc-2.0.0``). Ignored
+    when ``docker_image`` is set. You are responsible for building/pushing the
+    tagged image (see the Dockerfile harness build args)."""
 
     @field_validator("name")
     @classmethod
@@ -188,6 +216,40 @@ class HarnessSpec(BaseModel):
                 f"Only [A-Za-z0-9._-] are allowed."
             )
         return v
+
+    @field_validator("version")
+    @classmethod
+    def validate_version(cls, v: str | None) -> str | None:
+        # Used as a Docker image tag; restrict to the tag charset.
+        if v is not None and not _SAFE_ID_RE.match(v):
+            raise ValueError(
+                f"Harness version '{v}' is not a valid image tag. "
+                f"Only [A-Za-z0-9._-] are allowed."
+            )
+        return v
+
+    @field_validator("docker_image")
+    @classmethod
+    def validate_docker_image(cls, v: str | None) -> str | None:
+        # Passed as a docker argv element; reject a leading '-' so it can't be
+        # interpreted as a docker flag, and restrict to image-ref characters.
+        if v is None:
+            return v
+        if v.startswith("-") or not _IMAGE_REF_RE.match(v):
+            raise ValueError(f"Invalid docker_image reference: {v!r}")
+        return v
+
+    def resolve_image(self, run_default: str) -> str:
+        """Resolve the runner image for this harness.
+
+        Precedence: explicit ``docker_image`` > ``version`` (as a tag on the
+        run-level image's repository) > the run-level ``docker_image``.
+        """
+        if self.docker_image:
+            return self.docker_image
+        if self.version:
+            return f"{_strip_image_tag(run_default)}:{self.version}"
+        return run_default
 
 
 class ModelSpec(BaseModel):

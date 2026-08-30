@@ -310,6 +310,7 @@ class DockerRunner:
                     "harness": cell.harness.name,
                     "model": cell.model.name,
                     "observability_tier": cell.harness.observability_tier,
+                    "docker_image": cell.harness.resolve_image(self.image),
                 },
             }
 
@@ -438,6 +439,7 @@ class DockerRunner:
         env: dict[str, str],
         timeout: int,
         container_name: str,
+        image: str | None = None,
     ) -> list[str]:
         """Build the ``docker run`` argument list for a detached container.
 
@@ -488,19 +490,24 @@ class DockerRunner:
         # Stop timeout so Docker kills the container promptly on stop
         args.extend(["--stop-timeout", str(timeout)])
 
-        args.append(self.image)
+        args.append(image or self.image)
         # Keep the container alive long enough for exec commands.
         args.extend(["sleep", str(timeout + 30)])
         return args
 
     async def _start_container(
-        self, workdir: Path, env: dict[str, str], timeout: int, name: str
+        self,
+        workdir: Path,
+        env: dict[str, str],
+        timeout: int,
+        name: str,
+        image: str | None = None,
     ) -> str:
         """Launch a detached container and return its container ID.
 
         Raises ``RuntimeError`` if the container fails to start.
         """
-        args = self._build_run_args(workdir, env, timeout, name)
+        args = self._build_run_args(workdir, env, timeout, name, image)
         result = await _run_subprocess(args, timeout=60)
         if result.returncode != 0:
             raise RuntimeError(
@@ -661,12 +668,15 @@ class DockerRunner:
         # requirements.txt) and the harness must run inside the repo dir.
         exec_cwd = CONTAINER_REPO if cell.task.repo_url else CONTAINER_WORKSPACE
 
-        # Launch the container
+        # Launch the container. The image is resolved per harness so a run can
+        # mix harness versions (explicit HarnessSpec.docker_image, or a version
+        # tag on the run-level image's repository); defaults to self.image.
+        image = cell.harness.resolve_image(self.image)
         container_name = _sanitize_container_name(cell.cell_id)
         container_id: str | None = None
         try:
             container_id = await self._start_container(
-                workdir, env, timeout, container_name
+                workdir, env, timeout, container_name, image
             )
 
             # Run setup script inside the container if present.

@@ -59,6 +59,34 @@ List of harness specifications. Each harness is paired with each model to form t
 | `adapter` | string | Yes | Adapter registry name (e.g. `opencode`, `claude-code`) |
 | `observability_tier` | string | No | `full`, `partial`, or `minimal` (default: `partial`) |
 | `config` | dict | No | Harness-specific config passed to the adapter |
+| `docker_image` | string | No | Per-harness runner image override (see below) |
+| `version` | string | No | Image tag on the run-level image's repo (see below) |
+
+##### Choosing a harness version
+
+By default every harness in a run uses the run-level `docker_image`. To evaluate
+a specific harness version, set a per-harness image. Precedence is
+`docker_image` > `version` > the run-level `docker_image`:
+
+```yaml
+docker_image: "ghcr.io/yorch/heval-runner:0.1.0"   # run-level default
+harnesses:
+  # Explicit image (built with a harness build arg — see Docker image config)
+  - name: claude-code-2.0
+    adapter: claude-code
+    docker_image: "ghcr.io/yorch/heval-runner:cc-2.0.0"
+  # `version` shorthand: uses this as the tag on the run-level image's repo,
+  # i.e. ghcr.io/yorch/heval-runner:cc-2.1.0
+  - name: claude-code-2.1
+    adapter: claude-code
+    version: "cc-2.1.0"
+```
+
+Because a harness entry's `name` is just an identifier and `adapter` is
+separate, you can put two versions of the *same* harness in one matrix (as
+above) to compare them directly. The resolved image is recorded in each result's
+`harness_metadata` for reproducibility. You are responsible for building/pushing
+the referenced images (see [Building a specific harness version](#building-a-specific-harness-version)).
 
 #### `models`
 
