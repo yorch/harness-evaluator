@@ -1,0 +1,31 @@
+# harness-evaluator
+
+> harness-evaluator compares agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) against one or more models on a set of tasks, measuring token efficiency, task effectiveness, time efficiency, and cost. It routes all provider traffic through a gateway proxy for accurate token/cost accounting, runs harnesses in isolated Docker containers, and produces static reports plus an interactive dashboard. Results are stored in SQLite and analyzed with mixed-effects statistical models.
+
+harness-evaluator is a Python CLI tool that orchestrates Node.js coding harnesses running inside Docker containers. All provider API traffic is routed through a custom aiohttp gateway proxy that captures token usage, cost, and latency. The evaluator supports both SWE-bench-style coding tasks (with hidden tests and partial credit) and open-ended tasks (with an LLM judge and rubric scoring).
+
+## Documentation
+
+- [Getting Started](https://yorch.github.io/harness-evaluator/docs/getting-started/): Installation, Docker setup, API keys, and your first evaluation run
+- [Architecture](https://yorch.github.io/harness-evaluator/docs/architecture/): Component map and data flow from config to results
+- [Gateway Proxy](https://yorch.github.io/harness-evaluator/docs/gateway-proxy/): HTTP/SSE proxy for token/cost/latency accounting and provider call capture
+- [Orchestrator](https://yorch.github.io/harness-evaluator/docs/orchestrator/): Matrix builder, budget engine, retry logic, and resumability
+- [Docker Runner](https://yorch.github.io/harness-evaluator/docs/docker-runner/): Container lifecycle, isolation, and credential mounting
+- [Evaluators](https://yorch.github.io/harness-evaluator/docs/evaluators/): SWE-bench-style hidden tests and open-ended LLM judge track
+- [Adapters](https://yorch.github.io/harness-evaluator/docs/adapters/): Per-harness CLI wrappers and observability tiers
+- [CLI Reference](https://yorch.github.io/harness-evaluator/docs/cli-reference/): Full command reference for the harness-evaluator CLI
+- [Configuration](https://yorch.github.io/harness-evaluator/docs/configuration/): YAML config format, auth modes, environment variables, and model specs
+- [Reporting](https://yorch.github.io/harness-evaluator/docs/reporting/): Static HTML/JSON/CSV report generation and CSV sanitization
+- [Statistics](https://yorch.github.io/harness-evaluator/docs/statistics/): Mixed-effects models, variance decomposition, and bootstrap CIs
+- [Development](https://yorch.github.io/harness-evaluator/docs/development/): Contributing, testing, linting, and release process
+
+## Code
+
+- [GitHub Repository](https://github.com/yorch/harness-evaluator): Source code, issues, and releases
+- [PyPI Package](https://pypi.org/project/harness-evaluator/): Install with `uvx harness-evaluator` or `pip install harness-evaluator`
+- [Docker Image](https://github.com/yorch/harness-evaluator/pkgs/container/harness-evaluator-runner): Runner image with all 5 harnesses pre-installed
+
+## Optional
+
+- [Full Documentation (single file)](https://yorch.github.io/harness-evaluator/llms-full.txt): All documentation pages concatenated as Markdown for offline reading
+- [License](https://github.com/yorch/harness-evaluator/blob/main/LICENSE): MIT License

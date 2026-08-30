@@ -20,6 +20,14 @@ export default defineConfig({
         {
           tag: 'link',
           attrs: {
+            rel: 'describedby',
+            type: 'text/markdown',
+            href: '/harness-evaluator/llms.txt',
+          },
+        },
+        {
+          tag: 'link',
+          attrs: {
             rel: 'preconnect',
             href: 'https://fonts.googleapis.com',
           },
