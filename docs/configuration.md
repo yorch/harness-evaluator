@@ -515,6 +515,21 @@ The installed versions are recorded as `io.heval.*` OCI image labels, and the
 image name is stored in each run's metadata, so results trace to exact versions.
 Reference the built image via `docker_image:` in the run config.
 
+### Publishing a per-harness-version image
+
+The `docker-versions.yml` workflow (manual trigger) builds and publishes a
+runner image with a single harness version override, tagged as
+`<harness>-<version>` (e.g. `claude-code-2.0.0`). Trigger it from the GitHub
+Actions UI with the harness build-arg name and the version to pin. The
+resulting image is pushed to GHCR and can be referenced directly:
+
+```yaml
+harnesses:
+  - name: claude-code-2.0
+    adapter: claude-code
+    docker_image: "ghcr.io/yorch/heval-runner:claude-code-2.0.0"
+```
+
 ## Task trust model
 
 Task YAMLs — including `test_command`, `setup_script`, and `repo_url` — are

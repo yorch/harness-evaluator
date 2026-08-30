@@ -18,11 +18,12 @@ This guide walks you through installing heval, getting the Docker image, configu
 ## Quick start (no clone)
 
 heval bundles its task library, so you can run it without cloning the
-repository. Using [uv](https://docs.astral.sh/uv/):
+repository. The PyPI package is `harnessbench`; it installs a `heval` command.
+Using [uv](https://docs.astral.sh/uv/):
 
 ```bash
 # Scaffold a starter config in the current directory
-uvx heval init
+uvx harnessbench init
 
 # Pull the pre-built runner image
 docker pull ghcr.io/yorch/heval-runner:latest
@@ -31,14 +32,15 @@ docker pull ghcr.io/yorch/heval-runner:latest
 export ANTHROPIC_API_KEY=sk-ant-...
 
 # Start the gateway (separate terminal)
-uvx heval gateway --port 8877
+uvx harnessbench gateway --port 8877
 
 # Run the evaluation
-uvx heval run heval.yaml
+uvx harnessbench run heval.yaml
 ```
 
-`uvx heval` runs the published package in an ephemeral environment. To install
-it persistently, use `uv tool install heval` or `pipx install heval`.
+`uvx harnessbench` runs the published package in an ephemeral environment. To
+install it persistently, use `uv tool install harnessbench` or
+`pipx install harnessbench` — both provide the `heval` command.
 
 The rest of this guide covers the from-source workflow and explains each step
 in detail.

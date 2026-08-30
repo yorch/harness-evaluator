@@ -13,6 +13,7 @@ Security: All HTML is rendered through Jinja2 with autoescaping enabled.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import sqlite3
 from pathlib import Path
@@ -196,9 +197,25 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
         """Dashboard home page with run overview."""
-        runs = _get_run_summaries()
+        runs = await asyncio.to_thread(_get_run_summaries)
         template = _env.get_template("index.html")
         return template.render(runs=runs)
+
+    def _get_run_summary_stats(run_name: str) -> tuple[int, int, float]:
+        """Get total/passed/cost for a run in a single query."""
+        with _get_db_conn() as conn:
+            summary_row = conn.execute(
+                """SELECT COUNT(*) as total,
+                          SUM(CASE WHEN exit_class = 'pass' THEN 1 ELSE 0 END) as passed,
+                          COALESCE(SUM(total_cost), 0) as cost
+                   FROM run_results WHERE run_name = ?""",
+                (run_name,),
+            ).fetchone()
+            return (
+                summary_row[0] or 0,
+                summary_row[1] or 0,
+                summary_row[2] or 0.0,
+            )
 
     @app.get("/run/{run_name}", response_class=HTMLResponse)
     async def run_detail(
@@ -211,43 +228,40 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
         per_page: int = Query(50, ge=1, le=500),
     ) -> str:
         """Detailed view for a specific run with filtering and pagination."""
-        if not _run_exists(run_name):
+        if not await asyncio.to_thread(_run_exists, run_name):
             raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
 
         # Get filter options
-        models = _get_unique_values(run_name, "model")
-        harnesses = _get_unique_values(run_name, "harness")
-        tracks = _get_unique_values(run_name, "track")
+        models = await asyncio.to_thread(_get_unique_values, run_name, "model")
+        harnesses = await asyncio.to_thread(_get_unique_values, run_name, "harness")
+        tracks = await asyncio.to_thread(_get_unique_values, run_name, "track")
 
         # Clamp the requested page to the available range so an out-of-range
         # page returns the last page rather than an empty, misleading result.
-        total_count = _get_filtered_count(run_name, model, harness, track, min_success)
+        total_count = await asyncio.to_thread(
+            _get_filtered_count, run_name, model, harness, track, min_success
+        )
         total_pages = max(1, (total_count + per_page - 1) // per_page)
         page = min(page, total_pages)
         offset = (page - 1) * per_page
-        results = _get_paginated_results(
-            run_name, model, harness, track, min_success, per_page, offset
+        results = await asyncio.to_thread(
+            _get_paginated_results,
+            run_name, model, harness, track, min_success, per_page, offset,
         )
 
         # Get live state (if run is in progress)
-        state_summary = _get_run_state_summary(run_name)
+        state_summary = await asyncio.to_thread(_get_run_state_summary, run_name)
 
         # Build leaderboard from full run (not filtered)
-        all_results = store.get_all_results(run_name)
-        leaderboards = report_gen._build_leaderboards(all_results)
+        all_results = await asyncio.to_thread(store.get_all_results, run_name)
+        leaderboards = await asyncio.to_thread(
+            report_gen._build_leaderboards, all_results
+        )
 
         # Summary stats from SQL aggregation
-        with _get_db_conn() as conn:
-            summary_row = conn.execute(
-                """SELECT COUNT(*) as total,
-                          SUM(CASE WHEN exit_class = 'pass' THEN 1 ELSE 0 END) as passed,
-                          COALESCE(SUM(total_cost), 0) as cost
-                   FROM run_results WHERE run_name = ?""",
-                (run_name,),
-            ).fetchone()
-            total_cells = summary_row[0] or 0
-            passed = summary_row[1] or 0
-            cost = summary_row[2] or 0.0
+        total_cells, passed, cost = await asyncio.to_thread(
+            _get_run_summary_stats, run_name
+        )
 
         template = _env.get_template("run_detail.html")
         return template.render(
@@ -274,7 +288,7 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
     @app.get("/api/runs")
     async def api_list_runs() -> dict[str, Any]:
         """List all runs with summary stats (SQL aggregation)."""
-        runs = _get_run_summaries()
+        runs = await asyncio.to_thread(_get_run_summaries)
         return {"runs": runs}
 
     @app.get("/api/run/{run_name}")
@@ -288,17 +302,20 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
         per_page: int = Query(50, ge=1, le=500),
     ) -> JSONResponse:
         """Get filtered, paginated results for a run as JSON."""
-        if not _run_exists(run_name):
+        if not await asyncio.to_thread(_run_exists, run_name):
             raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
 
-        total_count = _get_filtered_count(run_name, model, harness, track, min_success)
+        total_count = await asyncio.to_thread(
+            _get_filtered_count, run_name, model, harness, track, min_success
+        )
         total_pages = max(1, (total_count + per_page - 1) // per_page)
         # Clamp to the last page so out-of-range requests don't report a page
         # number with an empty result set.
         page = min(page, total_pages)
         offset = (page - 1) * per_page
-        results = _get_paginated_results(
-            run_name, model, harness, track, min_success, per_page, offset
+        results = await asyncio.to_thread(
+            _get_paginated_results,
+            run_name, model, harness, track, min_success, per_page, offset,
         )
 
         return JSONResponse(
@@ -316,18 +333,20 @@ def create_app(results_db: str = "heval_results.db") -> FastAPI:
     @app.get("/api/run/{run_name}/leaderboard")
     async def api_leaderboard(run_name: str) -> dict[str, Any]:
         """Get leaderboard data for a run."""
-        if not _run_exists(run_name):
+        if not await asyncio.to_thread(_run_exists, run_name):
             raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
-        results = store.get_all_results(run_name)
-        leaderboards = report_gen._build_leaderboards(results)
+        results = await asyncio.to_thread(store.get_all_results, run_name)
+        leaderboards = await asyncio.to_thread(
+            report_gen._build_leaderboards, results
+        )
         return {"run_name": run_name, "leaderboards": leaderboards}
 
     @app.get("/api/run/{run_name}/status")
     async def api_run_status(run_name: str) -> dict[str, Any]:
         """Get live progress for a run (from run_state table)."""
-        if not _run_exists(run_name):
+        if not await asyncio.to_thread(_run_exists, run_name):
             raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
-        state = _get_run_state_summary(run_name)
+        state = await asyncio.to_thread(_get_run_state_summary, run_name)
         return {"run_name": run_name, "state": state}
 
     return app

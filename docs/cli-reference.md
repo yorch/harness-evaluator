@@ -44,8 +44,8 @@ heval init [options]
 ### Examples
 
 ```bash
-# Zero-install scaffold via uv
-uvx heval init
+# Zero-install scaffold via uv (PyPI package: harnessbench)
+uvx harnessbench init
 
 # Custom filename, overwrite if present
 heval init --filename my-run.yaml --force

@@ -119,3 +119,6 @@ ci: bump actions/checkout to v7
 - `.github/workflows/publish.yml` — builds and publishes the wheel/sdist to
   PyPI (trusted publishing / OIDC) on `v*` tags; docker.yml also pushes a
   version-tagged runner image on `v*` tags
+- `.github/workflows/docker-versions.yml` — manually-triggered workflow that
+  builds and publishes a per-harness-version runner image (single harness
+  build-arg override, tagged `<harness>-<version>`)

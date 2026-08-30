@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "heval"
+name = "harnessbench"
 version = "0.1.0"
 description = "Harness evaluator: compare agentic coding harnesses on token/time/cost effectiveness"
 readme = "README.md"
@@ -50,6 +50,7 @@ Issues = "https://github.com/yorch/heval/issues"
 
 [project.scripts]
 heval = "heval.cli:app"
+harnessbench = "heval.cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/heval"]
