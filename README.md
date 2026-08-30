@@ -3,6 +3,7 @@
 [![CI](https://github.com/yorch/harness-evaluator/actions/workflows/ci.yml/badge.svg)](https://github.com/yorch/harness-evaluator/actions/workflows/ci.yml)
 [![Docker](https://github.com/yorch/harness-evaluator/actions/workflows/docker.yml/badge.svg)](https://github.com/yorch/harness-evaluator/actions/workflows/docker.yml)
 [![Docs Site](https://github.com/yorch/harness-evaluator/actions/workflows/astro.yml/badge.svg)](https://yorch.github.io/harness-evaluator/)
+[![PyPI](https://img.shields.io/pypi/v/harness-evaluator?logo=pypi&color=blue)](https://pypi.org/project/harness-evaluator/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Harness evaluator: compare agentic coding harnesses (Claude Code, Codex, Pi,
@@ -22,6 +23,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 uvx harness-evaluator gateway --port 8877             # separate terminal
 uvx harness-evaluator run harness-evaluator.yaml
 ```
+
+Install `uv` first if you don't have it: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+You can also install with `pip install harness-evaluator` or `uv tool install harness-evaluator`.
 
 ### From source
 

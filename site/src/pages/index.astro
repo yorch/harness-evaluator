@@ -706,7 +706,7 @@ const base = import.meta.env.BASE_URL;
             <div class="label">Tasks</div>
           </div>
           <div class="stat-card">
-            <div class="num">271</div>
+            <div class="num">339</div>
             <div class="label">Tests Passing</div>
           </div>
         </div>
@@ -881,25 +881,23 @@ const base = import.meta.env.BASE_URL;
           <p>Up and running in five commands.</p>
         </div>
         <div class="code-block reveal" role="region" aria-label="Quick start commands">
-          <span class="line"><span class="comment"># 1. Install dependencies</span></span>
-          <span class="line"><span class="cmd">uv</span> sync --extra dev</span>
+          <span class="line"><span class="comment"># 1. Scaffold a starter config (no clone needed)</span></span>
+          <span class="line"><span class="cmd">uvx</span> harness-evaluator init</span>
           <span class="line"> </span>
-          <span class="line"><span class="comment"># 2. Pull the pre-built Docker image (or build locally)</span></span>
+          <span class="line"><span class="comment"># 2. Pull the pre-built Docker image</span></span>
           <span class="line"><span class="cmd">docker</span> pull ghcr.io/yorch/harness-evaluator-runner:latest</span>
-          <span class="line"><span class="comment">#    docker build -t harness-evaluator-runner:latest .  # alternative</span></span>
           <span class="line"> </span>
           <span class="line"><span class="comment"># 3. Set API keys</span></span>
           <span class="line"><span class="cmd">export</span> ANTHROPIC_API_KEY=<span class="str">sk-ant-…</span></span>
-          <span class="line"><span class="cmd">export</span> OPENAI_API_KEY=<span class="str">sk-…</span></span>
           <span class="line"> </span>
           <span class="line"><span class="comment"># 4. Start the gateway proxy (separate terminal)</span></span>
-          <span class="line"><span class="cmd">harness-evaluator</span> gateway <span class="flag">--port</span> 8877</span>
+          <span class="line"><span class="cmd">uvx</span> harness-evaluator gateway <span class="flag">--port</span> 8877</span>
           <span class="line"> </span>
           <span class="line"><span class="comment"># 5. Run a minimal evaluation</span></span>
-          <span class="line"><span class="cmd">harness-evaluator</span> run runs/sample-minimal.yaml</span>
+          <span class="line"><span class="cmd">uvx</span> harness-evaluator run harness-evaluator.yaml</span>
           <span class="line"> </span>
           <span class="line"><span class="comment"># Or dry-run to see the matrix without executing</span></span>
-          <span class="line"><span class="cmd">harness-evaluator</span> run runs/sample-minimal.yaml <span class="flag">--dry-run</span></span>
+          <span class="line"><span class="cmd">uvx</span> harness-evaluator run harness-evaluator.yaml <span class="flag">--dry-run</span></span>
         </div>
       </div>
     </section>
@@ -941,7 +939,7 @@ const base = import.meta.env.BASE_URL;
     <section class="cta-section">
       <div class="container reveal">
         <h2>Start Evaluating</h2>
-        <p>Clone the repo, build the image, and run your first evaluation in minutes.</p>
+        <p>Install from PyPI, pull the Docker image, and run your first evaluation in minutes — no clone required.</p>
         <div class="cta-group">
           <a href={`${base}docs/getting-started/`} class="btn btn-primary">
             <svg

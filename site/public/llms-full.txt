@@ -141,7 +141,7 @@ harness-evaluator/
 
 # Getting Started
 
-This guide walks you through installing harness_evaluator, getting the Docker image, configuring API keys, and running your first evaluation end-to-end.
+This guide walks you through installing harness-evaluator from PyPI, getting the Docker image, configuring API keys, and running your first evaluation end-to-end. **No clone required** — the task library is bundled into the wheel.
 
 ## Prerequisites
 
@@ -153,73 +153,47 @@ This guide walks you through installing harness_evaluator, getting the Docker im
 
 ## Quick start (no clone)
 
-harness-evaluator bundles its task library, so you can run it without cloning the
-repository. The PyPI package is `harness-evaluator`; it installs a `harness-evaluator` command.
-Using [uv](https://docs.astral.sh/uv/):
+harness-evaluator is published on PyPI as `harness-evaluator`. It bundles its task library, so you can run it without cloning the repository.
+
+### Step 1: Install
+
+Use [uv](https://docs.astral.sh/uv/) (recommended) to run it without installing:
 
 ```bash
-# Scaffold a starter config in the current directory
+# Run without installing (ephemeral environment per invocation)
+uvx harness-evaluator --help
+
+# Or install persistently
+uv tool install harness-evaluator
+# Alternative: pipx install harness-evaluator
+```
+
+Both `uvx` and `uv tool install` provide the `harness-evaluator` command. If you don't have `uv`, install it first:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+You can also install with pip:
+
+```bash
+pip install harness-evaluator
+```
+
+### Step 2: Scaffold a config
+
+```bash
 uvx harness-evaluator init
-
-# Pull the pre-built runner image
-docker pull ghcr.io/yorch/harness-evaluator-runner:latest
-
-# Set an API key
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Start the gateway (separate terminal)
-uvx harness-evaluator gateway --port 8877
-
-# Run the evaluation
-uvx harness-evaluator run harness-evaluator.yaml
 ```
 
-`uvx harness-evaluator` runs the published package in an ephemeral environment. To
-install it persistently, use `uv tool install harness-evaluator` or
-`pipx install harness-evaluator` — both provide the `harness-evaluator` command.
+This creates `harness-evaluator.yaml` in the current directory with a minimal starter config (1 harness, 1 model, 1 task, 1 repeat, $5 budget).
 
-The rest of this guide covers the from-source workflow and explains each step
-in detail.
+### Step 3: Pull the Docker image
 
-## Step 1: Install dependencies
-
-```bash
-# Clone the repository
-git clone https://github.com/yorch/harness-evaluator.git
-cd harness-evaluator
-
-# Install Python dependencies (including dev tools)
-uv sync --extra dev
-```
-
-This installs all production and development dependencies: aiohttp, pydantic, typer, rich, fastapi, uvicorn, jinja2, pandas, statsmodels, httpx, pytest, ruff, mypy.
-
-Verify the installation:
-
-```bash
-harness-evaluator --help
-```
-
-You should see the list of available commands.
-
-## Step 2: Get the Docker image
-
-The runner executes harnesses inside a Docker container. The image contains all 5 harnesses + Python + Git.
-
-You have two options: pull the pre-built image from GHCR (fastest) or build it locally.
-
-### Option A: Pull the pre-built image from GHCR (recommended)
-
-A pre-built image is published to the GitHub Container Registry on every push to `main`:
+The runner executes harnesses inside a Docker container. The image contains all 5 harnesses + Python + Git:
 
 ```bash
 docker pull ghcr.io/yorch/harness-evaluator-runner:latest
-```
-
-Then reference it in your run config:
-
-```yaml
-docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"
 ```
 
 Available tags:
@@ -229,56 +203,28 @@ Available tags:
 | `latest` | Most recent build from `main` |
 | `sha-<short-hash>` | Pinned to a specific commit |
 | `main` | Alias for the latest `main` build |
+| `<version>` | Pinned to a release (e.g. `0.2.0`) |
 
-> **Note**: The GHCR image is currently public. If the repository is private or the package visibility changes, you may need to authenticate first:
+> **Note**: The GHCR image is public. If the repository visibility changes, you may need to authenticate first:
 > ```bash
 > echo "$GITHUB_TOKEN" | docker login ghcr.io -u <username> --password-stdin
 > ```
 
-### Option B: Build the image locally
+### Step 4: Set API keys
 
 ```bash
-docker build -t harness-evaluator-runner:latest .
-```
-
-This takes ~5 minutes. The image is ~1.2 GB because it carries all five harnesses.
-
-The default `docker_image` in run config is `harness-evaluator-runner:latest`, so local builds work without any config change.
-
-### Verify the image
-
-```bash
-docker run --rm ghcr.io/yorch/harness-evaluator-runner:latest bash -c '
-  echo "=== Harnesses ===" &&
-  claude --version &&
-  codex --version &&
-  opencode --version &&
-  pi --version &&
-  omp --version &&
-  echo "=== All harnesses ready ==="
-'
-```
-
-> **Tip**: For a single-harness eval, you can build a trimmed variant by commenting out unused `RUN` lines in the Dockerfile.
-
-## Step 3: Set API keys
-
-```bash
-# For Anthropic models (Claude)
 export ANTHROPIC_API_KEY=sk-ant-...
-
-# For OpenAI models (GPT)
-export OPENAI_API_KEY=sk-...
+# Optional: export OPENAI_API_KEY=sk-...
 ```
 
-You need at least one key for the model you plan to use. The key is passed into Docker containers via an allowlisted environment variable — the full host environment is never exposed.
+The key is passed into Docker containers via an allowlisted environment variable — the full host environment is never exposed.
 
-## Step 4: Start the gateway proxy
+### Step 5: Start the gateway proxy
 
 The gateway proxy captures token usage, cost, and latency for every provider API call. Start it in a separate terminal:
 
 ```bash
-harness-evaluator gateway --port 8877
+uvx harness-evaluator gateway --port 8877
 ```
 
 You should see:
@@ -295,24 +241,12 @@ Keep this terminal open — the proxy must be running while you execute evals.
 
 See [Gateway Proxy](gateway-proxy/) for full details.
 
-## Step 5: Verify the proxy with canary
+### Step 6: Verify the proxy with canary
 
-After starting the gateway, send a test request through it and verify token capture accuracy:
+After starting the gateway, verify token capture accuracy:
 
 ```bash
-# In a new terminal, send a test request through the proxy
-curl http://127.0.0.1:8877/v1/messages \
-  -H "x-api-key: $ANTHROPIC_API_KEY" \
-  -H "anthropic-version: 2023-06-01" \
-  -H "content-type: application/json" \
-  -d '{
-    "model": "claude-sonnet-4-20250514",
-    "max_tokens": 100,
-    "messages": [{"role": "user", "content": "Say hello in one word."}]
-  }'
-
-# Verify token capture accuracy
-harness-evaluator canary --tolerance-pct 1.0
+uvx harness-evaluator canary --tolerance-pct 1.0
 ```
 
 You should see:
@@ -326,12 +260,12 @@ Cost: $0.000131. Latency: 523ms.
 
 If the canary fails, see [Gateway Proxy](gateway-proxy/) for troubleshooting.
 
-## Step 6: Dry-run your first eval
+### Step 7: Dry-run your first eval
 
-Before spending money, preview the eval matrix:
+Preview the eval matrix without spending money:
 
 ```bash
-harness-evaluator run runs/sample-minimal.yaml --dry-run
+uvx harness-evaluator run harness-evaluator.yaml --dry-run
 ```
 
 Output:
@@ -344,19 +278,19 @@ Run: minimal-first-run
   Total cells: 1
 
                           Eval Matrix
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━┓
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━┓
 ┃ Cell ID                                 ┃ Harness   ┃ Model              ┃ Task             ┃ Repeat ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━┩
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━┩
 │ opencode__claude-sonnet-4-20250514__swe-bugfix-001__r0 │ opencode │ claude-sonnet-4-.. │ swe-bugfix-001 │ 0 │
 └──────────────────────────────────────────┴───────────┴────────────────────┴──────────────────┴────────┘
 ```
 
 This confirms the config is valid and shows exactly what will run.
 
-## Step 7: Run the minimal eval
+### Step 8: Run the eval
 
 ```bash
-harness-evaluator run runs/sample-minimal.yaml
+uvx harness-evaluator run harness-evaluator.yaml
 ```
 
 This runs one cell: OpenCode with Claude Sonnet on the `swe-bugfix-001` task, one repeat. Budget cap is $5.
@@ -378,62 +312,67 @@ Run complete
   Cost: $0.0037
 ```
 
-## Step 8: View results
-
-### Console
+### Step 9: View results
 
 ```bash
-harness-evaluator results minimal-first-run
+# Console summary
+uvx harness-evaluator results minimal-first-run
+
+# Static HTML/JSON/CSV report
+uvx harness-evaluator report minimal-first-run --output ./reports
+
+# Interactive dashboard
+uvx harness-evaluator dashboard --port 8080
+
+# Statistical analysis
+uvx harness-evaluator stats minimal-first-run
 ```
-
-### Static reports
-
-```bash
-harness-evaluator report minimal-first-run --output ./reports
-```
-
-This generates three files:
-- `reports/minimal-first-run_report.html` — styled HTML report
-- `reports/minimal-first-run_report.json` — machine-readable JSON
-- `reports/minimal-first-run_report.csv` — flat CSV
 
 Open the HTML report in a browser to see leaderboards and detailed results.
+Open `http://127.0.0.1:8080` to explore results interactively.
 
-### Dashboard
+See [Reporting](reporting/) for dashboard features and [Statistics](statistics/) for interpretation of the output.
+
+## From source (optional)
+
+If you want to contribute, modify the codebase, or build the Docker image locally:
 
 ```bash
-harness-evaluator dashboard --port 8080
+# Clone the repository
+git clone https://github.com/yorch/harness-evaluator.git
+cd harness-evaluator
+
+# Install Python dependencies (including dev tools)
+uv sync --extra dev
+
+# Verify the installation
+harness-evaluator --help
+
+# Build the Docker image locally (alternative to pulling from GHCR)
+docker build -t harness-evaluator-runner:latest .
 ```
 
-Open `http://127.0.0.1:8080` to explore results interactively. See [Reporting](reporting/) for dashboard features.
-
-### Statistics
+When running from source, you can use the bundled sample configs:
 
 ```bash
-harness-evaluator stats minimal-first-run
-```
+# Minimal: 1 harness, 1 model, 1 task, 1 repeat
+harness-evaluator run runs/sample-minimal.yaml
 
-See [Statistics](statistics/) for interpretation of the output.
-
-## Step 9: Run a full sweep
-
-Once the minimal run works, try the full sweep:
-
-```bash
+# Full sweep: 5 harnesses × 2 models × 20 tasks × 5 repeats
 harness-evaluator run runs/sample-run.yaml
 ```
 
-This runs all 5 harnesses × 2 models × all tasks × 5 repeats. With 20 tasks, that's 1000 cells. Budget cap is $100.
-
 > **Warning**: The full sweep can take hours and cost significant money. Start with a small budget and fewer repeats to validate before scaling up.
 
-## Step 10: Run judge calibration (open-ended track)
+See [Development](development/) for contribution guidelines and the dev workflow.
+
+## Judge calibration (open-ended track)
 
 If you're running open-ended tasks, calibrate the LLM judge first:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-harness-evaluator calibrate --model claude-sonnet-4-20250514
+uvx harness-evaluator calibrate --model claude-sonnet-4-20250514
 ```
 
 This verifies the judge produces consistent scores against known anchor submissions. If calibration fails (MAE > 0.15), the open-ended track should be flagged as unreliable.
@@ -481,7 +420,7 @@ See [Configuration](configuration/) for the full schema.
 Gateway is NOT reachable on 127.0.0.1:8877.
 ```
 
-Start the gateway in a separate terminal: `harness-evaluator gateway --port 8877`
+Start the gateway in a separate terminal: `uvx harness-evaluator gateway --port 8877`
 
 ### No API calls found for trace_id
 
@@ -501,7 +440,7 @@ Either pull the pre-built image or build it locally:
 
 ```bash
 docker pull ghcr.io/yorch/harness-evaluator-runner:latest   # pre-built
-docker build -t harness-evaluator-runner:latest .            # local build
+docker build -t harness-evaluator-runner:latest .            # local build (requires clone)
 ```
 
 If using the GHCR image, set `docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"` in your run config.
@@ -519,7 +458,7 @@ Add the model to `DEFAULT_PRICING` in `src/harness_evaluator/gateway/models.py`.
 The harness command fails with "command not found" inside the container. Verify the Docker image includes the harness:
 
 ```bash
-docker run --rm harness-evaluator-runner:latest <harness> --version
+docker run --rm ghcr.io/yorch/harness-evaluator-runner:latest <harness> --version
 ```
 
 If missing, rebuild the image or check the Dockerfile.
