@@ -8,10 +8,11 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "node scripts/generate-llms.mjs && astro build",
     "preview": "astro preview",
     "check": "astro check",
-    "astro": "astro"
+    "astro": "astro",
+    "generate-llms": "node scripts/generate-llms.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.10",
