@@ -208,19 +208,23 @@ Adapters wrap each coding harness with a uniform interface for the runner.
 
 ### Supported harnesses
 
-| Harness | Adapter | Observability | Notes |
-|---------|---------|--------------|-------|
-| OpenCode | `opencode` | full | Open-source, system prompt visible |
-| Aider | `aider` | full | Open-source, multi-provider |
-| Claude Code | `claude-code` | partial | Closed, proxy captures traffic |
-| Codex | `codex` | partial | Closed, proxy captures traffic |
-| Gemini CLI | `gemini` | partial | Google, proxy captures traffic |
-| Antigravity | `antigravity` | partial | Google, proxy captures traffic |
-| Pi | `pi` | minimal | May bypass proxy |
-| OMP | `omp` | minimal | May bypass proxy |
-| GitHub Copilot | `copilot` | minimal | GitHub, may bypass proxy |
-| Cursor | `cursor` | minimal | Multi-provider, may bypass proxy |
-| Kiro | `kiro` | minimal | AWS, may bypass proxy |
+| Harness | Adapter | Observability | In default image? | Notes |
+|---------|---------|--------------|-------------------|-------|
+| OpenCode | `opencode` | full | Yes | Open-source, system prompt visible |
+| Aider | `aider` | full | No | Open-source, multi-provider |
+| Claude Code | `claude-code` | partial | Yes | Closed, proxy captures traffic |
+| Codex | `codex` | partial | Yes | Closed, proxy captures traffic |
+| Gemini CLI | `gemini` | partial | No | Google, proxy captures traffic |
+| Antigravity | `antigravity` | partial | No | Google, proxy captures traffic |
+| Pi | `pi` | minimal | Yes | May bypass proxy |
+| OMP | `omp` | minimal | Yes | May bypass proxy |
+| GitHub Copilot | `copilot` | minimal | No | GitHub, may bypass proxy |
+| Cursor | `cursor` | minimal | No | Multi-provider, may bypass proxy |
+| Kiro | `kiro` | minimal | No | AWS, may bypass proxy |
+
+The default Docker image includes 5 harnesses (OpenCode, Claude Code, Codex,
+Pi, OMP). The other 6 adapters are registered but require a custom Docker
+image — see [Adapters](docs/adapters.md) for install commands.
 
 ### Listing adapters
 

@@ -9,7 +9,7 @@ The Docker runner (`src/harness_evaluator/runner/docker.py`) executes each eval 
 
 ## Container image
 
-The runner image contains all five harnesses, Node.js 22, Python 3, Git, and Bun. You can either pull the pre-built image from GHCR or build it locally.
+The runner image contains 5 preinstalled harnesses (Claude Code, Codex, OpenCode, Pi, OMP), Node.js 22, Python 3, Git, and Bun. The adapter registry also includes Aider, Gemini CLI, Antigravity, Copilot, Cursor, and Kiro — to use these, build a custom image with the harness binary installed. You can either pull the pre-built image from GHCR or build it locally.
 
 ### Pull the pre-built image (recommended)
 
@@ -60,7 +60,7 @@ labels. See [Configuration](configuration/#docker-image-configuration).
 | Bun | Runtime required by OMP's CLI entry point |
 | pytest, pyyaml, requests, aiohttp | Python packages for task repos |
 
-The image is ~1.2 GB because it carries all five harnesses. For single-harness evals, you can build a trimmed variant by commenting out unused `RUN` lines in the Dockerfile.
+The image is ~1.2 GB because it carries all five preinstalled harnesses. For single-harness evals, you can build a trimmed variant by commenting out unused `RUN` lines in the Dockerfile. To add a non-preinstalled harness (Aider, Gemini CLI, etc.), add its install command to the Dockerfile and rebuild.
 
 ### Non-root user
 

@@ -2,9 +2,10 @@
 
 ## Goal
 
-Evaluate agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) against
-one or more models on a set of tasks, to identify which harnesses are most
-token-efficient, task-effective, and time-effective.
+Evaluate agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP, Aider,
+Gemini CLI, Antigravity, Copilot, Cursor, Kiro) against one or more models on a
+set of tasks, to identify which harnesses are most token-efficient,
+task-effective, and time-effective.
 
 The comparison is **product-level** (which harness to *use* with a given model),
 not harness-logic-level (which would require a single framework with swappable
@@ -133,10 +134,16 @@ Runner (Docker)
 
 Harness Adapter Layer (Python + TS shims)
   ├── OpenCode adapter        — TS shim, full observability
+  ├── Aider adapter           — full observability, multi-provider
   ├── Claude Code adapter     — env var proxy, partial observability
   ├── Codex adapter           — TS shim, partial observability
+  ├── Gemini CLI adapter      — partial observability, Google
+  ├── Antigravity adapter     — partial observability, Google
   ├── Pi adapter              — minimal observability
-  └── OMP adapter             — minimal observability
+  ├── OMP adapter             — minimal observability
+  ├── Copilot adapter         — minimal observability, GitHub
+  ├── Cursor adapter          — minimal observability, multi-provider
+  └── Kiro adapter            — minimal observability, AWS
 
 Provider Gateway (Python)
   ├── HTTP/SSE proxy          — intercepts provider calls
@@ -174,8 +181,10 @@ Reporting + Dashboard (Python/FastAPI)
 ## Scope Decisions
 
 ### In scope (v1)
-- 5 harnesses: Claude Code, Codex, Pi, OpenCode, OMP
-- 2 providers: Anthropic, OpenAI
+- 11 adapters: Claude Code, Codex, Pi, OpenCode, OMP, Aider, Gemini CLI,
+  Antigravity, Copilot, Cursor, Kiro (5 preinstalled in the default Docker
+  image; 6 more available via custom images)
+- 2 providers: Anthropic, OpenAI (Google via Gemini/Antigravity adapters)
 - Both task tracks: SWE-bench-style, open-ended
 - Custom task mix: SWE-bench subset + own open-ended tasks
 - Docker container isolation
@@ -188,7 +197,6 @@ Reporting + Dashboard (Python/FastAPI)
 - Forcing identical system prompts across harnesses
 - Mid-flight process resumption
 - Pure harness-logic comparison (single framework, swappable strategies)
-- Third provider (Google/Mistral/DeepSeek)
 
 ## Reconciliation
 
@@ -225,6 +233,12 @@ static reports. End-to-end: config → matrix → run OpenCode on one task → e
 3. **Codex** — OpenAI, partial. Stress-tests provider-agnosticity, OpenAI usage quirks.
 4. **Pi** — partial/minimal. Build after proxy/reconciliation pattern proven.
 5. **OMP** — minimal observability, highest unknown risk. Build last, fallback to total-spend-only.
+6. **Aider** — open-source, full observability, multi-provider.
+7. **Gemini CLI** — Google, partial observability.
+8. **Antigravity** — Google, partial observability.
+9. **Copilot** — GitHub, minimal observability.
+10. **Cursor** — multi-provider, minimal observability.
+11. **Kiro** — AWS, minimal observability.
 
 ### Milestone 4: Open-ended track
 Frozen judge + rubric + structural checks + calibration pipeline.

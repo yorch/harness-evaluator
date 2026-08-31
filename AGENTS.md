@@ -44,8 +44,11 @@ proxy for token/cost accounting.
 - `src/harness_evaluator/cli.py` — Typer-based CLI entry point
 - `tasks/` — Task YAML definitions and repo fixtures (bundled into the wheel
   at `harness_evaluator/tasks` so an installed harness-evaluator runs without a repo checkout)
-- `Dockerfile` — Image with all 11 harnesses + Bun (node:22-slim base). Harness
-  versions are build args (`CLAUDE_CODE_VERSION`, etc.) with pinned defaults.
+- `Dockerfile` — Image with 5 preinstalled harnesses (claude-code, codex,
+  opencode, pi, omp) + Bun (node:22-slim base). The adapter registry also
+  includes aider, gemini, antigravity, copilot, cursor, and kiro — these
+  require a custom Docker image with the harness binary installed.
+  Harness versions are build args (`CLAUDE_CODE_VERSION`, etc.) with pinned defaults.
 
 ## Code style
 

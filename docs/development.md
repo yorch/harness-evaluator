@@ -28,7 +28,7 @@ uv run ruff check src/ tests/
 # Type check (fast, ~3s)
 uv run mypy src/harness_evaluator/
 
-# Tests (full suite ~20s, 360 tests)
+# Tests (full suite ~40s, 600+ tests)
 uv run pytest tests/ -q
 
 # All gates at once
@@ -157,13 +157,13 @@ Python core that orchestrates Node.js coding harnesses running inside Docker con
 | `src/harness_evaluator/gateway/` | HTTP/SSE proxy, parsers, SQLite store, reconciliation |
 | `src/harness_evaluator/orchestrator/` | Matrix builder, budget engine, results store |
 | `src/harness_evaluator/runner/` | Docker lifecycle (container per cell, exec-based) |
-| `src/harness_evaluator/adapters/` | Per-harness CLI wrappers (claude, codex, opencode, pi, omp) |
+| `src/harness_evaluator/adapters/` | Per-harness CLI wrappers (claude-code, codex, opencode, aider, gemini, antigravity, pi, omp, copilot, cursor, kiro) |
 | `src/harness_evaluator/evaluator/` | SWE hidden-test + open-ended LLM judge tracks |
 | `src/harness_evaluator/dashboard/` | FastAPI dashboard with Jinja2 templates |
 | `src/harness_evaluator/stats/` | Mixed-effects model, variance decomposition, bootstrap CIs |
 | `src/harness_evaluator/cli.py` | Typer-based CLI entry point |
 | `tasks/` | Task YAML definitions and repo fixtures |
-| `Dockerfile` | Image with all 5 harnesses (node:22-slim base) |
+| `Dockerfile` | Image with 5 preinstalled harnesses + Bun (node:22-slim base) |
 
 See [Architecture](architecture/) for the full component map and data flow.
 
@@ -174,7 +174,9 @@ See [Architecture](architecture/) for the full component map and data flow.
 - **Edit `tasks/repos/*/` contents directly** — they are task fixtures. Change the source and re-init via the runner's `_git_init_fresh`.
 - **Add production dependencies without `uv add <pkg>`** — do not manually edit `pyproject.toml` dependencies.
 - **Forward internal trace headers upstream** — the gateway proxy must never forward `x-harness-evaluator-trace-id`, `x-trace-id`, or the `trace_id` query param to the real provider API.
-- **Expose the dashboard externally** — it has no auth, keep it localhost-only.
+- **Expose the dashboard without a token** — the dashboard supports optional
+  token auth (`--token` / `HARNESS_EVALUATOR_DASHBOARD_TOKEN`), but without a
+  token it is open. Keep it localhost-only (`127.0.0.1`) unless a token is set.
 
 ### Do
 
@@ -216,9 +218,15 @@ tests/
 ├── adapters/
 │   ├── test_adapters.py      # Registry, adapter listing
 │   ├── test_base.py          # BaseAdapter, get_env, gateway URL
-│   └── test_codex.py         # Codex-specific tests
+│   ├── test_codex.py         # Codex-specific tests
+│   ├── test_aider.py         # Aider-specific tests
+│   ├── test_gemini.py        # Gemini CLI tests
+│   ├── test_antigravity.py   # Antigravity CLI tests
+│   ├── test_copilot.py       # Copilot CLI tests
+│   ├── test_cursor.py        # Cursor CLI tests
+│   └── test_kiro.py          # Kiro CLI tests
 ├── dashboard/
-│   └── test_app.py           # Dashboard endpoints
+│   └── test_app.py           # Dashboard endpoints, auth, templates
 ├── evaluator/
 │   ├── test_swe.py           # SWEEvaluator, error classification
 │   └── test_open_ended.py    # Judge, rubric, structural checks, calibration
@@ -238,8 +246,9 @@ tests/
 ├── runner/
 │   ├── test_docker.py        # Docker runner (mocked subprocess)
 │   └── test_docker_integration.py  # Real Docker (skipped if no Docker)
-└── stats/
-    └── test_stats.py         # Statistical analysis
+├── stats/
+│   └── test_stats.py         # Statistical analysis
+└── test_smoke.py             # CLI smoke tests (all commands)
 ```
 
 ### Writing tests
