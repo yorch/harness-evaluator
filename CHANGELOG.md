@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/yorch/harness-evaluator/compare/v0.9.0...v0.10.0) (2026-08-31)
+
+
+### Features
+
+* **dashboard:** overhaul UI/UX with a11y, dark mode, cell detail, sort, export ([#30](https://github.com/yorch/harness-evaluator/issues/30)) ([cfb6ca5](https://github.com/yorch/harness-evaluator/commit/cfb6ca5f46509f97faa5fb4965f28215cd8ec66d))
+
 ## [0.9.0](https://github.com/yorch/harness-evaluator/compare/v0.8.1...v0.9.0) (2026-08-31)
 
 
