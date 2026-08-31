@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from logging import Formatter, LogRecord
 from typing import TYPE_CHECKING
 
@@ -34,9 +35,11 @@ _LEVEL_NAMES: dict[int, str] = {
 class TuiLogHandler(logging.Handler):
     """Logging handler that posts formatted lines to a Textual RichLog widget.
 
-    Thread-safe: uses ``app.call_from_thread`` to schedule the widget write
-    on the Textual event loop, so logs from aiohttp worker threads or other
-    non-asyncio threads are safe.
+    Thread-safe: when called from a different thread (e.g. aiohttp worker
+    threads), uses ``app.call_from_thread`` to schedule the widget write on
+    the Textual event loop. When called from the same thread (the orchestrator
+    worker runs on the same loop as the app), writes directly to avoid the
+    ``RuntimeError`` that ``call_from_thread`` raises for same-thread calls.
     """
 
     def __init__(self, app: App[object], log_widget: RichLog) -> None:
@@ -44,6 +47,7 @@ class TuiLogHandler(logging.Handler):
         self._app = app
         self._log_widget = log_widget
         self._show_time = True
+        self._main_thread = threading.get_ident()
 
     def set_show_time(self, show: bool) -> None:
         self._show_time = show
@@ -51,9 +55,12 @@ class TuiLogHandler(logging.Handler):
     def emit(self, record: LogRecord) -> None:
         try:
             text = self._format_record(record)
-            # call_from_thread is safe from any thread (including the main
-            # event loop thread — it just schedules a callback).
-            self._app.call_from_thread(self._log_widget.write, text)
+            if threading.get_ident() == self._main_thread:
+                # Same thread as the app — write directly.
+                self._log_widget.write(text)
+            else:
+                # Cross-thread (aiohttp workers, etc.) — schedule on the loop.
+                self._app.call_from_thread(self._log_widget.write, text)
         except Exception:
             # Never let logging raise — it can crash the orchestrator.
             self.handleError(record)

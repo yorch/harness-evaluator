@@ -143,6 +143,15 @@ class EvalApp(App[object]):
         except asyncio.CancelledError:
             self._result = orchestrator.progress
             raise
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception("Eval worker failed")
+            self._result = orchestrator.progress
+        finally:
+            # Auto-exit the app when the eval completes (or fails).
+            # The caller (cli.py) reads app.result after app.run() returns.
+            self.exit()
 
     # --- Key bindings ---
 

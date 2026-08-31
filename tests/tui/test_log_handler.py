@@ -21,7 +21,7 @@ class TestTuiLogHandler:
         return handler, log_widget
 
     def test_emit_info_record(self):
-        """INFO records are formatted and posted to the widget."""
+        """INFO records are formatted and written to the widget."""
         handler, log_widget = self._make_handler()
         record = logging.LogRecord(
             name="test",
@@ -33,10 +33,10 @@ class TestTuiLogHandler:
             exc_info=None,
         )
         handler.emit(record)
-        # The app's call_from_thread should have been called with the widget's write method.
-        handler._app.call_from_thread.assert_called_once()
-        args = handler._app.call_from_thread.call_args.args
-        assert args[0] == handler._log_widget.write
+        # Same-thread calls write directly to the widget.
+        log_widget.write.assert_called_once()
+        text = log_widget.write.call_args.args[0]
+        assert "Cell abc started" in text.plain
 
     def test_emit_debug_record(self):
         """DEBUG records are formatted with dim style."""
@@ -125,8 +125,9 @@ class TestTuiLogHandler:
     def test_emit_does_not_raise_on_widget_error(self):
         """If the widget write fails, the handler should not raise."""
         app = MagicMock()
-        app.call_from_thread.side_effect = RuntimeError("widget gone")
-        handler = TuiLogHandler(app, MagicMock())
+        log_widget = MagicMock()
+        log_widget.write.side_effect = RuntimeError("widget gone")
+        handler = TuiLogHandler(app, log_widget)
         record = logging.LogRecord(
             name="test",
             level=logging.INFO,
@@ -150,7 +151,7 @@ class TestTuiLogHandler:
 
     def test_set_level_filters_records(self):
         """setLevel filters records below the threshold via a logger."""
-        handler, _ = self._make_handler()
+        handler, log_widget = self._make_handler()
         handler.setLevel(logging.WARNING)
 
         logger = logging.getLogger("test_tui_filter")
@@ -158,7 +159,7 @@ class TestTuiLogHandler:
         logger.setLevel(logging.DEBUG)
 
         logger.info("info message")
-        handler._app.call_from_thread.assert_not_called()
+        log_widget.write.assert_not_called()
 
         logger.warning("warn message")
-        handler._app.call_from_thread.assert_called_once()
+        log_widget.write.assert_called_once()
