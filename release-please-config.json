@@ -7,7 +7,8 @@
       "include-component-in-tag": false,
       "include-path-in-changelog": false,
       "extra-files": [
-        "site/src/pages/index.astro"
+        "site/src/pages/index.astro",
+        "uv.lock"
       ]
     }
   },
