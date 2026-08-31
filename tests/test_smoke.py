@@ -197,6 +197,142 @@ class TestResultsCommand:
         assert "No results found for run 'wrong-name'" in result.stdout
         assert "real-run" in result.stdout
 
+    def test_results_missing_db_prints_error(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator results` with missing DB prints a clear error."""
+        db = tmp_path / "nonexistent.db"
+        assert not db.exists()
+        result = runner.invoke(app, ["results", "--db", str(db)])
+        assert result.exit_code == 1
+        assert "Results DB not found" in result.stdout
+        assert not db.exists(), "DB file should not be created"
+
+
+class TestReportCommand:
+    def test_report_lists_runs_when_no_name_given(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator report` with no arg lists available runs."""
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        db = tmp_path / "results.db"
+        ResultsStore(str(db))
+        with sqlite3.connect(str(db)) as conn:
+            conn.executemany(
+                """INSERT INTO run_results
+                   (run_name, cell_id, harness, model, task_id, track,
+                    repeat, exit_class, success, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    ("my-experiment", "c1", "claude-code", "m", "t", "swe",
+                     0, "success", 1.0, "now"),
+                    ("my-experiment", "c2", "codex", "m", "t", "swe",
+                     0, "success", 1.0, "now"),
+                ],
+            )
+        result = runner.invoke(app, ["report", "--db", str(db)])
+        assert result.exit_code == 0
+        assert "my-experiment" in result.stdout
+        assert "Available runs" in result.stdout
+
+    def test_report_no_runs_prints_hint(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator report` with empty DB prints a helpful hint."""
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        db = tmp_path / "empty.db"
+        ResultsStore(str(db))
+        result = runner.invoke(app, ["report", "--db", str(db)])
+        assert result.exit_code == 1
+        assert "No runs found" in result.stdout
+
+    def test_report_missing_db_prints_error(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator report` with missing DB prints a clear error."""
+        db = tmp_path / "nonexistent.db"
+        result = runner.invoke(app, ["report", "--db", str(db)])
+        assert result.exit_code == 1
+        assert "Results DB not found" in result.stdout
+        assert not db.exists()
+
+    def test_report_wrong_name_lists_available(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator report <wrong>` lists available runs as a hint."""
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        db = tmp_path / "results.db"
+        ResultsStore(str(db))
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute(
+                """INSERT INTO run_results
+                   (run_name, cell_id, harness, model, task_id, track,
+                    repeat, exit_class, success, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ("real-run", "c1", "claude-code", "m", "t", "swe",
+                 0, "success", 1.0, "now"),
+            )
+        result = runner.invoke(app, ["report", "wrong-name", "--db", str(db)])
+        assert result.exit_code == 1
+        assert "real-run" in result.stdout
+
+
+class TestStatsCommand:
+    def test_stats_lists_runs_when_no_name_given(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator stats` with no arg lists available runs."""
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        db = tmp_path / "results.db"
+        ResultsStore(str(db))
+        with sqlite3.connect(str(db)) as conn:
+            conn.executemany(
+                """INSERT INTO run_results
+                   (run_name, cell_id, harness, model, task_id, track,
+                    repeat, exit_class, success, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    ("my-experiment", "c1", "claude-code", "m", "t", "swe",
+                     0, "success", 1.0, "now"),
+                    ("my-experiment", "c2", "codex", "m", "t", "swe",
+                     0, "success", 1.0, "now"),
+                ],
+            )
+        result = runner.invoke(app, ["stats", "--db", str(db)])
+        assert result.exit_code == 0
+        assert "my-experiment" in result.stdout
+        assert "Available runs" in result.stdout
+
+    def test_stats_no_runs_prints_hint(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator stats` with empty DB prints a helpful hint."""
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        db = tmp_path / "empty.db"
+        ResultsStore(str(db))
+        result = runner.invoke(app, ["stats", "--db", str(db)])
+        assert result.exit_code == 1
+        assert "No runs found" in result.stdout
+
+    def test_stats_missing_db_prints_error(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator stats` with missing DB prints a clear error."""
+        db = tmp_path / "nonexistent.db"
+        result = runner.invoke(app, ["stats", "--db", str(db)])
+        assert result.exit_code == 1
+        assert "Results DB not found" in result.stdout
+        assert not db.exists()
+
+    def test_stats_wrong_name_lists_available(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`harness-evaluator stats <wrong>` lists available runs as a hint."""
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        db = tmp_path / "results.db"
+        ResultsStore(str(db))
+        with sqlite3.connect(str(db)) as conn:
+            conn.execute(
+                """INSERT INTO run_results
+                   (run_name, cell_id, harness, model, task_id, track,
+                    repeat, exit_class, success, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ("real-run", "c1", "claude-code", "m", "t", "swe",
+                 0, "success", 1.0, "now"),
+            )
+        result = runner.invoke(app, ["stats", "wrong-name", "--db", str(db)])
+        assert result.exit_code == 1
+        assert "No results found for run 'wrong-name'" in result.stdout
+        assert "real-run" in result.stdout
+
 
 class TestInitCommand:
     def test_init_generates_runnable_config(self, tmp_path) -> None:  # type: ignore[no-untyped-def]

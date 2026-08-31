@@ -441,11 +441,18 @@ def run(
 
 @app.command()
 def report(
-    run_name: str = typer.Argument(..., help="Name of the run to report on"),
+    run_name: str = typer.Argument(
+        None, help="Name of the run to report on (omit to list available runs)"
+    ),
     db: str = typer.Option("harness_evaluator_results.db", help="Results DB path"),
     output: str = typer.Option("./reports", help="Output directory for reports"),
 ) -> None:
-    """Generate static reports (HTML, JSON, CSV) for a completed run."""
+    """Generate static reports (HTML, JSON, CSV) for a completed run.
+
+    If no run name is given, lists all runs in the database so you can
+    discover the name to use. The run name comes from the ``name:`` field
+    in the run config YAML, not the filename.
+    """
     from harness_evaluator.orchestrator.results_store import ResultsStore
     from harness_evaluator.reporting.static_report import ReportGenerator
 
@@ -454,6 +461,43 @@ def report(
         raise typer.Exit(1)
 
     store = ResultsStore(db)
+
+    # If no run name given, list available runs.
+    if run_name is None:
+        runs = store.list_runs()
+        if not runs:
+            console.print(
+                "[yellow]No runs found in the database.[/yellow]\n"
+                "Run `harness-evaluator run <config.yaml>` first, then use "
+                "the `name:` from that config to generate reports."
+            )
+            raise typer.Exit(1)
+
+        table = Table(title="Available runs")
+        table.add_column("Run Name", style="bold")
+        table.add_column("Cells", justify="right")
+        table.add_column("Completed", justify="right")
+        table.add_column("Failed", justify="right")
+        table.add_column("Avg Success", justify="right")
+        table.add_column("Total Cost", justify="right")
+
+        for r in runs:
+            table.add_row(
+                r["run_name"],
+                str(r["total_cells"]),
+                str(r["completed"] or 0),
+                str(r["failed"] or 0),
+                f"{r['avg_success'] or 0:.2f}",
+                f"${r['total_cost'] or 0:.4f}",
+            )
+
+        console.print(table)
+        console.print(
+            "\n[dim]Use `harness-evaluator report <run-name>` to generate "
+            "reports.[/dim]"
+        )
+        raise typer.Exit()
+
     gen = ReportGenerator(store)
     try:
         paths = gen.generate(run_name, output)
@@ -485,6 +529,10 @@ def results(
     in the run config YAML, not the filename.
     """
     from harness_evaluator.orchestrator.results_store import ResultsStore
+
+    if not Path(db).exists():
+        console.print(f"[red]Results DB not found: {db}[/red]")
+        raise typer.Exit(1)
 
     store = ResultsStore(db)
 
@@ -599,14 +647,62 @@ def adapters() -> None:
 
 @app.command()
 def stats(
-    run_name: str = typer.Argument(..., help="Run name to analyze"),
+    run_name: str = typer.Argument(
+        None, help="Name of the run to analyze (omit to list available runs)"
+    ),
     db: str = typer.Option("harness_evaluator_results.db", help="Results DB path"),
 ) -> None:
-    """Generate statistical analysis for a run."""
+    """Generate statistical analysis for a run.
+
+    If no run name is given, lists all runs in the database so you can
+    discover the name to use. The run name comes from the ``name:`` field
+    in the run config YAML, not the filename.
+    """
     from harness_evaluator.orchestrator.results_store import ResultsStore
     from harness_evaluator.stats import analyze_results
 
+    if not Path(db).exists():
+        console.print(f"[red]Results DB not found: {db}[/red]")
+        raise typer.Exit(1)
+
     store = ResultsStore(db)
+
+    # If no run name given, list available runs.
+    if run_name is None:
+        runs = store.list_runs()
+        if not runs:
+            console.print(
+                "[yellow]No runs found in the database.[/yellow]\n"
+                "Run `harness-evaluator run <config.yaml>` first, then use "
+                "the `name:` from that config to run statistical analysis."
+            )
+            raise typer.Exit(1)
+
+        table = Table(title="Available runs")
+        table.add_column("Run Name", style="bold")
+        table.add_column("Cells", justify="right")
+        table.add_column("Completed", justify="right")
+        table.add_column("Failed", justify="right")
+        table.add_column("Avg Success", justify="right")
+        table.add_column("Total Cost", justify="right")
+
+        for r in runs:
+            table.add_row(
+                r["run_name"],
+                str(r["total_cells"]),
+                str(r["completed"] or 0),
+                str(r["failed"] or 0),
+                f"{r['avg_success'] or 0:.2f}",
+                f"${r['total_cost'] or 0:.4f}",
+            )
+
+        console.print(table)
+        console.print(
+            "\n[dim]Use `harness-evaluator stats <run-name>` to run "
+            "statistical analysis.[/dim]"
+        )
+        raise typer.Exit()
+
     results = store.get_all_results(run_name)
     if not results:
         console.print(f"[red]No results found for run '{run_name}'[/red]")
