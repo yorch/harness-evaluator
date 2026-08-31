@@ -81,7 +81,7 @@ Set `auth_mode`, `credentials_path`, and `cost_mode: subscription` on the model:
 ```yaml
 # Claude Code on a Claude Pro/Max subscription
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     auth_mode: claude_oauth
@@ -276,7 +276,7 @@ frozen LLM judge, structured rubric, and structural checks.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-harness-evaluator calibrate --model claude-sonnet-4-20250514
+harness-evaluator calibrate --model claude-sonnet-5
 ```
 
 ### Evaluation flow

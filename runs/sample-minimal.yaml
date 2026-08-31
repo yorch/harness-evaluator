@@ -12,7 +12,7 @@ harnesses:
       mode: agent
 
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     config:

@@ -65,7 +65,7 @@ Each cell has a unique ID:
 - **Single-phase**: `{harness.name}__{model.name}__{task.id}__r{repeat}`
 - **Multi-phase with review**: `{harness.name}__{model.name}__{task.id}__r{repeat}__rev-{review_model.name}`
 
-Example: `opencode__claude-sonnet-4-20250514__swe-bugfix-001__r0`
+Example: `opencode__claude-sonnet-5__swe-bugfix-001__r0`
 
 This ID is used as the `trace_id` for gateway proxy attribution, the Docker container name (sanitized), and the primary key in the results store. For multi-phase tasks, per-phase trace IDs are `{cell_id}__phase-{phase.name}`.
 

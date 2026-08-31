@@ -218,10 +218,10 @@ Closed harnesses that bypass the proxy:
 
 ```python
 # Command structure
-opencode run "<task_prompt>" --model anthropic/claude-sonnet-4-20250514
+opencode run "<task_prompt>" --model anthropic/claude-sonnet-5
 ```
 
-- **Model format**: `provider/model` (e.g., `anthropic/claude-sonnet-4-20250514`)
+- **Model format**: `provider/model` (e.g., `anthropic/claude-sonnet-5`)
 - **Config option**: `model_flag` — override the auto-generated model flag
 - **Gateway**: uses `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` env vars
 - **Non-interactive**: `opencode run` subcommand
@@ -230,7 +230,7 @@ opencode run "<task_prompt>" --model anthropic/claude-sonnet-4-20250514
 
 ```python
 # Command structure
-claude -p "<task_prompt>" --model claude-sonnet-4-20250514 \
+claude -p "<task_prompt>" --model claude-sonnet-5 \
     --output-format text --max-turns 50
 ```
 
@@ -247,7 +247,7 @@ claude -p "<task_prompt>" --model claude-sonnet-4-20250514 \
 
 ```python
 # Command structure
-codex exec --model gpt-4o --sandbox workspace-write \
+codex exec --model gpt-5.6-terra --sandbox workspace-write \
     -c openai_base_url=http://host.docker.internal:8877/v1?trace_id=... \
     "<task_prompt>"
 ```
@@ -304,7 +304,7 @@ gemini -p "<task_prompt>" --model gemini-2.5-pro --output-format json
 
 ```python
 # Command structure
-aider --message "<task_prompt>" --model claude-sonnet-4-20250514 \
+aider --message "<task_prompt>" --model claude-sonnet-5 \
     --yes --no-auto-commits
 ```
 
@@ -321,7 +321,7 @@ aider --message "<task_prompt>" --model claude-sonnet-4-20250514 \
 
 ```python
 # Command structure
-copilot -p "<task_prompt>" --model claude-sonnet-4-20250514 -s --no-ask-user
+copilot -p "<task_prompt>" --model claude-sonnet-5 -s --no-ask-user
 ```
 
 - **Non-interactive**: `-p` (print) flag
@@ -351,7 +351,7 @@ agy -p "<task_prompt>" --model gemini-3-pro --output-format json
 
 ```python
 # Command structure
-cursor agent -p "<task_prompt>" --model claude-sonnet-4-20250514
+cursor agent -p "<task_prompt>" --model claude-sonnet-5
 ```
 
 - **Non-interactive**: `agent` subcommand with `-p` (print) flag

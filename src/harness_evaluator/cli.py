@@ -133,7 +133,7 @@ harnesses:
       mode: agent
 
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     config:
@@ -951,7 +951,7 @@ def dashboard(
 
 @app.command()
 def calibrate(
-    model: str = typer.Option("claude-sonnet-4-20250514", help="Judge model"),
+    model: str = typer.Option("claude-sonnet-5", help="Judge model"),
     calibration_file: str = typer.Option(
         "",
         help="Path to calibration.json (default: config/calibration.json in the project root)",

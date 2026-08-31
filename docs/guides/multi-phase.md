@@ -92,12 +92,12 @@ Assign `role: implementation` and `role: review` to your models in the run confi
 
 ```yaml
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     role: implementation
 
-  - name: claude-opus-4-20250514
+  - name: claude-opus-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     role: review

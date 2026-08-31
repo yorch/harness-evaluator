@@ -356,9 +356,9 @@ class ModelSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    """Model identifier (e.g. 'claude-sonnet-4-20250514')."""
+    """Model identifier (e.g. 'claude-sonnet-5')."""
     provider: str
-    """Provider ('anthropic' or 'openai')."""
+    """Provider ('anthropic', 'openai', or 'google')."""
     api_key_env: str
     """Environment variable name for the API key."""
     auth_mode: AuthMode = AuthMode.API_KEY

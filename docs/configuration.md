@@ -23,8 +23,8 @@ harnesses:                         # Required. List of harness specs.
     config:                        #   Harness-specific config (optional)
       mode: agent
 models:                            # Required. List of model specs.
-  - name: claude-sonnet-4-20250514 #   Model identifier
-    provider: anthropic            #   anthropic | openai
+  - name: claude-sonnet-5          #   Model identifier
+    provider: anthropic            #   anthropic | openai | google
     api_key_env: ANTHROPIC_API_KEY #   Env var name for API key
     role: implementation           #   implementation | review (default: implementation)
     config:                        #   Model-specific config (optional)
@@ -96,7 +96,7 @@ List of model specifications. Each model is paired with each harness.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Model identifier (validated against `[A-Za-z0-9._-]+`) |
-| `provider` | string | Yes | `anthropic` or `openai` |
+| `provider` | string | Yes | `anthropic`, `openai`, or `google` |
 | `api_key_env` | string | Yes | Environment variable name for the API key |
 | `role` | string | No | `implementation` (default) or `review`. Only affects `multi_phase` tasks — see [Multi-phase evaluation guide](../guides/multi-phase/). |
 | `config` | dict | No | Model-specific config (temperature, max_tokens, etc.) |
@@ -135,7 +135,7 @@ harnesses:
     config:
       mode: agent
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     config:
@@ -176,12 +176,12 @@ harnesses:
     observability_tier: minimal
     config: {}
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     config:
       max_tokens: 16384
-  - name: gpt-4o
+  - name: gpt-5.6-terra
     provider: openai
     api_key_env: OPENAI_API_KEY
     config:
@@ -203,11 +203,11 @@ harnesses:
   - name: claude-code
     adapter: claude_code
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     role: implementation
-  - name: claude-opus-4-20250514
+  - name: claude-opus-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     role: review
@@ -477,18 +477,21 @@ Cost is calculated from per-token pricing tables in `src/harness_evaluator/gatew
 | Model | Input | Output | Cache read | Cache write |
 |-------|-------|--------|------------|-------------|
 | `claude-fable-5` | $10.00 | $50.00 | $1.00 | $12.50 |
+| `claude-mythos-5` | $10.00 | $50.00 | $1.00 | $12.50 |
 | `claude-opus-5` | $5.00 | $25.00 | $0.50 | $6.25 |
 | `claude-sonnet-5` | $2.00 | $10.00 | $0.20 | $2.50 |
-| `claude-haiku-4-5-20251001` | $1.00 | $5.00 | $0.10 | $1.25 |
+| `claude-haiku-4-5-20251001` / `claude-haiku-4-5` | $1.00 | $5.00 | $0.10 | $1.25 |
 
 **Anthropic previous generation (still available):**
 
 | Model | Input | Output | Cache read | Cache write |
 |-------|-------|--------|------------|-------------|
-| `claude-opus-4-5-20251101` | $5.00 | $25.00 | $0.50 | $6.25 |
+| `claude-opus-4-5-20251101` / `claude-opus-4-5` | $5.00 | $25.00 | $0.50 | $6.25 |
 | `claude-opus-4-8` | $5.00 | $25.00 | $0.50 | $6.25 |
+| `claude-opus-4-7` | $5.00 | $25.00 | $0.50 | $6.25 |
+| `claude-opus-4-6` | $5.00 | $25.00 | $0.50 | $6.25 |
 | `claude-sonnet-4-6` | $3.00 | $15.00 | $0.30 | $3.75 |
-| `claude-sonnet-4-5` | $3.00 | $15.00 | $0.30 | $3.75 |
+| `claude-sonnet-4-5` / `claude-sonnet-4-5-20250929` | $3.00 | $15.00 | $0.30 | $3.75 |
 | `claude-sonnet-4-20250514` | $3.00 | $15.00 | $0.30 | $3.75 |
 | `claude-opus-4-20250514` | $15.00 | $75.00 | $1.50 | $18.75 |
 | `claude-haiku-3-5-20241022` | $0.80 | $4.00 | $0.08 | $1.00 |
@@ -505,9 +508,14 @@ Cost is calculated from per-token pricing tables in `src/harness_evaluator/gatew
 
 | Model | Input | Output | Cache read |
 |-------|-------|--------|------------|
-| `gpt-5` | $1.25 | $10.00 | — |
-| `gpt-5-mini` | $0.25 | $2.00 | — |
-| `gpt-5-nano` | $0.05 | $0.30 | — |
+| `gpt-5.5` | $5.00 | $30.00 | $0.50 |
+| `gpt-5.4` | $2.50 | $15.00 | $0.25 |
+| `gpt-5.4-mini` | $0.75 | $4.50 | $0.075 |
+| `gpt-5.4-nano` | $0.20 | $1.25 | $0.02 |
+| `gpt-5.3-codex` | $1.75 | $14.00 | $0.175 |
+| `gpt-5` | $1.25 | $10.00 | $0.125 |
+| `gpt-5-mini` | $0.25 | $2.00 | $0.025 |
+| `gpt-5-nano` | $0.05 | $0.30 | $0.005 |
 | `o3` | $2.00 | $8.00 | $0.50 |
 | `o4-mini` | $1.10 | $4.00 | $0.55 |
 
@@ -517,6 +525,22 @@ Cost is calculated from per-token pricing tables in `src/harness_evaluator/gatew
 |-------|-------|--------|------------|
 | `gpt-4o` | $2.50 | $10.00 | $1.25 |
 | `gpt-4o-mini` | $0.15 | $0.60 | $0.075 |
+
+**Google Gemini (direct API; gateway does not yet route Google traffic):**
+
+| Model | Input | Output | Cache read |
+|-------|-------|--------|------------|
+| `gemini-3-pro` | $2.00 | $12.00 | $0.20 |
+| `gemini-3.1-pro-preview` | $2.00 | $12.00 | $0.20 |
+| `gemini-3-flash-preview` | $0.50 | $3.00 | $0.05 |
+| `gemini-3.1-flash-lite` | $0.25 | $1.50 | $0.025 |
+| `gemini-2.5-pro` | $1.25 | $10.00 | $0.125 |
+| `gemini-2.5-flash` | $0.30 | $2.50 | $0.03 |
+| `gemini-2.5-flash-lite` | $0.10 | $0.40 | $0.01 |
+
+> Gemini output pricing includes thinking tokens. Gemini uses hourly
+> context-caching storage pricing rather than a per-token cache-write cost,
+> so no `cache_write` column is listed.
 
 ### Unknown models
 
@@ -648,7 +672,7 @@ your account. Treat them with the same care as API keys:
 
 ```yaml
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
 ```
@@ -657,7 +681,7 @@ models:
 
 ```yaml
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     auth_mode: claude_oauth
@@ -674,7 +698,7 @@ container.
 
 ```yaml
 models:
-  - name: gpt-4o
+  - name: gpt-5.6-terra
     provider: openai
     api_key_env: OPENAI_API_KEY
     auth_mode: codex_chatgpt

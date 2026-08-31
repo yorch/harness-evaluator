@@ -330,7 +330,7 @@ class FrozenJudge:
         self,
         version: JudgeVersion = JudgeVersion.V1_0,
         api_key: str | None = None,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = "claude-sonnet-5",
         gateway_url: str | None = None,
         provider: str = "anthropic",
     ) -> None:

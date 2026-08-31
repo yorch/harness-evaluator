@@ -41,7 +41,7 @@ The HTML is generated with Jinja2 autoescaping enabled to prevent stored XSS fro
   "timestamp": "2024-01-15T12:34:56.789+00:00",
   "total_cells": 300,
   "leaderboards": {
-    "claude-sonnet-4-20250514": [
+    "claude-sonnet-5": [
       {
         "harness": "opencode",
         "success_pct": "85.0",
@@ -55,9 +55,9 @@ The HTML is generated with Jinja2 autoescaping enabled to prevent stored XSS fro
   },
   "results": [
     {
-      "cell_id": "opencode__claude-sonnet-4-...__r0",
+      "cell_id": "opencode__claude-sonnet-5__swe-bugfix-001__r0",
       "harness": "opencode",
-      "model": "claude-sonnet-4-20250514",
+      "model": "claude-sonnet-5",
       "task_id": "swe-bugfix-001",
       "exit_class": "pass",
       "success": 1.0,
@@ -273,8 +273,8 @@ Get leaderboard data for a run.
 {
   "run_name": "broad-first-pass",
   "leaderboards": {
-    "claude-sonnet-4-20250514": [...],
-    "gpt-4o": [...]
+    "claude-sonnet-5": [...],
+    "gpt-5.6-terra": [...]
   }
 }
 ```
@@ -306,12 +306,12 @@ entries, deduplicated by cell ID.
   "run_name": "broad-first-pass",
   "failed_cells": [
     {
-      "cell_id": "claude-code__claude-sonnet-4__swe-001__r0",
+      "cell_id": "claude-code__claude-sonnet-5__swe-001__r0",
       "status": "failed",
       "error": "crash: Segmentation fault"
     },
     {
-      "cell_id": "opencode__gpt-4o__swe-003__r2",
+      "cell_id": "opencode__gpt-5.6-terra__swe-003__r2",
       "status": "skipped",
       "error": "Budget cap reached ($0.0123 remaining < $0.0500 estimated)"
     }
