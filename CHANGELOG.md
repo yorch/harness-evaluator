@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.0](https://github.com/yorch/harness-evaluator/compare/v0.11.1...v0.12.0) (2026-08-31)
+
+
+### Features
+
+* **gateway:** update pricing table and examples to current-gen models ([#43](https://github.com/yorch/harness-evaluator/issues/43)) ([a2dcb7e](https://github.com/yorch/harness-evaluator/commit/a2dcb7e9855d22fbe894a561258abefc4e5d3972))
+
+
+### Bug Fixes
+
+* **adapter:** default claude-code to --dangerously-skip-permissions ([#44](https://github.com/yorch/harness-evaluator/issues/44)) ([64d1ff6](https://github.com/yorch/harness-evaluator/commit/64d1ff619f2cef03b12352650eacf572c28f23f0))
+* **gateway:** add brotli dependency and strip Content-Encoding from responses ([#42](https://github.com/yorch/harness-evaluator/issues/42)) ([2eebe54](https://github.com/yorch/harness-evaluator/commit/2eebe54a53c9a891818fb65da014ed56bf12606c))
+* **runner:** mount .claude.json and warn on gateway not Docker-accessible ([#40](https://github.com/yorch/harness-evaluator/issues/40)) ([d54ef65](https://github.com/yorch/harness-evaluator/commit/d54ef65a778a9f25a377c4186a010cb67d4b8ab6))
+
 ## [0.11.1](https://github.com/yorch/harness-evaluator/compare/v0.11.0...v0.11.1) (2026-08-31)
 
 
