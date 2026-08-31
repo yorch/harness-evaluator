@@ -133,6 +133,7 @@ class EvalApp(App[object]):
             footer_state.running = snapshot.running
             footer_state.total_cost = snapshot.total_cost
             footer_state.current_cell = snapshot.current_cell
+            footer_state.running_cells = snapshot.running_cells
             footer.state = footer_state
 
         orchestrator = Orchestrator(

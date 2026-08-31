@@ -46,6 +46,9 @@ class OrchestratorProgress:
     For sequential runs this is the single in-flight cell; for parallel runs
     it is the last cell to transition to ``running`` (a best-effort hint for
     live progress display, not an exhaustive list of running cells).
+
+    ``running_cells`` is the full list of currently in-flight cell IDs,
+    suitable for showing all active cells in the TUI footer.
     """
 
     total_cells: int = 0
@@ -56,6 +59,7 @@ class OrchestratorProgress:
     total_cost: float = 0.0
     errors: list[str] = field(default_factory=list)
     current_cell: str | None = None
+    running_cells: list[str] = field(default_factory=list)
     skip_reasons: dict[str, str] = field(default_factory=dict)
 
     @property
@@ -83,6 +87,7 @@ class OrchestratorProgress:
             total_cost=self.total_cost,
             errors=list(self.errors),
             current_cell=self.current_cell,
+            running_cells=list(self.running_cells),
             skip_reasons=dict(self.skip_reasons),
         )
 
@@ -264,6 +269,7 @@ class Orchestrator:
         async with self._progress_lock:
             self.progress.running += 1
             self.progress.current_cell = cell.cell_id
+            self.progress.running_cells.append(cell.cell_id)
         await self._notify_progress()
 
         try:
@@ -389,6 +395,8 @@ class Orchestrator:
                 self._release_reservation(cell.cell_id)
             async with self._progress_lock:
                 self.progress.running -= 1
+                if cell.cell_id in self.progress.running_cells:
+                    self.progress.running_cells.remove(cell.cell_id)
             await self._notify_progress()
 
     def _save_failure(
