@@ -1,0 +1,29 @@
+name: multi-phase-demo
+description: |
+  Multi-phase evaluation demo: implementation with Sonnet, adversarial review
+  with Opus. Tests whether Opus review improves Sonnet's bugfix quality.
+
+harnesses:
+  - name: claude-code
+    adapter: claude_code
+    config:
+      max_turns: 10
+
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    role: implementation
+
+  - name: claude-opus-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    role: review
+
+tasks:
+  - multi-phase-bugfix-001
+
+repeats: 1
+budget_usd: 10.0
+gateway_port: 8877
+parallel_runs: 1

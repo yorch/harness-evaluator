@@ -1,0 +1,101 @@
+tasks:
+- id: multi-phase-bugfix-001
+  name: Implement bugfix with adversarial review
+  track: multi_phase
+  difficulty: easy
+  description: |
+    A multi-phase task: the implementation model fixes an off-by-one bug in
+    a pagination function, then an adversarial reviewer model reviews the diff
+    for correctness and edge cases, and finally the implementation model
+    revises its fix based on the reviewer's feedback.
+  repo_url: tasks/repos/swe-bugfix-001
+  setup_script: pip install -r requirements.txt
+  task_prompt: |-
+    Fix the off-by-one bug in the `get_page` function in src/solution.py.
+    The function should return the correct slice of items for a given page.
+    Currently the end index is calculated as `page_number * page_size - 1` which drops the last item of each full page.
+    The correct end index should be `page_number * page_size`.
+
+    Run tests with: python -m pytest tests/
+  test_command: python -m pytest tests/
+  test_patch: |
+    diff --git a/tests/test_hidden.py b/tests/test_hidden.py
+    new file mode 100644
+    index 0000000..307a8ad
+    --- /dev/null
+    +++ b/tests/test_hidden.py
+    @@ -0,0 +1,34 @@
+    +"""Hidden tests for pagination — verify the off-by-one fix."""
+    +
+    +from src.solution import get_page
+    +
+    +
+    +def test_full_first_page():
+    +    items = list(range(1, 21))
+    +    assert get_page(items, 1, 10) == list(range(1, 11))
+    +
+    +
+    +def test_full_second_page():
+    +    items = list(range(1, 21))
+    +    assert get_page(items, 2, 10) == list(range(11, 21))
+    +
+    +
+    +def test_custom_page_size_first():
+    +    items = list(range(1, 7))
+    +    assert get_page(items, 1, 3) == [1, 2, 3]
+    +
+    +
+    +def test_custom_page_size_second():
+    +    items = list(range(1, 7))
+    +    assert get_page(items, 2, 3) == [4, 5, 6]
+    +
+    +
+    +def test_last_page_partial():
+    +    items = list(range(1, 26))
+    +    assert get_page(items, 3, 10) == list(range(21, 26))
+    +
+    +
+    +def test_page_size_one():
+    +    items = [10, 20, 30]
+    +    assert get_page(items, 2, 1) == [20]
+    +    assert get_page(items, 3, 1) == [30]
+  expected_files:
+  - src/solution.py
+  timeout_seconds: 600
+  metadata:
+    bug_type: off-by-one
+    language: python
+    test_count: 10
+    phases: 3
+  phases:
+  - name: implement
+    model_role: implementation
+    task_prompt: |-
+      Fix the off-by-one bug in the `get_page` function in src/solution.py.
+      The function should return the correct slice of items for a given page.
+      Currently the end index is calculated as `page_number * page_size - 1` which drops the last item of each full page.
+      The correct end index should be `page_number * page_size`.
+
+      Run tests with: python -m pytest tests/
+    input: none
+    timeout_seconds: 300
+  - name: review
+    model_role: review
+    task_prompt: |-
+      You are an adversarial code reviewer. Review the implementation changes
+      for correctness, security, edge cases, and code quality. Be thorough and
+      critical. Identify any issues, missing edge cases, or potential problems.
+      If the fix is correct, say so explicitly. If there are issues, describe
+      each one clearly with suggested fixes.
+    input: diff
+    timeout_seconds: 300
+  - name: revise
+    model_role: implementation
+    task_prompt: |-
+      Review the feedback from the adversarial reviewer and revise your
+      implementation if needed. If the reviewer found no issues, make no
+      changes. If issues were found, fix them.
+
+      Run tests with: python -m pytest tests/
+    input: review_feedback
+    timeout_seconds: 300

@@ -207,6 +207,7 @@ def run(
         gateway_host=cfg.gateway_host,
         gateway_port=cfg.gateway_port,
         gateway_db=cfg.gateway_db,
+        results_db=cfg.results_db,
     )
     orchestrator = Orchestrator(cfg, store, run_cell_fn=runner.run_cell)
     progress = asyncio.run(orchestrator.run())

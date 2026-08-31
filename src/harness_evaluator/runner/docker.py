@@ -26,7 +26,14 @@ from pathlib import Path
 from typing import Any
 
 from harness_evaluator.adapters.base import AdapterResult
-from harness_evaluator.orchestrator.config import AuthMode, RunCell
+from harness_evaluator.orchestrator.config import (
+    AuthMode,
+    ModelRole,
+    PhaseInput,
+    PhaseSpec,
+    RunCell,
+    TaskTrack,
+)
 from harness_evaluator.orchestrator.engine import RetryableError
 
 logger = logging.getLogger(__name__)
@@ -139,6 +146,7 @@ class DockerRunner:
         gateway_port: int = 8877,
         network: str = "harness-evaluator-net",
         gateway_db: str = "harness_evaluator_gateway.db",
+        results_db: str = "harness_evaluator_results.db",
         docker_bin: str = "docker",
         memory_limit: str | None = None,
         cpu_limit: str | None = None,
@@ -150,6 +158,7 @@ class DockerRunner:
         self.gateway_port = gateway_port
         self.network = network
         self.gateway_db = gateway_db
+        self.results_db = results_db
         self.docker_bin = docker_bin
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
@@ -212,10 +221,16 @@ class DockerRunner:
                 (cell_workdir / "tests").mkdir(exist_ok=True)
 
             # Run the harness inside a Docker container
-            harness_result = await self._run_harness(cell, cell_workdir)
+            if cell.task.track == TaskTrack.MULTI_PHASE:
+                harness_result, phase_results = await self._run_harness_multiphase(
+                    cell, cell_workdir
+                )
+            else:
+                harness_result = await self._run_harness(cell, cell_workdir)
+                phase_results = None
 
             # Evaluate the result on the host
-            if cell.task.track.value == "swe":
+            if cell.task.track in (TaskTrack.SWE, TaskTrack.MULTI_PHASE):
                 evaluator = SWEEvaluator()
                 repo_dir = (
                     cell_workdir / "repo"
@@ -273,26 +288,60 @@ class DockerRunner:
             num_api_calls = 0
             if gateway_db_path.exists():
                 store = CallStore(str(gateway_db_path))
-                # Use trace_id to get only this cell's calls.
-                calls = store.get_by_trace(cell.cell_id)
-                if not calls:
+
+                # For multi-phase tasks, aggregate across all phase trace IDs.
+                # For single-phase, use the cell's trace_id directly.
+                trace_ids: list[str] = [cell.cell_id]
+                if phase_results:
+                    trace_ids = [p["trace_id"] for p in phase_results]
+
+                for tid in trace_ids:
+                    calls = store.get_by_trace(tid)
+                    for call in calls:
+                        usage.input_tokens += call.usage.input_tokens
+                        usage.output_tokens += call.usage.output_tokens
+                        usage.cache_read_tokens += call.usage.cache_read_tokens
+                        usage.cache_write_tokens += call.usage.cache_write_tokens
+                        usage.reasoning_tokens += call.usage.reasoning_tokens
+                        total_cost += call.cost.total
+                        num_api_calls += 1
+
+                # Enrich phase_results with per-phase cost data.
+                if phase_results:
+                    for phase in phase_results:
+                        phase_calls = store.get_by_trace(phase["trace_id"])
+                        phase_usage = TokenUsage()
+                        phase_cost = 0.0
+                        phase_api_calls = 0
+                        for call in phase_calls:
+                            phase_usage.input_tokens += call.usage.input_tokens
+                            phase_usage.output_tokens += call.usage.output_tokens
+                            phase_cost += call.cost.total
+                            phase_api_calls += 1
+                        phase["usage"] = phase_usage
+                        phase["total_cost"] = phase_cost
+                        phase["num_api_calls"] = phase_api_calls
+
+                if num_api_calls == 0:
                     logger.warning(
-                        "No API calls found with trace_id=%s for cell %s; "
+                        "No API calls found for cell %s; "
                         "cost attribution will be zero. This may indicate "
                         "trace ID propagation is not working.",
                         cell.cell_id,
-                        cell.cell_id,
                     )
-                for call in calls:
-                    usage.input_tokens += call.usage.input_tokens
-                    usage.output_tokens += call.usage.output_tokens
-                    usage.cache_read_tokens += call.usage.cache_read_tokens
-                    usage.cache_write_tokens += call.usage.cache_write_tokens
-                    usage.reasoning_tokens += call.usage.reasoning_tokens
-                    total_cost += call.cost.total
-                    num_api_calls += 1
 
             latency_ms = (time.monotonic() - start_time) * 1000
+
+            # Save per-phase results to the results store for multi-phase cells.
+            if phase_results:
+                from harness_evaluator.orchestrator.results_store import ResultsStore
+
+                results_store = ResultsStore(self.results_db)
+                results_store.save_phase_results(
+                    cell_id=cell.cell_id,
+                    run_name=cell.run_name,
+                    phases=phase_results,
+                )
 
             return {
                 "exit_class": eval_result.exit_class,
@@ -312,6 +361,10 @@ class DockerRunner:
                     "model": cell.model.name,
                     "observability_tier": cell.harness.observability_tier,
                     "docker_image": cell.harness.resolve_image(self.image),
+                    "phases": phase_results,
+                    "review_model": (
+                        cell.review_model.name if cell.review_model else None
+                    ),
                 },
             }
 
@@ -590,6 +643,7 @@ class DockerRunner:
         command: list[str],
         timeout: int,
         cwd: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> AdapterResult:
         """Run a command inside the container via ``docker exec``.
 
@@ -601,6 +655,9 @@ class DockerRunner:
             timeout: Maximum execution time in seconds.
             cwd: Working directory inside the container. When provided,
                 uses ``-w <cwd>`` instead of the default ``/workspace``.
+            env: Additional env vars to set via ``--env`` flags. Useful
+                for multi-phase runs where the model changes between
+                phases and the adapter env must be updated.
         """
         workdir_flag = cwd if cwd is not None else CONTAINER_WORKSPACE
         exec_args = [
@@ -608,9 +665,12 @@ class DockerRunner:
             "exec",
             "-w",
             workdir_flag,
-            container_id,
-            *command,
         ]
+        if env:
+            for key, val in env.items():
+                exec_args.extend(["--env", f"{key}={val}"])
+        exec_args.append(container_id)
+        exec_args.extend(command)
         start = time.monotonic()
         try:
             result = await _run_subprocess(exec_args, timeout=timeout)
@@ -803,6 +863,282 @@ class DockerRunner:
             workdir=str(repo_dir),
             duration_ms=(time.monotonic() - start) * 1000,
         )
+
+    async def _run_harness_multiphase(
+        self, cell: RunCell, workdir: Path
+    ) -> tuple[RunResult, list[dict[str, Any]]]:
+        """Run a multi-phase task: sequential harness invocations in one container.
+
+        Each phase runs inside the same Docker container so repo state
+        persists between phases. Implementation phases use ``cell.model``,
+        review phases use ``cell.review_model`` (if set). Phase inputs
+        (diffs, feedback) are passed forward by injecting them into the
+        next phase's prompt.
+
+        Returns the final phase's RunResult plus a list of per-phase
+        metadata dicts (trace_id, model, duration, exit_code).
+        """
+        from harness_evaluator.adapters.registry import create_adapter
+
+        start = time.monotonic()
+        repo_dir = workdir / "repo" if (workdir / "repo").exists() else workdir
+        gateway_url = f"http://{self.gateway_host}:{self.gateway_port}"
+        image = cell.harness.resolve_image(self.image)
+        container_name = _sanitize_container_name(cell.cell_id)
+        container_id: str | None = None
+        phase_results: list[dict[str, Any]] = []
+        last_result: AdapterResult | None = None
+
+        # Track outputs from prior phases for input injection.
+        prior_diff: str | None = None
+        prior_output: str | None = None
+        review_feedback: str | None = None
+        # Union of git exclude paths across all phases (for final commit).
+        all_git_excludes: list[str] = []
+        # Union of credential mounts across all phases (for container start).
+        all_credential_mounts: list[tuple[str, str]] = []
+
+        # Precompute credential mounts for all phase models so the container
+        # has all needed credential directories from the start.
+        for phase in cell.task.phases:
+            if phase.model_role == ModelRole.REVIEW and cell.review_model:
+                phase_model = cell.review_model
+            else:
+                phase_model = cell.model
+            phase_creds, _, phase_git_excl = (
+                self._resolve_credential_mounts(
+                    phase_model.auth_mode, phase_model.credentials_path
+                )
+            )
+            for mount in phase_creds:
+                if mount not in all_credential_mounts:
+                    all_credential_mounts.append(mount)
+            all_git_excludes.extend(phase_git_excl)
+
+        try:
+            for _idx, phase in enumerate(cell.task.phases):
+                # Select the model for this phase based on its role.
+                if phase.model_role == ModelRole.REVIEW and cell.review_model:
+                    phase_model = cell.review_model
+                else:
+                    phase_model = cell.model
+
+                # Per-phase trace ID so gateway costs are attributable per phase.
+                phase_trace_id = f"{cell.cell_id}__phase-{phase.name}"
+
+                # Delete prior gateway calls for this phase trace (resumability).
+                gateway_db_path = Path(self.gateway_db)
+                if gateway_db_path.exists():
+                    from harness_evaluator.gateway.store import CallStore
+
+                    store = CallStore(str(gateway_db_path))
+                    store.delete_by_trace(phase_trace_id)
+
+                adapter = create_adapter(
+                    name=cell.harness.adapter,
+                    workdir=str(workdir),
+                    model=phase_model,
+                    gateway_url=gateway_url,
+                    trace_id=phase_trace_id,
+                    config=cell.harness.config,
+                )
+
+                if adapter is None:
+                    last_result = AdapterResult(
+                        exit_code=-1,
+                        stdout="",
+                        stderr=f"No adapter for: {cell.harness.adapter}",
+                        timed_out=False,
+                        duration_ms=0.0,
+                    )
+                    phase_results.append(
+                        {
+                            "name": phase.name,
+                            "trace_id": phase_trace_id,
+                            "model": phase_model.name,
+                            "exit_code": -1,
+                            "duration_ms": 0.0,
+                            "error": "no adapter",
+                        }
+                    )
+                    break
+
+                env = adapter.get_env()
+                _, cred_env, git_excludes = (
+                    self._resolve_credential_mounts(
+                        phase_model.auth_mode, phase_model.credentials_path
+                    )
+                )
+                env.update(cred_env)
+
+                # Build the phase prompt, injecting prior phase output if needed.
+                phase_prompt = self._build_phase_prompt(
+                    phase, prior_diff, prior_output, review_feedback
+                )
+
+                harness_cmd = adapter.get_command(phase_prompt)
+                exec_cwd = (
+                    CONTAINER_REPO if cell.task.repo_url else CONTAINER_WORKSPACE
+                )
+
+                # Start container on first phase; reuse for subsequent phases.
+                if container_id is None:
+                    # Use the max phase timeout so the container lives long
+                    # enough for all phases, not just the first one.
+                    container_timeout = max(
+                        p.timeout_seconds for p in cell.task.phases
+                    )
+                    # Start with a minimal base env (no API keys) — per-phase
+                    # secrets are passed via docker exec --env on each phase
+                    # to avoid leaking phase 1's keys into phase 2.
+                    base_env = {
+                        k: v for k, v in env.items()
+                        if k in ("PATH", "HOME", "USER", "SHELL", "LANG",
+                                 "LC_ALL", "TERM", "TMPDIR")
+                    }
+                    container_id = await self._start_container(
+                        workdir,
+                        base_env,
+                        container_timeout,
+                        container_name,
+                        image,
+                        all_credential_mounts,
+                    )
+                    # Run setup script if present (only on first phase).
+                    if cell.task.setup_script:
+                        setup_path = workdir / "setup.sh"
+                        setup_path.write_text(cell.task.setup_script)
+                        setup_result = await self._exec_in_container(
+                            container_id,
+                            ["bash", "/workspace/setup.sh"],
+                            timeout=phase.timeout_seconds,
+                            cwd=exec_cwd,
+                        )
+                        if setup_result.exit_code != 0:
+                            raise RuntimeError(
+                                f"Setup script failed for {cell.cell_id}: "
+                                f"{setup_result.stderr.strip()}"
+                            )
+
+                # Run the harness command for this phase.
+                # Always pass the full per-phase env via --env flags so
+                # each phase gets its own API key and base URL.
+                result = await self._exec_in_container(
+                    container_id, harness_cmd, timeout=phase.timeout_seconds,
+                    cwd=exec_cwd, env=env,
+                )
+                last_result = result
+
+                phase_results.append(
+                    {
+                        "name": phase.name,
+                        "trace_id": phase_trace_id,
+                        "model": phase_model.name,
+                        "model_role": phase.model_role.value,
+                        "exit_code": result.exit_code,
+                        "duration_ms": result.duration_ms,
+                        "timed_out": result.timed_out,
+                    }
+                )
+
+                if result.timed_out:
+                    raise RetryableError(
+                        f"Phase '{phase.name}' timed out after "
+                        f"{phase.timeout_seconds}s"
+                    )
+
+                # Capture phase outputs for the next phase's input.
+                if phase.model_role == ModelRole.REVIEW:
+                    review_feedback = result.stdout + result.stderr
+                else:
+                    # Implementation phase: capture the diff BEFORE committing
+                    # so the review phase sees the actual changes. Using
+                    # get_workdir_diff handles committed, staged, and
+                    # untracked file states.
+                    from harness_evaluator.evaluator.utils import get_workdir_diff
+
+                    prior_diff = await asyncio.to_thread(
+                        get_workdir_diff, repo_dir
+                    )
+                    prior_output = result.stdout + result.stderr
+                    # Commit after capturing the diff.
+                    await self._commit_changes(repo_dir, git_excludes)
+
+                await adapter.cleanup()
+
+                # If a phase fails (non-zero exit), stop the pipeline.
+                # Don't commit partial/failed changes.
+                if result.exit_code != 0:
+                    logger.warning(
+                        "Phase '%s' failed (exit %d) for cell %s; "
+                        "stopping multi-phase pipeline",
+                        phase.name,
+                        result.exit_code,
+                        cell.cell_id,
+                    )
+                    break
+
+        finally:
+            if container_id is not None:
+                await self._stop_container(container_id)
+
+        # Final commit to capture all changes for evaluation.
+        # Use the union of all phases' git excludes to avoid committing
+        # OAuth credential files.
+        await self._commit_changes(repo_dir, all_git_excludes or None)
+
+        if last_result is None:
+            last_result = AdapterResult(
+                exit_code=-1,
+                stdout="",
+                stderr="No phases executed",
+                timed_out=False,
+                duration_ms=0.0,
+            )
+
+        run_result = RunResult(
+            exit_code=last_result.exit_code,
+            stdout=last_result.stdout,
+            stderr=last_result.stderr,
+            timed_out=last_result.timed_out,
+            workdir=str(repo_dir),
+            duration_ms=(time.monotonic() - start) * 1000,
+        )
+        return run_result, phase_results
+
+    def _build_phase_prompt(
+        self,
+        phase: PhaseSpec,
+        prior_diff: str | None,
+        prior_output: str | None,
+        review_feedback: str | None,
+    ) -> str:
+        """Build the prompt for a phase, injecting prior phase output.
+
+        The injected content is appended to the phase's base prompt in a
+        clearly delimited section so the harness knows what it's reviewing.
+        """
+        prompt = phase.task_prompt
+
+        if phase.input == PhaseInput.DIFF and prior_diff:
+            prompt += (
+                "\n\n---\nHere is the diff from the implementation phase. "
+                "Review it for correctness, security, and edge cases:\n\n"
+                f"```diff\n{prior_diff}\n```"
+            )
+        elif phase.input == PhaseInput.OUTPUT and prior_output:
+            prompt += (
+                "\n\n---\nHere is the output from the prior phase:\n\n"
+                f"```\n{prior_output}\n```"
+            )
+        elif phase.input == PhaseInput.REVIEW_FEEDBACK and review_feedback:
+            prompt += (
+                "\n\n---\nHere is feedback from an adversarial reviewer. "
+                "Address each issue before submitting:\n\n"
+                f"{review_feedback}"
+            )
+
+        return prompt
 
     async def _commit_changes(
         self, repo_dir: Path, exclude_paths: list[str] | None = None
