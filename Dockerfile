@@ -8,7 +8,7 @@
 #   docker build -t harness-evaluator-runner:latest .
 # Run (used by harness-evaluator's DockerRunner):
 #   docker run -d --rm harness-evaluator-runner:latest sleep infinity
-#   docker exec <id> claude -p "..." --model claude-sonnet-4-20250514
+#   docker exec <id> claude -p "..." --model claude-sonnet-5
 #
 # The image is intentionally large (~1.2 GB) because it carries five
 # harnesses.  For a single-harness eval you can build a trimmed variant

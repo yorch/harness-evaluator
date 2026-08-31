@@ -106,7 +106,7 @@ harness-evaluator run runs/sample-run.yaml -vv
 ```
 Run: broad-first-pass
   Harnesses: ['opencode', 'claude-code', 'codex', 'pi', 'omp']
-  Models: ['claude-sonnet-4-20250514', 'gpt-4o']
+  Models: ['claude-sonnet-5', 'gpt-5.6-terra']
   Repeats: 5
   Total cells: 1000
 Gateway reachable on port 8877
@@ -177,7 +177,7 @@ Next steps
 ```
 Run: broad-first-pass
   Harnesses: ['opencode', 'claude-code', 'codex', 'pi', 'omp']
-  Models: ['claude-sonnet-4-20250514', 'gpt-4o']
+  Models: ['claude-sonnet-5', 'gpt-5.6-terra']
   Repeats: 5
   Total cells: 1000
 
@@ -185,8 +185,8 @@ Run: broad-first-pass
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━┓
 ┃ Cell ID                              ┃ Harness   ┃ Model                ┃ Task             ┃ Repeat ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━┩
-│ opencode__claude-sonnet-4-...__swe-bugfix-001__r0 │ opencode │ claude-sonnet-4-... │ swe-bugfix-001 │ 0 │
-│ opencode__claude-sonnet-4-...__swe-bugfix-001__r1 │ opencode │ claude-sonnet-4-... │ swe-bugfix-001 │ 1 │
+│ opencode__claude-sonnet-5__swe-bugfix-001__r0 │ opencode │ claude-sonnet-5 │ swe-bugfix-001 │ 0 │
+│ opencode__claude-sonnet-5__swe-bugfix-001__r1 │ opencode │ claude-sonnet-5 │ swe-bugfix-001 │ 1 │
 │ ...                                  │ ...       │ ...                  │ ...              │ ...    │
 └──────────────────────────────────────┴───────────┴──────────────────────┴──────────────────┴────────┘
 ```
@@ -399,8 +399,8 @@ harness-evaluator results minimal-first-run --db /data/harness_evaluator_results
 ┏━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
 ┃ Harness   ┃ Model              ┃ Task             ┃ Exit   ┃ Success ┃ Tokens  ┃ Cost     ┃ Time(s) ┃ Error Cl. ┃ Error Message ┃
 ┡━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
-│ opencode  │ claude-sonnet-4-.. │ swe-bugfix-001   │ pass   │ 1.00    │ 1234    │ $0.0037  │ 12.3    │            │               │
-│ claude-c. │ claude-sonnet-4-.. │ swe-bugfix-001   │ fail   │ 0.00    │ 5678    │ $0.0170  │ 45.6    │ crash      │ Segfault in…  │
+│ opencode  │ claude-sonnet-5 │ swe-bugfix-001   │ pass   │ 1.00    │ 1234    │ $0.0037  │ 12.3    │            │               │
+│ claude-c. │ claude-sonnet-5 │ swe-bugfix-001   │ fail   │ 0.00    │ 5678    │ $0.0170  │ 45.6    │ crash      │ Segfault in…  │
 └───────────┴────────────────────┴──────────────────┴────────┴─────────┴─────────┴──────────┴─────────┴────────────┴───────────────┘
 ```
 
@@ -580,7 +580,7 @@ harness-evaluator calibrate [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--model` | string | `claude-sonnet-4-20250514` | Judge model |
+| `--model` | string | `claude-sonnet-5` | Judge model |
 
 ### Prerequisites
 
@@ -593,7 +593,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 harness-evaluator calibrate
 
 # Use a different judge model
-harness-evaluator calibrate --model claude-opus-4-20250514
+harness-evaluator calibrate --model claude-opus-5
 ```
 
 ### Output

@@ -141,7 +141,7 @@ Output:
 ```
 Run: minimal-first-run
   Harnesses: ['opencode']
-  Models: ['claude-sonnet-4-20250514']
+  Models: ['claude-sonnet-5']
   Repeats: 1
   Total cells: 1
 
@@ -149,7 +149,7 @@ Run: minimal-first-run
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━┓
 ┃ Cell ID                                 ┃ Harness   ┃ Model              ┃ Task             ┃ Repeat ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━┩
-│ opencode__claude-sonnet-4-20250514__swe-bugfix-001__r0 │ opencode │ claude-sonnet-4-.. │ swe-bugfix-001 │ 0 │
+│ opencode__claude-sonnet-5__swe-bugfix-001__r0 │ opencode │ claude-sonnet-5 │ swe-bugfix-001 │ 0 │
 └──────────────────────────────────────────┴───────────┴────────────────────┴──────────────────┴────────┘
 ```
 
@@ -168,7 +168,7 @@ Output:
 ```
 Run: minimal-first-run
   Harnesses: ['opencode']
-  Models: ['claude-sonnet-4-20250514']
+  Models: ['claude-sonnet-5']
   Repeats: 1
   Total cells: 1
 Gateway reachable on port 8877
@@ -260,7 +260,7 @@ If you're running open-ended tasks, calibrate the LLM judge first:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-uvx harness-evaluator calibrate --model claude-sonnet-4-20250514
+uvx harness-evaluator calibrate --model claude-sonnet-5
 ```
 
 This verifies the judge produces consistent scores against known anchor submissions. If calibration fails (MAE > 0.15), the open-ended track should be flagged as unreliable.
@@ -286,7 +286,7 @@ harnesses:
     config:
       max_turns: 50
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
 tasks:
@@ -311,7 +311,7 @@ Set `auth_mode` and `credentials_path` on the model, and `cost_mode: subscriptio
 
 ```yaml
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     auth_mode: claude_oauth

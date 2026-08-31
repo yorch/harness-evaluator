@@ -101,7 +101,7 @@ harnesses:
       max_turns: 50
 
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY   # unused under claude_oauth, but required by the schema
     auth_mode: claude_oauth
@@ -205,13 +205,13 @@ against an API-key-backed Codex:
 
 ```yaml
 models:
-  - name: claude-sonnet-4-20250514
+  - name: claude-sonnet-5
     provider: anthropic
     api_key_env: ANTHROPIC_API_KEY
     auth_mode: claude_oauth
     credentials_path: "~/.claude/.credentials.json"
     cost_mode: subscription
-  - name: gpt-4o
+  - name: gpt-5.6-terra
     provider: openai
     api_key_env: OPENAI_API_KEY
     auth_mode: api_key        # default

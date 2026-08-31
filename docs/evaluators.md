@@ -203,10 +203,18 @@ If any structural check fails, the composite success is capped at 0.5 — regard
 Calibration verifies the judge produces consistent scores against known anchor submissions:
 
 ```bash
-harness-evaluator calibrate --model claude-sonnet-4-20250514
+harness-evaluator calibrate --model claude-sonnet-5
 ```
 
 Calibration anchors are stored in a persistent JSON file (`config/calibration.json` in the project root, or bundled at `harness_evaluator/config/calibration.json` in an installed wheel). The `calibrate` command loads anchors from this file instead of using hard-coded values, so the anchor set can evolve without code changes.
+
+> **Re-calibration after judge model change**: the default judge model was
+> bumped from `claude-sonnet-4-20250514` (retired) to `claude-sonnet-5`. The
+> judge prompt itself is unchanged (`JudgeVersion.V1_0`), but a different
+> model may score anchors differently. Run
+> `harness-evaluator calibrate --model claude-sonnet-5` once against the
+> anchor set to confirm the new model's scores match the expected values
+> before relying on calibration drift detection.
 
 #### File format
 
@@ -277,7 +285,7 @@ cal.save_to_file("config/calibration.json")
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--model` | `claude-sonnet-4-20250514` | Judge model to calibrate |
+| `--model` | `claude-sonnet-5` | Judge model to calibrate |
 | `--calibration-file` | _(auto-resolved)_ | Path to the calibration anchor file |
 
 When `--calibration-file` is omitted, the CLI resolves the file in this order:

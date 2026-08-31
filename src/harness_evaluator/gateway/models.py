@@ -13,6 +13,7 @@ class Provider(StrEnum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     OPENAI_CHATGPT = "openai_chatgpt"
+    GOOGLE = "google"
 
 
 class ObservabilityTier(StrEnum):
@@ -112,10 +113,16 @@ class PricingTable(BaseModel):
 # These are defaults and can be overridden in config.
 # Sources: https://platform.claude.com/docs/en/about-claude/pricing,
 #          https://developers.openai.com/api/docs/pricing
-# Verified August 2026.
+# Verified August 2026; Gemini pricing from ai.google.dev/gemini-api/docs/pricing.
 DEFAULT_PRICING: dict[str, PricingTable] = {
     # --- Anthropic current generation ---
     "claude-fable-5": PricingTable(
+        input_per_million=10.0,
+        output_per_million=50.0,
+        cache_read_per_million=1.0,
+        cache_write_per_million=12.50,
+    ),
+    "claude-mythos-5": PricingTable(
         input_per_million=10.0,
         output_per_million=50.0,
         cache_read_per_million=1.0,
@@ -152,7 +159,25 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
         cache_read_per_million=0.50,
         cache_write_per_million=6.25,
     ),
+    "claude-opus-4-5": PricingTable(
+        input_per_million=5.0,
+        output_per_million=25.0,
+        cache_read_per_million=0.50,
+        cache_write_per_million=6.25,
+    ),
     "claude-opus-4-8": PricingTable(
+        input_per_million=5.0,
+        output_per_million=25.0,
+        cache_read_per_million=0.50,
+        cache_write_per_million=6.25,
+    ),
+    "claude-opus-4-7": PricingTable(
+        input_per_million=5.0,
+        output_per_million=25.0,
+        cache_read_per_million=0.50,
+        cache_write_per_million=6.25,
+    ),
+    "claude-opus-4-6": PricingTable(
         input_per_million=5.0,
         output_per_million=25.0,
         cache_read_per_million=0.50,
@@ -165,6 +190,12 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
         cache_write_per_million=3.75,
     ),
     "claude-sonnet-4-5": PricingTable(
+        input_per_million=3.0,
+        output_per_million=15.0,
+        cache_read_per_million=0.30,
+        cache_write_per_million=3.75,
+    ),
+    "claude-sonnet-4-5-20250929": PricingTable(
         input_per_million=3.0,
         output_per_million=15.0,
         cache_read_per_million=0.30,
@@ -217,14 +248,42 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
     "gpt-5": PricingTable(
         input_per_million=1.25,
         output_per_million=10.0,
+        cache_read_per_million=0.125,
     ),
     "gpt-5-mini": PricingTable(
         input_per_million=0.25,
         output_per_million=2.0,
+        cache_read_per_million=0.025,
     ),
     "gpt-5-nano": PricingTable(
         input_per_million=0.05,
         output_per_million=0.30,
+        cache_read_per_million=0.005,
+    ),
+    "gpt-5.5": PricingTable(
+        input_per_million=5.0,
+        output_per_million=30.0,
+        cache_read_per_million=0.50,
+    ),
+    "gpt-5.4": PricingTable(
+        input_per_million=2.50,
+        output_per_million=15.0,
+        cache_read_per_million=0.25,
+    ),
+    "gpt-5.4-mini": PricingTable(
+        input_per_million=0.75,
+        output_per_million=4.50,
+        cache_read_per_million=0.075,
+    ),
+    "gpt-5.4-nano": PricingTable(
+        input_per_million=0.20,
+        output_per_million=1.25,
+        cache_read_per_million=0.02,
+    ),
+    "gpt-5.3-codex": PricingTable(
+        input_per_million=1.75,
+        output_per_million=14.0,
+        cache_read_per_million=0.175,
     ),
     "o3": PricingTable(
         input_per_million=2.0,
@@ -246,6 +305,42 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
         input_per_million=0.15,
         output_per_million=0.60,
         cache_read_per_million=0.075,
+    ),
+    # --- Google Gemini (direct API; gateway does not yet route Google traffic) ---
+    "gemini-3-pro": PricingTable(
+        input_per_million=2.0,
+        output_per_million=12.0,
+        cache_read_per_million=0.20,
+    ),
+    "gemini-3.1-pro-preview": PricingTable(
+        input_per_million=2.0,
+        output_per_million=12.0,
+        cache_read_per_million=0.20,
+    ),
+    "gemini-3-flash-preview": PricingTable(
+        input_per_million=0.50,
+        output_per_million=3.0,
+        cache_read_per_million=0.05,
+    ),
+    "gemini-3.1-flash-lite": PricingTable(
+        input_per_million=0.25,
+        output_per_million=1.50,
+        cache_read_per_million=0.025,
+    ),
+    "gemini-2.5-pro": PricingTable(
+        input_per_million=1.25,
+        output_per_million=10.0,
+        cache_read_per_million=0.125,
+    ),
+    "gemini-2.5-flash": PricingTable(
+        input_per_million=0.30,
+        output_per_million=2.50,
+        cache_read_per_million=0.03,
+    ),
+    "gemini-2.5-flash-lite": PricingTable(
+        input_per_million=0.10,
+        output_per_million=0.40,
+        cache_read_per_million=0.01,
     ),
 }
 
