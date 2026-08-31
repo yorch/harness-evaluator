@@ -463,6 +463,24 @@ class TestResolveCredentialMounts:
         assert excludes == []
         assert any("not found" in r.message.lower() for r in caplog.records)
 
+    def test_claude_oauth_with_dangling_symlink(
+        self, runner: DockerRunner, tmp_path: Path
+    ) -> None:
+        cred_dir = tmp_path / ".claude"
+        cred_dir.mkdir()
+        (cred_dir / ".credentials.json").write_text("{}")
+        (cred_dir / "debug").mkdir()
+        (cred_dir / "debug" / "latest").symlink_to(
+            cred_dir / "debug" / "missing.txt"
+        )
+        mounts, env, excludes = runner._resolve_credential_mounts(
+            AuthMode.CLAUDE_OAUTH, str(cred_dir / ".credentials.json")
+        )
+        assert len(mounts) == 1
+        assert mounts[0][1] == "/workspace/.claude"
+        assert env["CLAUDE_CONFIG_DIR"] == "/workspace/.claude"
+        assert ".claude" in excludes
+
 
 # ---------------------------------------------------------------------------
 # Docker runner _build_run_args with credential mounts
