@@ -58,8 +58,14 @@ def _load_all() -> None:
     global _LOADED
     # Import here to avoid circular imports
     from harness_evaluator.adapters import (  # noqa: F401
+        aider,
+        antigravity,
         claude_code,
         codex,
+        copilot,
+        cursor,
+        gemini,
+        kiro,
         omp,
         opencode,
         pi,

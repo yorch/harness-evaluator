@@ -165,36 +165,42 @@ Adapters are lazy-loaded: the first call to `get_adapter_class()` or `list_adapt
 | Harness | Adapter name | Observability | Provider | Install command |
 |---------|-------------|--------------|----------|-----------------|
 | OpenCode | `opencode` | `full` | Both | `npm install -g opencode-ai` |
+| Aider | `aider` | `full` | Multi | `pip install aider-chat` |
 | Claude Code | `claude-code` | `partial` | Anthropic | `npm install -g @anthropic-ai/claude-code` |
 | Codex | `codex` | `partial` | OpenAI | `npm install -g @openai/codex` |
+| Gemini CLI | `gemini` | `partial` | Google | `npm install -g @google/gemini-cli` |
+| Antigravity CLI | `antigravity` | `partial` | Google | See [Antigravity CLI docs](https://antigravity.google/product/antigravity-cli) |
 | Pi | `pi` | `minimal` | Both | `npm install -g --ignore-scripts @earendil-works/pi-coding-agent` |
 | OMP | `omp` | `minimal` | Both | `npm install -g @oh-my-pi/pi-coding-agent` |
+| GitHub Copilot CLI | `copilot` | `minimal` | GitHub | `npm install -g @github/copilot` |
+| Cursor CLI | `cursor` | `minimal` | Multi | Install Cursor IDE from [cursor.com](https://cursor.com/downloads) |
+| Kiro CLI | `kiro` | `minimal` | AWS | `curl -fsSL https://cli.kiro.dev/install \| bash` |
 
 ## Observability tiers
 
-### `full` — OpenCode
+### `full` — OpenCode, Aider
 
-Open-source harness. All metadata is available:
+Open-source harnesses. All metadata is available:
 - System prompts and tool definitions are inspectable
 - Context strategy is visible
 - Turn-level metadata can be captured
 - Sub-agent attribution available via trace ID injection
 - Provider traffic captured through the gateway proxy
 
-### `partial` — Claude Code, Codex
+### `partial` — Claude Code, Codex, Gemini CLI, Antigravity CLI
 
-Closed-source harnesses that respect custom API base URLs:
+Closed-source or auth-restricted harnesses that support custom API base URLs or structured output:
 - System prompts and context strategy are **not visible**
 - Sub-agent topology is **not exposed**
-- Provider traffic **is captured** through the gateway proxy
+- Provider traffic **is captured** through the gateway proxy (Gemini/Antigravity may bypass if using Google auth)
 - Token usage and cost are accurately attributed
 - Sampling configuration is **not configurable**
 
-### `minimal` — Pi, OMP
+### `minimal` — Pi, OMP, GitHub Copilot CLI, Cursor CLI, Kiro CLI
 
-Closed harnesses that may bypass the proxy:
-- May **not support** custom API base URLs
-- Provider traffic **may bypass** the gateway proxy
+Closed harnesses that bypass the proxy:
+- **Do not support** custom API base URLs (or use proprietary auth)
+- Provider traffic **bypasses** the gateway proxy
 - Only billing-level cost data may be available
 - Cost accounting may rely on billing reconciliation
 
@@ -272,6 +278,97 @@ omp -p "<task_prompt>" --model <model_flag>
 - **Gateway**: env vars set, but OMP may not respect them
 - **Runtime**: requires Bun (installed in Dockerfile via `curl -fsSL https://bun.sh/install | bash`)
 - **Provider**: may support both, but proxy routing is unreliable
+
+### Gemini CLI (`gemini`)
+
+```python
+# Command structure
+gemini -p "<task_prompt>" --model gemini-2.5-pro --output-format json
+```
+
+- **Non-interactive**: `-p` (print) flag
+- **Model**: `--model` flag
+- **Output format**: `--output-format json` (default for token usage parsing) or `text`
+- **Gateway**: uses `GOOGLE_GEMINI_BASE_URL` env var (with trace-aware URL)
+- **API key**: `GOOGLE_API_KEY` from the model's `api_key_env`
+- **Token usage**: parsed from JSON output `stats.models.<model>.tokens` structure
+- **Provider**: Google only
+
+### Aider (`aider`)
+
+```python
+# Command structure
+aider --message "<task_prompt>" --model claude-sonnet-4-20250514 \
+    --yes --no-auto-commits
+```
+
+- **Non-interactive**: `--message` flag (single message, then exit)
+- **Model**: `--model` flag
+- **Auto-confirm**: `--yes` skips all confirmation prompts (essential for evals)
+- **No git commits**: `--no-auto-commits` prevents git commits during eval runs
+- **Extra args**: `extra_args` config option for additional CLI flags
+- **Gateway**: uses `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` env vars (multi-provider)
+- **Token usage**: parsed from `Tokens: X sent, Y received` output lines
+- **Provider**: multi-provider (Anthropic, OpenAI, DeepSeek, Ollama, etc.)
+
+### GitHub Copilot CLI (`copilot`)
+
+```python
+# Command structure
+copilot -p "<task_prompt>" --model claude-sonnet-4-20250514 -s --no-ask-user
+```
+
+- **Non-interactive**: `-p` (print) flag
+- **Model**: `--model` flag
+- **Silent mode**: `-s` suppresses interactive UI elements
+- **No user prompts**: `--no-ask-user` skips confirmation prompts
+- **Gateway**: **not used** — Copilot uses GitHub authentication, traffic bypasses proxy
+- **Token usage**: not available (minimal tier)
+- **Provider**: multi-model via GitHub Copilot subscription
+
+### Antigravity CLI (`antigravity`)
+
+```python
+# Command structure
+agy -p "<task_prompt>" --model gemini-3-pro --output-format json
+```
+
+- **Non-interactive**: `-p` (print) flag
+- **Model**: `--model` flag
+- **Output format**: `--output-format json` (default) or `text`
+- **Gateway**: Google auth — traffic may bypass proxy
+- **Token usage**: parsed from JSON output (`usage`, `metadata.usage`, or top-level fields)
+- **Provider**: Google Gemini only
+- **Auth**: requires prior interactive authentication (cached credentials)
+
+### Cursor CLI (`cursor`)
+
+```python
+# Command structure
+cursor agent -p "<task_prompt>" --model claude-sonnet-4-20250514
+```
+
+- **Non-interactive**: `agent` subcommand with `-p` (print) flag
+- **Model**: `--model` flag
+- **Mode**: `--mode` flag (agent/plan/ask; agent is default, only added if non-default)
+- **Gateway**: **not used** — Cursor uses its own backend, traffic bypasses proxy
+- **Token usage**: not available (minimal tier)
+- **Provider**: multi-model via Cursor subscription
+
+### Kiro CLI (`kiro`)
+
+```python
+# Command structure
+kiro-cli chat --no-interactive --trust-all-tools "<task_prompt>"
+```
+
+- **Non-interactive**: `chat --no-interactive` subcommand
+- **Trust tools**: `--trust-all-tools` by default; `trust_tools` config for specific tools
+- **Reasoning effort**: `--effort` flag (from config)
+- **Agent profile**: `--agent` flag (from config)
+- **Gateway**: **not used** — Kiro uses AWS authentication, traffic bypasses proxy
+- **Token usage**: not available (minimal tier)
+- **Provider**: AWS-backed (formerly Amazon Q Developer CLI)
 
 ## How harnesses connect to the gateway
 
@@ -381,6 +478,12 @@ register_adapter("my-harness", MyHarnessAdapter)
 | `src/harness_evaluator/adapters/claude_code.py` | Claude Code adapter |
 | `src/harness_evaluator/adapters/codex.py` | Codex adapter |
 | `src/harness_evaluator/adapters/opencode.py` | OpenCode adapter |
+| `src/harness_evaluator/adapters/aider.py` | Aider adapter |
+| `src/harness_evaluator/adapters/gemini.py` | Gemini CLI adapter |
+| `src/harness_evaluator/adapters/antigravity.py` | Antigravity CLI adapter |
+| `src/harness_evaluator/adapters/copilot.py` | GitHub Copilot CLI adapter |
+| `src/harness_evaluator/adapters/cursor.py` | Cursor CLI adapter |
+| `src/harness_evaluator/adapters/kiro.py` | Kiro CLI adapter |
 | `src/harness_evaluator/adapters/pi.py` | Pi adapter |
 | `src/harness_evaluator/adapters/omp.py` | OMP adapter |
 
