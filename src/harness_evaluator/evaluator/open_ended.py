@@ -466,7 +466,16 @@ class FrozenJudge:
             data = resp.json()
             content = data.get("content", [])
             if content and isinstance(content, list):
-                return str(content[0].get("text", ""))
+                # Models with adaptive thinking (e.g. claude-sonnet-5,
+                # claude-opus-5) return multiple content blocks: first a
+                # "thinking" block, then a "text" block. Iterate to find
+                # the text block rather than blindly taking content[0],
+                # which would return the thinking block (no "text" key).
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        return str(block.get("text", ""))
+                # Fallback: no text block found (e.g. tool_use only).
+                return ""
             return ""
 
     async def _call_openai(self, prompt: str, trace_id: str | None) -> str:
