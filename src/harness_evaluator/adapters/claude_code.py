@@ -177,6 +177,18 @@ class ClaudeCodeAdapter(BaseAdapter):
             else:
                 cmd.extend(["--allowedTools", str(allowed_tools)])
 
+        # Default to --dangerously-skip-permissions so claude-code can
+        # autonomously edit files without prompting for approval. This is
+        # safe because harness-evaluator runs inside ephemeral Docker
+        # containers with isolated workspaces and no host filesystem
+        # access. Without this flag, claude-code blocks on every file
+        # edit and produces no changes. Set
+        # ``dangerously_skip_permissions: false`` in the harness config to
+        # disable (e.g. to use --allowedTools instead).
+        skip_perms = self.config.get("dangerously_skip_permissions", True)
+        if skip_perms:
+            cmd.append("--dangerously-skip-permissions")
+
         return cmd
 
 

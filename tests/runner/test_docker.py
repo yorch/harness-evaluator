@@ -669,6 +669,49 @@ class TestAdapterGetCommand:
         assert "fix the bug" in cmd
         assert "--model" in cmd
 
+    def test_claude_code_skip_permissions_by_default(
+        self, tmp_path: Any, anthropic_model: ModelSpec
+    ):
+        from harness_evaluator.adapters.claude_code import ClaudeCodeAdapter
+
+        adapter = ClaudeCodeAdapter(
+            workdir=str(tmp_path),
+            model=anthropic_model,
+        )
+        cmd = adapter.get_command("fix the bug")
+        assert "--dangerously-skip-permissions" in cmd
+
+    def test_claude_code_skip_permissions_disabled(
+        self, tmp_path: Any, anthropic_model: ModelSpec
+    ):
+        from harness_evaluator.adapters.claude_code import ClaudeCodeAdapter
+
+        adapter = ClaudeCodeAdapter(
+            workdir=str(tmp_path),
+            model=anthropic_model,
+            config={"dangerously_skip_permissions": False},
+        )
+        cmd = adapter.get_command("fix the bug")
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_claude_code_allowed_tools_without_skip_permissions(
+        self, tmp_path: Any, anthropic_model: ModelSpec
+    ):
+        from harness_evaluator.adapters.claude_code import ClaudeCodeAdapter
+
+        adapter = ClaudeCodeAdapter(
+            workdir=str(tmp_path),
+            model=anthropic_model,
+            config={
+                "dangerously_skip_permissions": False,
+                "allowed_tools": ["Read", "Write", "Edit"],
+            },
+        )
+        cmd = adapter.get_command("fix the bug")
+        assert "--dangerously-skip-permissions" not in cmd
+        assert "--allowedTools" in cmd
+        assert "Read,Write,Edit" in cmd
+
     def test_codex_get_command(self, tmp_path: Any):
         from harness_evaluator.adapters.codex import CodexAdapter
 
