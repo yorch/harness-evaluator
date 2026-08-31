@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import sys
+import time
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
+from rich.logging import RichHandler
+from rich.panel import Panel
 from rich.table import Table
 
 app = typer.Typer(
@@ -17,6 +23,32 @@ app = typer.Typer(
 console = Console()
 
 
+def _configure_logging(verbose: int = 0) -> None:
+    """Configure root logging with a RichHandler.
+
+    Levels:
+      verbose == 0 → WARNING (quiet; only warnings/errors surface)
+      verbose == 1 → INFO (per-cell narrative, gateway per-call capture)
+      verbose >= 2 → DEBUG (adapter/docker detail)
+
+    Called inside each command (not at import) so library/test code is not
+    affected by CLI logging side effects.
+    """
+    level = logging.DEBUG if verbose >= 2 else (logging.INFO if verbose >= 1 else logging.WARNING)
+    handler = RichHandler(
+        console=console,
+        show_time=True,
+        show_path=verbose >= 2,
+        rich_tracebacks=True,
+    )
+    handler.setLevel(level)
+    root = logging.getLogger()
+    root.setLevel(level)
+    # Replace any prior handlers so repeated invocations in the same process
+    # (e.g. tests) do not stack duplicate handlers.
+    root.handlers = [handler]
+
+
 @app.command()
 def gateway(
     host: str = typer.Option("127.0.0.1", help="Host to bind to"),
@@ -24,8 +56,12 @@ def gateway(
     db: str = typer.Option(
         "harness_evaluator_gateway.db", help="SQLite DB path for captured calls"
     ),
+    verbose: int = typer.Option(
+        0, "--verbose", "-v", count=True, help="Increase logging verbosity (-v=INFO, -vv=DEBUG)"
+    ),
 ) -> None:
     """Start the gateway proxy server for token accounting."""
+    _configure_logging(verbose)
     from harness_evaluator.gateway.proxy import run_proxy
 
     console.print(f"[bold green]Starting gateway proxy on {host}:{port}[/bold green]")
@@ -126,6 +162,60 @@ def canary(
         raise typer.Exit(1)
 
 
+def _render_progress_panel(
+    progress: Any,
+    start_time: float,
+    budget: float | None,
+) -> Panel:
+    """Build the live progress Panel for the run command.
+
+    Shows aggregates (bar, done/total/%, counts, cost, elapsed) plus the
+    current cell ID (sequential) or running count (parallel).
+    """
+    elapsed = time.monotonic() - start_time
+    done = progress.done
+    total = progress.total_cells
+    pct = progress.progress_pct
+
+    # Progress bar text
+    bar_width = 30
+    filled = int(bar_width * done / total) if total else 0
+    bar = "█" * filled + "░" * (bar_width - filled)
+
+    # Counts line
+    counts = (
+        f"[green]✓ {progress.completed}[/green]  "
+        f"[red]✗ {progress.failed}[/red]  "
+        f"[yellow]⊘ {progress.skipped}[/yellow]  "
+        f"[blue]► {progress.running}[/blue]"
+    )
+
+    # Cost line
+    if budget is not None:
+        cost_line = f"Cost: ${progress.total_cost:.4f} / ${budget:.2f}"
+    else:
+        cost_line = f"Cost: ${progress.total_cost:.4f}"
+
+    # Current cell line
+    if progress.running > 0 and progress.current_cell:
+        if progress.running == 1:
+            cell_line = f"Running: {progress.current_cell}"
+        else:
+            cell_line = f"Running: {progress.running} cells (last: {progress.current_cell})"
+    elif progress.running > 0:
+        cell_line = f"Running: {progress.running} cells"
+    else:
+        cell_line = "Idle"
+
+    content = (
+        f"[cyan]{bar}[/cyan]  {done}/{total} ({pct:.1f}%)\n"
+        f"{counts}\n"
+        f"{cost_line}  |  Elapsed: {elapsed:.0f}s\n"
+        f"[dim]{cell_line}[/dim]"
+    )
+    return Panel(content, title="[bold]Eval Progress[/bold]", border_style="blue")
+
+
 @app.command()
 def run(
     config: str = typer.Argument(..., help="Path to run config YAML file"),
@@ -133,10 +223,21 @@ def run(
     check_gateway: bool = typer.Option(
         True, help="Preflight: check that the gateway is reachable before running"
     ),
+    verbose: int = typer.Option(
+        0, "--verbose", "-v", count=True, help="Increase logging verbosity (-v=INFO, -vv=DEBUG)"
+    ),
+    show_progress: bool = typer.Option(
+        True,
+        "--progress/--no-progress",
+        help="Show a live progress panel during the run (auto-off in non-TTY)",
+    ),
 ) -> None:
     """Execute an evaluation run from a config file."""
+    _configure_logging(verbose)
+    from rich.live import Live
+
     from harness_evaluator.orchestrator.config import RunConfig
-    from harness_evaluator.orchestrator.engine import Orchestrator
+    from harness_evaluator.orchestrator.engine import Orchestrator, OrchestratorProgress
     from harness_evaluator.orchestrator.results_store import ResultsStore
 
     config_path = Path(config)
@@ -209,8 +310,37 @@ def run(
         gateway_db=cfg.gateway_db,
         results_db=cfg.results_db,
     )
-    orchestrator = Orchestrator(cfg, store, run_cell_fn=runner.run_cell)
-    progress = asyncio.run(orchestrator.run())
+
+    # Decide whether to show the live progress panel.
+    # Auto-off in non-TTY (CI, pipes) even if --progress was passed.
+    use_live = show_progress and sys.stdout.isatty()
+
+    if use_live:
+        start_time = time.monotonic()
+        latest: list[OrchestratorProgress | None] = [None]
+
+        def on_progress(snapshot: OrchestratorProgress) -> None:
+            # Non-blocking reference swap (GIL-atomic). The Live refresh
+            # thread reads this on its own schedule, decoupled from cell
+            # completion rate so elapsed time ticks smoothly.
+            latest[0] = snapshot
+
+        def render() -> Panel:
+            snap = latest[0]
+            if snap is None:
+                snap = OrchestratorProgress(total_cells=len(cells))
+            return _render_progress_panel(snap, start_time, cfg.budget_usd)
+
+        with Live(render(), console=console, refresh_per_second=4, transient=True):
+            orchestrator = Orchestrator(
+                cfg, store, run_cell_fn=runner.run_cell, on_progress=on_progress
+            )
+            progress_result = asyncio.run(orchestrator.run())
+    else:
+        orchestrator = Orchestrator(cfg, store, run_cell_fn=runner.run_cell)
+        progress_result = asyncio.run(orchestrator.run())
+
+    progress = progress_result
 
     console.print("\n[bold green]Run complete[/bold green]")
     console.print(f"  Passed: {progress.completed}")

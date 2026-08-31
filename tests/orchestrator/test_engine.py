@@ -7,7 +7,11 @@ import yaml
 
 from harness_evaluator.gateway.models import TokenUsage
 from harness_evaluator.orchestrator.config import HarnessSpec, ModelSpec, RunConfig
-from harness_evaluator.orchestrator.engine import Orchestrator, RetryableError
+from harness_evaluator.orchestrator.engine import (
+    Orchestrator,
+    OrchestratorProgress,
+    RetryableError,
+)
 from harness_evaluator.orchestrator.results_store import ResultsStore
 
 
@@ -230,3 +234,113 @@ class TestOrchestratorBudget:
         assert total_cost <= 0.002 + 0.001  # budget + at most one extra cell
         assert progress.completed >= 1
         assert progress.skipped >= 1
+
+
+class TestProgressCallback:
+    """Tests for the on_progress callback hook."""
+
+    async def test_callback_fires_on_cell_completion(self, sample_config, results_store):
+        """on_progress should fire at least once per cell completion."""
+        snapshots: list[OrchestratorProgress] = []
+
+        def on_progress(snap: OrchestratorProgress) -> None:
+            snapshots.append(snap)
+
+        orch = Orchestrator(
+            sample_config, results_store, on_progress=on_progress
+        )
+        progress = await orch.run()
+
+        # 2 cells, each fires: running-start + completed + running-decrement
+        # plus the initial skipped-notification. At minimum, we expect one
+        # notification per cell completion.
+        assert len(snapshots) >= 2
+        # The final snapshot should match the returned progress.
+        final = snapshots[-1]
+        assert final.completed == progress.completed
+        assert final.total_cells == progress.total_cells
+        assert final.failed == progress.failed
+
+    async def test_callback_snapshots_are_independent(self, sample_config, results_store):
+        """Each snapshot should be a copy, not a live reference."""
+        snapshots: list[OrchestratorProgress] = []
+
+        def on_progress(snap: OrchestratorProgress) -> None:
+            snapshots.append(snap)
+
+        orch = Orchestrator(
+            sample_config, results_store, on_progress=on_progress
+        )
+        await orch.run()
+
+        # Mutate the first snapshot; the last should be unaffected.
+        first = snapshots[0]
+        first_completed = first.completed
+        first.completed = 999
+        last = snapshots[-1]
+        assert last.completed != 999
+        # Restore for cleanliness (not strictly necessary)
+        first.completed = first_completed
+
+    async def test_callback_provides_current_cell(self, sample_config, results_store):
+        """The snapshot should include current_cell when a cell is running."""
+        snapshots: list[OrchestratorProgress] = []
+
+        def on_progress(snap: OrchestratorProgress) -> None:
+            snapshots.append(snap)
+
+        orch = Orchestrator(
+            sample_config, results_store, on_progress=on_progress
+        )
+        await orch.run()
+
+        # At least one snapshot should have current_cell set (the one
+        # fired when a cell transitions to running).
+        running_snaps = [s for s in snapshots if s.current_cell is not None]
+        assert len(running_snaps) >= 1
+        # All current_cell values should be valid cell IDs
+        for snap in running_snaps:
+            assert "h1" in snap.current_cell
+            assert "test-1" in snap.current_cell
+
+    async def test_no_callback_is_noop(self, sample_config, results_store):
+        """Omitting on_progress should not raise or change behavior."""
+        orch = Orchestrator(sample_config, results_store)
+        progress = await orch.run()
+        assert progress.completed == 2
+
+    async def test_callback_fires_on_budget_skip(
+        self, tmp_task_dir, results_store
+    ):
+        """on_progress should fire when a cell is skipped for budget."""
+        config = RunConfig(
+            name="skip-callback",
+            harnesses=[HarnessSpec(name="h1", adapter="a")],
+            models=[ModelSpec(name="m1", provider="anthropic", api_key_env="X")],
+            tasks=["*"],
+            task_library_path=str(tmp_task_dir),
+            repeats=2,
+            budget_usd=0.0001,  # not enough for any cell
+        )
+        snapshots: list[OrchestratorProgress] = []
+
+        def on_progress(snap: OrchestratorProgress) -> None:
+            snapshots.append(snap)
+
+        async def costly_cell(cell):
+            return {
+                "exit_class": "pass",
+                "success": 1.0,
+                "usage": TokenUsage(input_tokens=100, output_tokens=50),
+                "total_cost": 0.001,
+                "latency_ms": 100,
+            }
+
+        orch = Orchestrator(
+            config, results_store, run_cell_fn=costly_cell, on_progress=on_progress
+        )
+        await orch.run()
+
+        # At least one snapshot should show skipped > 0
+        skip_snaps = [s for s in snapshots if s.skipped > 0]
+        assert len(skip_snaps) >= 1

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -39,7 +40,13 @@ class ExitClass(StrEnum):
 
 @dataclass
 class OrchestratorProgress:
-    """Tracks progress of an eval run."""
+    """Tracks progress of an eval run.
+
+    ``current_cell`` holds the cell ID of the most recently started cell.
+    For sequential runs this is the single in-flight cell; for parallel runs
+    it is the last cell to transition to ``running`` (a best-effort hint for
+    live progress display, not an exhaustive list of running cells).
+    """
 
     total_cells: int = 0
     completed: int = 0
@@ -48,6 +55,7 @@ class OrchestratorProgress:
     running: int = 0
     total_cost: float = 0.0
     errors: list[str] = field(default_factory=list)
+    current_cell: str | None = None
 
     @property
     def done(self) -> int:
@@ -58,6 +66,23 @@ class OrchestratorProgress:
         if self.total_cells == 0:
             return 0.0
         return self.done / self.total_cells * 100
+
+    def snapshot(self) -> OrchestratorProgress:
+        """Return a shallow copy safe for reading outside the progress lock.
+
+        ``errors`` is copied so the clone is independent; the other fields are
+        immutable scalars or ``str | None``.
+        """
+        return OrchestratorProgress(
+            total_cells=self.total_cells,
+            completed=self.completed,
+            failed=self.failed,
+            skipped=self.skipped,
+            running=self.running,
+            total_cost=self.total_cost,
+            errors=list(self.errors),
+            current_cell=self.current_cell,
+        )
 
 
 class Orchestrator:
@@ -71,6 +96,7 @@ class Orchestrator:
         config: RunConfig,
         results_store: ResultsStore,
         run_cell_fn: Any | None = None,
+        on_progress: Callable[[OrchestratorProgress], None] | None = None,
     ) -> None:
         """
         Args:
@@ -78,11 +104,18 @@ class Orchestrator:
             results_store: Store for results.
             run_cell_fn: Async function(cell: RunCell) -> dict[str, Any].
                          If None, uses a dry-run placeholder.
+            on_progress: Optional callback invoked with a progress snapshot
+                         after every progress mutation (cell start/complete/
+                         fail/skip/retry). The snapshot is built under the
+                         progress lock; the callback itself is invoked outside
+                         the lock so a slow UI cannot block cell execution.
+                         Defaults to None (no notifications).
         """
         self.config = config
         self.store = results_store
         self.run_cell_fn = run_cell_fn or _dry_run_cell
         self.progress = OrchestratorProgress()
+        self._on_progress = on_progress
         self._budget_lock = asyncio.Lock()
         # Lock for progress counter mutations so concurrent cells do
         # not lose updates to running/completed/failed/total_cost.
@@ -137,6 +170,7 @@ class Orchestrator:
         completed = self.store.get_completed_cells(self.config.name)
         pending_cells = [c for c in cells if c.cell_id not in completed]
         self.progress.skipped = len(cells) - len(pending_cells)
+        await self._notify_progress()
         logger.info(
             "Run '%s': %d total cells, %d already completed, %d to run",
             self.config.name,
@@ -211,6 +245,7 @@ class Orchestrator:
                     )
                     async with self._progress_lock:
                         self.progress.skipped += 1
+                    await self._notify_progress()
                     return
                 self._remaining_budget -= estimate
                 self._reservations[cell.cell_id] = estimate
@@ -218,6 +253,8 @@ class Orchestrator:
         self.store.set_cell_state(cell.cell_id, cell.run_name, "running")
         async with self._progress_lock:
             self.progress.running += 1
+            self.progress.current_cell = cell.cell_id
+        await self._notify_progress()
 
         try:
             # --- Phase 1: run the harness with retry (only run_cell_fn is
@@ -259,6 +296,7 @@ class Orchestrator:
                     async with self._progress_lock:
                         self.progress.failed += 1
                         self.progress.errors.append(f"{cell.cell_id}: {e}")
+                    await self._notify_progress()
                     return
 
             # --- Phase 2: persist the harness result. The harness completed,
@@ -305,6 +343,7 @@ class Orchestrator:
                         self.progress.completed += 1
                     else:
                         self.progress.failed += 1
+                await self._notify_progress()
             except Exception as persist_err:
                 logger.error(
                     "Failed to persist result for cell %s (harness completed): %s",
@@ -328,6 +367,7 @@ class Orchestrator:
             async with self._progress_lock:
                 self.progress.failed += 1
                 self.progress.errors.append(f"{cell.cell_id}: {e}")
+            await self._notify_progress()
             return
         finally:
             # Guarantee cleanup on every path (including cancellation):
@@ -337,6 +377,7 @@ class Orchestrator:
                 self._release_reservation(cell.cell_id)
             async with self._progress_lock:
                 self.progress.running -= 1
+            await self._notify_progress()
 
     def _save_failure(
         self,
@@ -415,6 +456,20 @@ class Orchestrator:
         reserved = self._reservations.pop(cell_id, 0.0)
         if self._remaining_budget is not None and reserved > 0:
             self._remaining_budget += reserved
+
+    async def _notify_progress(self) -> None:
+        """Invoke the on_progress callback with a consistent snapshot.
+
+        Must be called *outside* ``self._progress_lock``. The snapshot is
+        built under the lock so the callback never sees a half-mutated
+        state, then the callback is invoked without the lock held so a slow
+        UI cannot block cell execution.
+        """
+        if self._on_progress is None:
+            return
+        async with self._progress_lock:
+            snapshot = self.progress.snapshot()
+        self._on_progress(snapshot)
 
 
 class RetryableError(Exception):
