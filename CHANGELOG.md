@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/yorch/harness-evaluator/compare/v0.2.0...v0.3.0) (2026-08-31)
+
+
+### Features
+
+* **orchestrator:** add multi-phase task support with adversarial review ([#5](https://github.com/yorch/harness-evaluator/issues/5)) ([dc59aa9](https://github.com/yorch/harness-evaluator/commit/dc59aa9dd2eb579f6edfe7e70001986ca68bcbf5))
+
+
+### Documentation
+
+* make no-clone install path the primary guide ([#3](https://github.com/yorch/harness-evaluator/issues/3)) ([6644922](https://github.com/yorch/harness-evaluator/commit/6644922d91eeb7e3ee3662422f42a4669647d76d))
+
 ## [0.2.0](https://github.com/yorch/harness-evaluator/compare/v0.1.0...v0.2.0) (2026-08-30)
 
 
