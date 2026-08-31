@@ -206,21 +206,94 @@ Calibration verifies the judge produces consistent scores against known anchor s
 harness-evaluator calibrate --model claude-sonnet-4-20250514
 ```
 
-The calibration set includes anchor submissions with known expected scores:
+Calibration anchors are stored in a persistent JSON file (`config/calibration.json` in the project root, or bundled at `harness_evaluator/config/calibration.json` in an installed wheel). The `calibrate` command loads anchors from this file instead of using hard-coded values, so the anchor set can evolve without code changes.
 
-| Anchor | Expected success | Expected scores |
-|--------|-----------------|-----------------|
-| `perfect` | 1.0 | All criteria: 5 |
-| `minimal` | 0.25 | correctness: 2, completeness: 1, code_quality: 2, test_quality: 0, documentation: 0 |
+#### File format
 
-The calibration process:
-1. Run the judge on each anchor's diff
-2. Compare actual vs expected success
-3. Calculate mean absolute error (MAE)
-4. If MAE > 0.15 → drift detected, judge unreliable for this run
-5. If MAE ≤ 0.15 → judge is reliable
+The calibration file is a JSON object with a single `anchors` array. Each anchor has:
 
-Calibration results can be saved to and loaded from JSON files for cross-run comparison.
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Human-readable identifier for the anchor |
+| `diff` | string | The git diff the judge will evaluate |
+| `expected_scores` | object | Map of rubric criterion → expected score (0–5) |
+| `expected_success` | float | Expected composite success (0.0–1.0) |
+| `metadata` | object | Optional free-form metadata (e.g. description, source) |
+
+Example (`config/calibration.json`):
+
+```json
+{
+  "anchors": [
+    {
+      "name": "perfect",
+      "diff": "diff --git a/src/caching.py b/src/caching.py\n...",
+      "expected_scores": {
+        "correctness": 5,
+        "completeness": 5,
+        "code_quality": 5,
+        "test_quality": 5,
+        "documentation": 5
+      },
+      "expected_success": 1.0,
+      "metadata": {"description": "Complete, well-tested, documented solution"}
+    },
+    {
+      "name": "minimal",
+      "diff": "diff --git a/src/caching.py b/src/caching.py\n...",
+      "expected_scores": {
+        "correctness": 2,
+        "completeness": 1,
+        "code_quality": 1,
+        "test_quality": 0,
+        "documentation": 0
+      },
+      "expected_success": 0.15,
+      "metadata": {"description": "Stub that does not actually cache"}
+    }
+  ]
+}
+```
+
+#### Managing anchors programmatically
+
+The `CalibrationSet` class provides `add_anchor()`, `save_to_file()`, and `load_from_file()` for building and persisting anchor sets from Python:
+
+```python
+from harness_evaluator.evaluator.open_ended import CalibrationSet
+
+cal = CalibrationSet()
+cal.add_anchor(
+    name="my-anchor",
+    diff="diff --git a/src/solution.py ...",
+    expected_scores={"correctness": 4, "completeness": 3},
+    expected_success=0.6,
+    metadata={"source": "manual"},
+)
+cal.save_to_file("config/calibration.json")
+```
+
+#### CLI options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--model` | `claude-sonnet-4-20250514` | Judge model to calibrate |
+| `--calibration-file` | _(auto-resolved)_ | Path to the calibration anchor file |
+
+When `--calibration-file` is omitted, the CLI resolves the file in this order:
+1. Bundled `harness_evaluator/config/calibration.json` (inside an installed wheel)
+2. Repo-root `config/calibration.json` (source tree)
+
+#### Calibration process
+
+1. Load anchors from the calibration JSON file
+2. Run the judge on each anchor's diff
+3. Compare actual vs expected success
+4. Calculate mean absolute error (MAE)
+5. If MAE > 0.15 → drift detected, judge unreliable for this run
+6. If MAE ≤ 0.15 → judge is reliable
+
+Calibration results can be saved to and loaded from JSON files for cross-run comparison using `CalibrationSet.save_results()`.
 
 ### Error classes (open-ended)
 

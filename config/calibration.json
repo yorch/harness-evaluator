@@ -1,0 +1,64 @@
+{
+  "anchors": [
+    {
+      "name": "perfect",
+      "diff": "diff --git a/src/caching.py b/src/caching.py\nnew file mode 100644\n--- /dev/null\n+++ b/src/caching.py\n@@ -0,0 +1,28 @@\n+\"\"\"A thread-safe caching decorator with TTL support.\"\"\"\n+\n+import functools\n+import threading\n+import time\n+from typing import Any, Callable\n+\n+\n+def cached(ttl: float | None = None) -> Callable[..., Any]:\n+    \"\"\"Cache function results with an optional TTL in seconds.\"\"\"\n+    _cache: dict[tuple[Any, ...], tuple[Any, float]] = {}\n+    _lock = threading.Lock()\n+\n+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:\n+        @functools.wraps(func)\n+        def wrapper(*args: Any, **kwargs: Any) -> Any:\n+            key = (args, tuple(sorted(kwargs.items())))\n+            with _lock:\n+                if key in _cache:\n+                    value, ts = _cache[key]\n+                    if ttl is None or time.monotonic() - ts < ttl:\n+                        return value\n+                result = func(*args, **kwargs)\n+                _cache[key] = (result, time.monotonic())\n+                return result\n+        return wrapper\n+    return decorator\n",
+      "expected_scores": {
+        "correctness": 5,
+        "completeness": 5,
+        "code_quality": 5,
+        "test_quality": 5,
+        "documentation": 5
+      },
+      "expected_success": 1.0,
+      "metadata": {
+        "description": "Complete, well-tested, documented caching decorator"
+      }
+    },
+    {
+      "name": "solid",
+      "diff": "diff --git a/src/caching.py b/src/caching.py\nnew file mode 100644\n--- /dev/null\n+++ b/src/caching.py\n@@ -0,0 +1,12 @@\n+import functools\n+\n+\n+def cached(func):\n+    _cache = {}\n+\n+    @functools.wraps(func)\n+    def wrapper(*args, **kwargs):\n+        key = (args, tuple(sorted(kwargs.items())))\n+        if key not in _cache:\n+            _cache[key] = func(*args, **kwargs)\n+        return _cache[key]\n+    return wrapper\n",
+      "expected_scores": {
+        "correctness": 4,
+        "completeness": 3,
+        "code_quality": 3,
+        "test_quality": 0,
+        "documentation": 0
+      },
+      "expected_success": 0.5,
+      "metadata": {
+        "description": "Working caching decorator but no tests, docs, or TTL"
+      }
+    },
+    {
+      "name": "minimal",
+      "diff": "diff --git a/src/caching.py b/src/caching.py\nnew file mode 100644\n--- /dev/null\n+++ b/src/caching.py\n@@ -0,0 +1,3 @@\n+def cached(func):\n+    def wrapper(*args):\n+        return func(*args)\n",
+      "expected_scores": {
+        "correctness": 2,
+        "completeness": 1,
+        "code_quality": 1,
+        "test_quality": 0,
+        "documentation": 0
+      },
+      "expected_success": 0.2111,
+      "metadata": {
+        "description": "Stub that does not actually cache; no tests or docs"
+      }
+    },
+    {
+      "name": "empty",
+      "diff": "",
+      "expected_scores": {
+        "correctness": 0,
+        "completeness": 0,
+        "code_quality": 0,
+        "test_quality": 0,
+        "documentation": 0
+      },
+      "expected_success": 0.0,
+      "metadata": {
+        "description": "No diff produced — should score zero on all criteria"
+      }
+    }
+  ]
+}

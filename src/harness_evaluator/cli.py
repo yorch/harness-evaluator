@@ -577,8 +577,12 @@ def dashboard(
 @app.command()
 def calibrate(
     model: str = typer.Option("claude-sonnet-4-20250514", help="Judge model"),
+    calibration_file: str = typer.Option(
+        "",
+        help="Path to calibration.json (default: config/calibration.json in the project root)",
+    ),
 ) -> None:
-    """Run judge calibration against anchor set."""
+    """Run judge calibration against a persistent anchor set."""
     import os
 
     from harness_evaluator.evaluator.open_ended import (
@@ -598,39 +602,54 @@ def calibrate(
         )
         raise typer.Exit(1)
 
+    # Resolve and load the calibration set.
+    # Explicit --calibration-file takes precedence; otherwise fall back to
+    # the bundled config/calibration.json, then the repo-root config/ dir.
+    cal: CalibrationSet
+    if calibration_file:
+        cal = CalibrationSet.load_from_file(Path(calibration_file))
+        console.print(f"[dim]Loaded {len(cal.anchors)} anchors from {calibration_file}[/dim]")
+    else:
+        import importlib.resources as resources
+        import json
+
+        loaded: CalibrationSet | None = None
+        try:
+            bundled = resources.files("harness_evaluator") / "config" / "calibration.json"
+            if bundled.is_file():
+                # Read directly from the Traversable to support zipped wheels.
+                cal_data = json.loads(bundled.read_text())
+                loaded = CalibrationSet()
+                loaded.anchors = cal_data.get("anchors", [])
+                console.print(
+                    f"[dim]Loaded {len(loaded.anchors)} anchors from "
+                    f"bundled config/calibration.json[/dim]"
+                )
+        except (ModuleNotFoundError, AttributeError):
+            pass
+        if loaded is None:
+            # Source-tree fallback: cli.py -> harness_evaluator -> src -> repo.
+            fallback = Path(__file__).resolve().parents[2] / "config" / "calibration.json"
+            if fallback.exists():
+                loaded = CalibrationSet.load_from_file(fallback)
+                console.print(
+                    f"[dim]Loaded {len(loaded.anchors)} anchors from {fallback}[/dim]"
+                )
+            else:
+                console.print(
+                    "[red]Calibration file not found.[/red] "
+                    "Create one with `CalibrationSet.save_to_file()` or pass "
+                    "--calibration-file <path>."
+                )
+                raise typer.Exit(1)
+        cal = loaded
+
     # Create a minimal task for calibration
     task = TaskSpec(
         id="calibration",
         name="Calibration Task",
         track=TaskTrack.OPEN_ENDED,
         task_prompt="Implement a caching decorator",
-    )
-
-    # Create calibration set with known anchors
-    cal = CalibrationSet()
-    cal.add_anchor(
-        name="perfect",
-        diff="+def cached():\n+    pass\n",
-        expected_scores={
-            "correctness": 5,
-            "completeness": 5,
-            "code_quality": 5,
-            "test_quality": 5,
-            "documentation": 5,
-        },
-        expected_success=1.0,
-    )
-    cal.add_anchor(
-        name="minimal",
-        diff="+def cached():\n+    return None\n",
-        expected_scores={
-            "correctness": 2,
-            "completeness": 1,
-            "code_quality": 2,
-            "test_quality": 0,
-            "documentation": 0,
-        },
-        expected_success=0.25,
     )
 
     judge = FrozenJudge(

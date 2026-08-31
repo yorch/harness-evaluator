@@ -58,9 +58,10 @@ packages = ["src/harness_evaluator"]
 # harness_evaluator/tasks so an installed `harness-evaluator` can run without a repo checkout.
 [tool.hatch.build.targets.wheel.force-include]
 "tasks" = "harness_evaluator/tasks"
+"config" = "harness_evaluator/config"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/harness_evaluator", "tasks", "runs", "README.md", "LICENSE", "pyproject.toml"]
+include = ["src/harness_evaluator", "tasks", "config", "runs", "README.md", "LICENSE", "pyproject.toml"]
 
 [tool.ruff]
 src = ["src", "tests"]
