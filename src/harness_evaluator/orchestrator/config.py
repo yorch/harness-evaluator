@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Re-exported from the gateway models module to keep a single source of truth.
 from harness_evaluator.gateway.models import ObservabilityTier
@@ -19,10 +19,13 @@ __all__ = [
     "CostMode",
     "TaskTrack",
     "TaskDifficulty",
+    "PhaseSpec",
+    "PhaseInput",
     "TaskSpec",
     "TaskLibrary",
     "HarnessSpec",
     "ModelSpec",
+    "ModelRole",
     "RunConfig",
     "RunCell",
 ]
@@ -103,6 +106,7 @@ class CostMode(StrEnum):
 class TaskTrack(StrEnum):
     SWE = "swe"
     OPEN_ENDED = "open_ended"
+    MULTI_PHASE = "multi_phase"
 
 
 class TaskDifficulty(StrEnum):
@@ -110,6 +114,59 @@ class TaskDifficulty(StrEnum):
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
+
+
+class ModelRole(StrEnum):
+    """Role a model plays in a multi-phase task."""
+
+    IMPLEMENTATION = "implementation"
+    REVIEW = "review"
+
+
+class PhaseInput(StrEnum):
+    """What input a phase receives from prior phases."""
+
+    NONE = "none"
+    """No input from prior phases (standalone phase)."""
+    DIFF = "diff"
+    """Git diff produced by the prior implementation phase."""
+    OUTPUT = "output"
+    """Stdout/output text from the prior phase."""
+    REVIEW_FEEDBACK = "review_feedback"
+    """Feedback text from a prior review phase."""
+
+
+class PhaseSpec(BaseModel):
+    """A single phase in a multi-phase task.
+
+    Phases execute sequentially. Each phase runs a harness with a
+    model assigned to the phase's ``model_role``. A phase can receive
+    input from a prior phase (e.g. the diff from an implementation
+    phase, or feedback from a review phase).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    """Phase identifier (e.g. 'implement', 'review', 'revise')."""
+    model_role: ModelRole = ModelRole.IMPLEMENTATION
+    """Which model role to use for this phase."""
+    task_prompt: str
+    """The prompt given to the harness for this phase."""
+    input: PhaseInput = PhaseInput.NONE
+    """What to feed from prior phases into this phase's prompt."""
+    timeout_seconds: int = 600
+    """Per-phase timeout in seconds."""
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not _SAFE_ID_RE.match(v):
+            raise ValueError(
+                f"Phase name '{v}' contains invalid characters. "
+                f"Only [A-Za-z0-9._-] are allowed."
+            )
+        return v
 
 
 class TaskSpec(BaseModel):
@@ -127,7 +184,9 @@ class TaskSpec(BaseModel):
     setup_script: str | None = None
     """Shell script to run after cloning the repo (install deps, etc.)."""
     task_prompt: str
-    """The prompt given to the harness."""
+    """The prompt given to the harness. Used as the sole prompt for
+    single-phase tracks (swe, open_ended). Ignored when ``phases`` is
+    non-empty (multi_phase track uses per-phase prompts)."""
     test_command: str | None = None
     """Command to run tests (e.g. 'pytest tests/test_foo.py')."""
     test_patch: str | None = None
@@ -136,6 +195,8 @@ class TaskSpec(BaseModel):
     """Files that should be modified/created by the harness."""
     timeout_seconds: int = 600
     metadata: dict[str, Any] = Field(default_factory=dict)
+    phases: list[PhaseSpec] = Field(default_factory=list)
+    """Ordered phases for multi_phase tasks. Empty for swe/open_ended."""
 
     @field_validator("id")
     @classmethod
@@ -165,6 +226,29 @@ class TaskSpec(BaseModel):
                 f"Only [A-Za-z0-9._/-] are allowed and it may not start with '-'."
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_phases(self) -> TaskSpec:
+        if self.track == TaskTrack.MULTI_PHASE and not self.phases:
+            raise ValueError(
+                f"Multi-phase task '{self.id}' must define at least one phase"
+            )
+        if self.phases:
+            # Phase names must be unique (used in trace IDs and file paths).
+            names = [p.name for p in self.phases]
+            if len(names) != len(set(names)):
+                dupes = [n for n in names if names.count(n) > 1]
+                raise ValueError(
+                    f"Multi-phase task '{self.id}' has duplicate phase "
+                    f"names: {sorted(set(dupes))}"
+                )
+            # At least one implementation phase is required.
+            if not any(p.model_role == ModelRole.IMPLEMENTATION for p in self.phases):
+                raise ValueError(
+                    f"Multi-phase task '{self.id}' must have at least one "
+                    f"phase with model_role: implementation"
+                )
+        return self
 
 
 class TaskLibrary(BaseModel):
@@ -285,6 +369,9 @@ class ModelSpec(BaseModel):
     (zero-dollar token-only accounting)."""
     config: dict[str, Any] = Field(default_factory=dict)
     """Model-specific configuration (temperature, max_tokens, etc.)."""
+    role: ModelRole = ModelRole.IMPLEMENTATION
+    """Role this model plays in multi-phase tasks. For single-phase tracks
+    (swe, open_ended), all models are treated as implementation models."""
 
     @field_validator("name")
     @classmethod
@@ -382,33 +469,105 @@ class RunConfig(BaseModel):
         task.repo_url = str((lib_root / rel).resolve())
 
     def build_matrix(self) -> list[RunCell]:
-        """Build the full eval matrix: harness × model × task × repeat."""
+        """Build the full eval matrix: harness × model × task × repeat.
+
+        For multi-phase tasks, the matrix expands per role: each
+        implementation-model × review-model pair becomes a cell. For
+        single-phase tracks (swe, open_ended), the matrix is the
+        traditional harness × model × task × repeat cross product.
+
+        Multi-phase tasks that have no REVIEW phase do not expand review
+        models — the review model is only paired when a phase actually
+        uses it.
+        """
         tasks = self.expand_tasks()
         cells: list[RunCell] = []
+
+        # Partition models by role for multi-phase expansion.
+        impl_models = [m for m in self.models if m.role == ModelRole.IMPLEMENTATION]
+        review_models = [m for m in self.models if m.role == ModelRole.REVIEW]
+
         for harness in self.harnesses:
-            for model in self.models:
-                for task in tasks:
-                    for repeat in range(self.repeats):
-                        cells.append(
-                            RunCell(
-                                run_name=self.name,
-                                harness=harness,
-                                model=model,
-                                task=task,
-                                repeat=repeat,
+            for task in tasks:
+                if task.track == TaskTrack.MULTI_PHASE:
+                    # Determine if the task has any REVIEW phases.
+                    has_review_phase = any(
+                        p.model_role == ModelRole.REVIEW for p in task.phases
+                    )
+
+                    if has_review_phase:
+                        # Validate that implementation models exist.
+                        if not impl_models:
+                            raise ValueError(
+                                f"Multi-phase task '{task.id}' has a review "
+                                f"phase but no implementation models are "
+                                f"configured. Add at least one model with "
+                                f"role: implementation."
                             )
-                        )
+                        if not review_models:
+                            raise ValueError(
+                                f"Multi-phase task '{task.id}' has a review "
+                                f"phase but no review models are configured. "
+                                f"Add at least one model with role: review."
+                            )
+                        # Expand implementation × review model pairs.
+                        for impl_model in impl_models:
+                            for review_model in review_models:
+                                for repeat in range(self.repeats):
+                                    cells.append(
+                                        RunCell(
+                                            run_name=self.name,
+                                            harness=harness,
+                                            model=impl_model,
+                                            task=task,
+                                            repeat=repeat,
+                                            review_model=review_model,
+                                        )
+                                    )
+                    else:
+                        # No review phase — just implementation models.
+                        for model in impl_models or self.models:
+                            for repeat in range(self.repeats):
+                                cells.append(
+                                    RunCell(
+                                        run_name=self.name,
+                                        harness=harness,
+                                        model=model,
+                                        task=task,
+                                        repeat=repeat,
+                                    )
+                                )
+                else:
+                    # Single-phase: traditional harness × model × task × repeat.
+                    for model in self.models:
+                        for repeat in range(self.repeats):
+                            cells.append(
+                                RunCell(
+                                    run_name=self.name,
+                                    harness=harness,
+                                    model=model,
+                                    task=task,
+                                    repeat=repeat,
+                                )
+                            )
         return cells
 
 
 class RunCell(BaseModel):
-    """A single cell in the eval matrix: one harness × model × task × repeat."""
+    """A single cell in the eval matrix: one harness × model × task × repeat.
+
+    For multi-phase tasks, ``review_model`` holds the adversarial
+    reviewer model (if any). For single-phase tracks it is None.
+    """
 
     run_name: str
     harness: HarnessSpec
     model: ModelSpec
     task: TaskSpec
     repeat: int
+    review_model: ModelSpec | None = None
+    """Adversarial review model for multi-phase tasks. None for
+    single-phase tracks or multi-phase tasks without a review phase."""
     budget: float | None = None
     """Per-cell budget estimate (USD) used for atomic reservation.
 
@@ -418,4 +577,7 @@ class RunCell(BaseModel):
 
     @property
     def cell_id(self) -> str:
-        return f"{self.harness.name}__{self.model.name}__{self.task.id}__r{self.repeat}"
+        base = f"{self.harness.name}__{self.model.name}__{self.task.id}__r{self.repeat}"
+        if self.review_model is not None:
+            return f"{base}__rev-{self.review_model.name}"
+        return base

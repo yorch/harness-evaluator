@@ -67,6 +67,29 @@ CREATE TABLE IF NOT EXISTS run_metadata (
     docker_image TEXT,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS phase_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cell_id TEXT NOT NULL,
+    run_name TEXT NOT NULL,
+    phase_name TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    model_role TEXT NOT NULL,
+    exit_code INTEGER NOT NULL,
+    duration_ms REAL DEFAULT 0.0,
+    timed_out INTEGER DEFAULT 0,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    total_cost REAL DEFAULT 0.0,
+    num_api_calls INTEGER DEFAULT 0,
+    error TEXT,
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY (cell_id) REFERENCES run_results(cell_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_phase_cell ON phase_results(cell_id);
+CREATE INDEX IF NOT EXISTS idx_phase_run ON phase_results(run_name);
 """
 
 
@@ -247,3 +270,71 @@ class ResultsStore:
                 "SELECT * FROM run_metadata WHERE run_name = ?", (run_name,)
             ).fetchone()
             return dict(row) if row else None
+
+    def save_phase_results(
+        self,
+        cell_id: str,
+        run_name: str,
+        phases: list[dict[str, Any]],
+    ) -> None:
+        """Save per-phase results for a multi-phase cell.
+
+        Each phase dict should contain: name, trace_id, model,
+        model_role, exit_code, duration_ms, timed_out, and optionally
+        usage/cost fields (input_tokens, output_tokens, total_cost,
+        num_api_calls).
+        """
+        now = datetime.now(UTC).isoformat()
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            # Clear prior phase results for this cell (resumability).
+            conn.execute(
+                "DELETE FROM phase_results WHERE cell_id = ?", (cell_id,)
+            )
+            for phase in phases:
+                usage = phase.get("usage")
+                # usage can be a TokenUsage object or a plain dict
+                if usage is None:
+                    in_tok = out_tok = 0
+                elif hasattr(usage, "input_tokens"):
+                    in_tok = usage.input_tokens
+                    out_tok = usage.output_tokens
+                else:
+                    in_tok = usage.get("input_tokens", 0)
+                    out_tok = usage.get("output_tokens", 0)
+                conn.execute(
+                    """INSERT INTO phase_results
+                       (cell_id, run_name, phase_name, trace_id, model,
+                        model_role, exit_code, duration_ms, timed_out,
+                        input_tokens, output_tokens, total_cost,
+                        num_api_calls, error, timestamp)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        cell_id,
+                        run_name,
+                        phase["name"],
+                        phase["trace_id"],
+                        phase["model"],
+                        phase.get("model_role", "implementation"),
+                        phase["exit_code"],
+                        phase.get("duration_ms", 0.0),
+                        1 if phase.get("timed_out") else 0,
+                        in_tok,
+                        out_tok,
+                        phase.get("total_cost", 0.0),
+                        phase.get("num_api_calls", 0),
+                        phase.get("error"),
+                        now,
+                    ),
+                )
+            conn.commit()
+
+    def get_phase_results(self, cell_id: str) -> list[dict[str, Any]]:
+        """Get per-phase results for a cell."""
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM phase_results WHERE cell_id = ?"
+                " ORDER BY id ASC",
+                (cell_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]

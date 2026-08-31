@@ -5,7 +5,7 @@ description: SWE-bench-style hidden-test evaluator and open-ended LLM judge trac
 
 # Evaluators
 
-harness-evaluator has two evaluation tracks, each with separate leaderboards. They are never cross-compared.
+harness-evaluator has three evaluation tracks, each with separate leaderboards. They are never cross-compared.
 
 ## Track overview
 
@@ -13,6 +13,9 @@ harness-evaluator has two evaluation tracks, each with separate leaderboards. Th
 |-------|-----------|--------|----------------|
 | `swe` | `SWEEvaluator` | Hidden tests + partial credit | 100% of tests |
 | `open_ended` | `OpenEndedEvaluator` | Structural checks + LLM judge + rubric | Composite ≥ 0.7 |
+| `multi_phase` | `SWEEvaluator` | Hidden tests after all phases complete | 100% of tests |
+
+The `multi_phase` track is evaluated identically to `swe`: after all phases (implementation, review, revision) complete, the final repository diff is tested against the hidden test patch. The intermediate review and revision phases do not affect evaluation directly — only the final code state matters. See the [Multi-phase evaluation guide](../guides/multi-phase/) for details on phase execution.
 
 ## SWE-bench-style track
 

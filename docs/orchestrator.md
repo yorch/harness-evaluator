@@ -17,7 +17,7 @@ The orchestrator (`src/harness_evaluator/orchestrator/`) is the central executio
 
 ## Matrix building
 
-The eval matrix is the Cartesian product of harnesses × models × tasks × repeats:
+The eval matrix is the Cartesian product of harnesses × models × tasks × repeats. For `multi_phase` tasks, the matrix additionally expands across implementation and review model pairs.
 
 ```
 RunConfig.build_matrix()
@@ -27,22 +27,47 @@ RunConfig.build_matrix()
   │   If tasks=["*"], use all tasks in the library
   │   Otherwise, resolve specific task IDs (validates they exist)
   │
-  └── For each harness × model × task × repeat:
-      Create RunCell(
-          run_name, harness, model, task, repeat,
-          cell_id = "{harness}__{model}__{task}__r{repeat}"
-      )
+  ├── Partition models by role:
+  │   impl_models   = [m for m in models if m.role == implementation]
+  │   review_models = [m for m in models if m.role == review]
+  │
+  └── For each harness × task:
+      │
+      ├── multi_phase task WITH a review phase:
+      │   For each impl_model × review_model × repeat:
+      │     Create RunCell(model=impl_model, review_model=review_model)
+      │     cell_id = "{harness}__{impl}__{task}__r{repeat}__rev-{review}"
+      │
+      ├── multi_phase task WITHOUT a review phase:
+      │   For each impl_model × repeat:
+      │     Create RunCell(model=impl_model, review_model=None)
+      │     cell_id = "{harness}__{model}__{task}__r{repeat}"
+      │
+      └── swe / open_ended task:
+          For each model × repeat:
+            Create RunCell(model=model, review_model=None)
+            cell_id = "{harness}__{model}__{task}__r{repeat}"
 ```
 
-For example, with 5 harnesses, 2 models, 20 tasks, and 5 repeats, the matrix has **1000 cells**.
+For example, with 5 harnesses, 2 models, 20 tasks, and 5 repeats, the matrix has **1000 cells**. A multi-phase task with 2 implementation models and 1 review model produces 2 cells per harness per repeat.
+
+### Multi-phase validation
+
+`build_matrix()` raises `ValueError` if:
+
+- A `multi_phase` task has a `review` phase but no models with `role: implementation`.
+- A `multi_phase` task has a `review` phase but no models with `role: review`.
 
 ### Cell ID format
 
-Each cell has a unique ID: `{harness.name}__{model.name}__{task.id}__r{repeat}`
+Each cell has a unique ID:
+
+- **Single-phase**: `{harness.name}__{model.name}__{task.id}__r{repeat}`
+- **Multi-phase with review**: `{harness.name}__{model.name}__{task.id}__r{repeat}__rev-{review_model.name}`
 
 Example: `opencode__claude-sonnet-4-20250514__swe-bugfix-001__r0`
 
-This ID is used as the `trace_id` for gateway proxy attribution, the Docker container name (sanitized), and the primary key in the results store.
+This ID is used as the `trace_id` for gateway proxy attribution, the Docker container name (sanitized), and the primary key in the results store. For multi-phase tasks, per-phase trace IDs are `{cell_id}__phase-{phase.name}`.
 
 ## Execution model
 
@@ -171,7 +196,7 @@ Progress counters are mutated under a `_progress_lock` (`asyncio.Lock`) to preve
 | `harness` | TEXT | Harness name |
 | `model` | TEXT | Model name |
 | `task_id` | TEXT | Task ID |
-| `track` | TEXT | `swe` or `open_ended` |
+| `track` | TEXT | `swe`, `open_ended`, or `multi_phase` |
 | `repeat` | INTEGER | Repeat index (0-based) |
 | `exit_class` | TEXT | `pass`, `fail`, `retryable_kill`, `non_retryable_kill` |
 | `success` | REAL | 0.0–1.0 (partial credit) |
@@ -217,6 +242,40 @@ Stores the full run config for reproducibility:
 | `harness_evaluator_version` | TEXT | harness-evaluator package version |
 | `docker_image` | TEXT | Docker image used |
 | `created_at` | TEXT | ISO timestamp |
+
+### `phase-results` table
+
+Stores per-phase results for `multi_phase` cells. One row per phase per cell.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | INTEGER PK | Auto-increment ID |
+| `cell_id` | TEXT | Cell ID (FK to `run_results.cell_id`) |
+| `run_name` | TEXT | Run name |
+| `phase_name` | TEXT | Phase name (e.g. `implement`, `review`, `revise`) |
+| `trace_id` | TEXT | Per-phase gateway trace ID (`{cell_id}__phase-{name}`) |
+| `model` | TEXT | Model name used in this phase |
+| `model_role` | TEXT | `implementation` or `review` |
+| `exit_code` | INTEGER | Phase exit code |
+| `duration_ms` | REAL | Phase duration in milliseconds |
+| `timed_out` | INTEGER | 1 if the phase timed out, 0 otherwise |
+| `input_tokens` | INTEGER | Input tokens consumed |
+| `output_tokens` | INTEGER | Output tokens consumed |
+| `total_cost` | REAL | Phase cost in USD |
+| `num_api_calls` | INTEGER | Number of API calls in this phase |
+| `error` | TEXT | Error message (if any) |
+| `timestamp` | TEXT | ISO timestamp |
+
+Query per-phase costs with:
+
+```sql
+SELECT phase_name, model, total_cost, input_tokens, output_tokens
+FROM phase_results
+WHERE cell_id = ?
+ORDER BY id ASC;
+```
+
+The `harness_metadata` JSON in `run_results` also includes a `phases` list (with trace IDs, models, durations, and exit codes) and a `review_model` field for quick access without joining.
 
 ## Run metadata
 
