@@ -60,6 +60,7 @@ jobs:
       - name: Upload wheel and sdist to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           tag="${{ needs.release-please.outputs.tag_name }}"
           version="${tag#v}"

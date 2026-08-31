@@ -67,8 +67,9 @@ jobs:
       - name: Upload wheel and sdist to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
+          tag="${{ inputs.ref }}"
           version="${tag#v}"
           # release-please creates the release with changelog notes;
           # we just attach the build artifacts and append artifact links.
@@ -96,7 +97,7 @@ jobs:
     steps:
       - name: Confirm package is live on PyPI
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
+          tag="${{ inputs.ref }}"
           version="${tag#v}"
           attempts=8
           delay=15
