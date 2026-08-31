@@ -30,6 +30,7 @@ import re
 
 from harness_evaluator.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from harness_evaluator.adapters.registry import register_adapter
+from harness_evaluator.gateway.models import TokenUsage
 
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -88,6 +89,42 @@ class ClaudeCodeAdapter(BaseAdapter):
                 pass
 
         return result
+
+    def parse_self_reported_usage(
+        self, stdout: str, stderr: str
+    ) -> TokenUsage | None:
+        """Parse token usage from Claude Code JSON output.
+
+        Claude Code with ``--output-format json`` emits a JSON object with a
+        ``usage`` field containing ``input_tokens``, ``output_tokens``,
+        ``cache_creation_input_tokens``, and ``cache_read_input_tokens``.
+        Returns ``None`` when the output is not valid JSON or lacks usage.
+        """
+        if not stdout:
+            return None
+        try:
+            clean = _strip_ansi(stdout).strip()
+            parsed = json.loads(clean)
+        except (json.JSONDecodeError, ValueError):
+            return None
+        usage = parsed.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        input_tokens = usage.get("input_tokens", 0)
+        output_tokens = usage.get("output_tokens", 0)
+        if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
+            return None
+        # Only return if at least one field is non-zero (a real run).
+        if input_tokens == 0 and output_tokens == 0:
+            return None
+        cache_read = usage.get("cache_read_input_tokens", 0) or 0
+        cache_write = usage.get("cache_creation_input_tokens", 0) or 0
+        return TokenUsage(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=cache_read if isinstance(cache_read, int) else 0,
+            cache_write_tokens=cache_write if isinstance(cache_write, int) else 0,
+        )
 
     def get_command(self, task_prompt: str) -> list[str]:
         """Return the claude command list for execution inside a container."""

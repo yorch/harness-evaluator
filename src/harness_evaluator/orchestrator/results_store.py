@@ -90,6 +90,21 @@ CREATE TABLE IF NOT EXISTS phase_results (
 
 CREATE INDEX IF NOT EXISTS idx_phase_cell ON phase_results(cell_id);
 CREATE INDEX IF NOT EXISTS idx_phase_run ON phase_results(run_name);
+
+CREATE TABLE IF NOT EXISTS reconciliation_results (
+    cell_id TEXT NOT NULL PRIMARY KEY,
+    run_name TEXT NOT NULL,
+    proxy_usage_json TEXT,
+    self_reported_usage_json TEXT,
+    matched INTEGER NOT NULL,
+    max_discrepancy_pct REAL NOT NULL,
+    details_json TEXT,
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY (cell_id) REFERENCES run_results(cell_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_recon_cell ON reconciliation_results(cell_id);
+CREATE INDEX IF NOT EXISTS idx_recon_run ON reconciliation_results(run_name);
 """
 
 
@@ -338,3 +353,61 @@ class ResultsStore:
                 (cell_id,),
             ).fetchall()
             return [dict(row) for row in rows]
+
+    def save_reconciliation_result(
+        self,
+        cell_id: str,
+        run_name: str,
+        proxy_usage: TokenUsage | None = None,
+        self_reported_usage: TokenUsage | None = None,
+        matched: bool = True,
+        max_discrepancy_pct: float = 0.0,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        """Save a reconciliation result for a cell.
+
+        Args:
+            cell_id: The cell ID this result belongs to.
+            run_name: The run name.
+            proxy_usage: Usage captured by the gateway proxy.
+            self_reported_usage: Usage self-reported by the harness.
+            matched: Whether the sources reconciled within tolerance.
+            max_discrepancy_pct: Largest percentage discrepancy across fields.
+            details: Per-field breakdown of discrepancies.
+        """
+        now = datetime.now(UTC).isoformat()
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO reconciliation_results
+                   (cell_id, run_name, proxy_usage_json,
+                    self_reported_usage_json, matched, max_discrepancy_pct,
+                    details_json, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    cell_id,
+                    run_name,
+                    proxy_usage.model_dump_json() if proxy_usage else None,
+                    (
+                        self_reported_usage.model_dump_json()
+                        if self_reported_usage
+                        else None
+                    ),
+                    1 if matched else 0,
+                    max_discrepancy_pct,
+                    json.dumps(details) if details else None,
+                    now,
+                ),
+            )
+            conn.commit()
+
+    def get_reconciliation_result(
+        self, cell_id: str
+    ) -> dict[str, Any] | None:
+        """Get the reconciliation result for a cell."""
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM reconciliation_results WHERE cell_id = ?",
+                (cell_id,),
+            ).fetchone()
+            return dict(row) if row else None

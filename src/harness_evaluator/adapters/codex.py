@@ -26,11 +26,48 @@ Limitations:
 
 from __future__ import annotations
 
+import json
+import re
 from urllib.parse import urlparse, urlunparse
 
 from harness_evaluator.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from harness_evaluator.adapters.registry import register_adapter
+from harness_evaluator.gateway.models import TokenUsage
 from harness_evaluator.orchestrator.config import AuthMode
+
+# Matches JSON objects in Codex output that contain token usage fields.
+_JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
+
+
+def _extract_codex_usage(text: str) -> TokenUsage | None:
+    """Scan text for a JSON object with token usage fields.
+
+    Codex output is not guaranteed to be pure JSON, so this searches for
+    embedded JSON objects containing ``input_tokens`` or ``output_tokens``.
+    """
+    for match in _JSON_OBJECT_RE.finditer(text):
+        try:
+            obj = json.loads(match.group())
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        in_tok = obj.get("input_tokens")
+        out_tok = obj.get("output_tokens")
+        if in_tok is None and out_tok is None:
+            continue
+        in_tok = in_tok if isinstance(in_tok, int) else 0
+        out_tok = out_tok if isinstance(out_tok, int) else 0
+        if in_tok == 0 and out_tok == 0:
+            continue
+        return TokenUsage(
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            reasoning_tokens=obj.get("reasoning_tokens", 0) or 0
+            if isinstance(obj.get("reasoning_tokens", 0), int)
+            else 0,
+        )
+    return None
 
 
 class CodexAdapter(BaseAdapter):
@@ -67,6 +104,25 @@ class CodexAdapter(BaseAdapter):
     async def run(self, task_prompt: str, timeout: int = 600) -> AdapterResult:
         """Run Codex with the given task prompt using `codex exec`."""
         return await self._run_binary("codex", task_prompt, timeout)
+
+    def parse_self_reported_usage(
+        self, stdout: str, stderr: str
+    ) -> TokenUsage | None:
+        """Parse token usage from Codex CLI output.
+
+        Codex may emit a JSON object with ``input_tokens`` and
+        ``output_tokens`` fields (e.g. in a trailing usage summary or a
+        structured ``usage`` block). This parser scans both stdout and
+        stderr for a JSON object containing token fields. Returns
+        ``None`` when no usage is found.
+        """
+        for text in (stdout, stderr):
+            if not text:
+                continue
+            usage = _extract_codex_usage(text)
+            if usage is not None:
+                return usage
+        return None
 
     def _codex_gateway_url(self, url: str) -> str:
         """Replace the ``/v1`` path segment with ``/codex`` for ChatGPT auth.

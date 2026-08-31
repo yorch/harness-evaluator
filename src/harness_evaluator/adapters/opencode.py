@@ -20,8 +20,42 @@ Limitations:
 
 from __future__ import annotations
 
+import json
+import re
+
 from harness_evaluator.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from harness_evaluator.adapters.registry import register_adapter
+from harness_evaluator.gateway.models import TokenUsage
+
+_JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
+
+
+def _extract_opencode_usage(text: str) -> TokenUsage | None:
+    """Scan text for a JSON object with token usage fields.
+
+    OpenCode output may contain a JSON usage summary with
+    ``input_tokens`` and ``output_tokens`` fields.
+    """
+    for match in _JSON_OBJECT_RE.finditer(text):
+        try:
+            obj = json.loads(match.group())
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        in_tok = obj.get("input_tokens")
+        out_tok = obj.get("output_tokens")
+        if in_tok is None and out_tok is None:
+            continue
+        in_tok = in_tok if isinstance(in_tok, int) else 0
+        out_tok = out_tok if isinstance(out_tok, int) else 0
+        if in_tok == 0 and out_tok == 0:
+            continue
+        return TokenUsage(
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+        )
+    return None
 
 
 class OpenCodeAdapter(BaseAdapter):
@@ -55,6 +89,23 @@ class OpenCodeAdapter(BaseAdapter):
     async def run(self, task_prompt: str, timeout: int = 600) -> AdapterResult:
         """Run OpenCode with the given task prompt."""
         return await self._run_binary("opencode", task_prompt, timeout)
+
+    def parse_self_reported_usage(
+        self, stdout: str, stderr: str
+    ) -> TokenUsage | None:
+        """Parse token usage from OpenCode output.
+
+        OpenCode may emit a JSON object with ``input_tokens`` and
+        ``output_tokens`` fields. This parser scans both stdout and
+        stderr. Returns ``None`` when no usage is found.
+        """
+        for text in (stdout, stderr):
+            if not text:
+                continue
+            usage = _extract_opencode_usage(text)
+            if usage is not None:
+                return usage
+        return None
 
     def get_command(self, task_prompt: str) -> list[str]:
         """Return the opencode command list for execution inside a container."""

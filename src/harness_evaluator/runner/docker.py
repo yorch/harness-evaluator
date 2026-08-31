@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_evaluator.adapters.base import AdapterResult
+from harness_evaluator.gateway.models import TokenUsage
 from harness_evaluator.orchestrator.config import (
     AuthMode,
     ModelRole,
@@ -177,7 +178,6 @@ class DockerRunner:
         Returns a dict with exit_class, success, usage, cost, etc.
         """
         from harness_evaluator.evaluator.swe import SWEEvaluator
-        from harness_evaluator.gateway.models import TokenUsage
         from harness_evaluator.gateway.store import CallStore
 
         cell_workdir = (self.workdir_base / cell.cell_id).resolve()
@@ -338,6 +338,14 @@ class DockerRunner:
                         cell.cell_id,
                     )
 
+            # Reconcile gateway-captured usage against harness self-report.
+            # The adapter is recreated here (cheap) to access its
+            # parse_self_reported_usage() method with the same config used
+            # inside the container.
+            reconciliation_summary = self._reconcile_cell(
+                cell, harness_result, usage
+            )
+
             latency_ms = (time.monotonic() - start_time) * 1000
 
             # Save per-phase results to the results store for multi-phase cells.
@@ -373,6 +381,7 @@ class DockerRunner:
                     "review_model": (
                         cell.review_model.name if cell.review_model else None
                     ),
+                    "reconciliation": reconciliation_summary,
                 },
             }
 
@@ -381,6 +390,75 @@ class DockerRunner:
         except Exception as e:
             logger.error("Cell %s failed: %s", cell.cell_id, e)
             raise
+
+    def _reconcile_cell(
+        self,
+        cell: RunCell,
+        harness_result: RunResult,
+        proxy_usage: TokenUsage,
+    ) -> dict[str, Any] | None:
+        """Reconcile gateway-captured usage against harness self-report.
+
+        Creates the adapter (same config as the in-container run) to parse
+        self-reported token usage from the harness stdout/stderr. When
+        self-reported usage is available, calls :func:`reconcile_usage` and
+        persists the result to the results store.
+
+        Returns a summary dict (``matched``, ``max_discrepancy_pct``,
+        ``details``) for inclusion in ``harness_metadata``, or ``None``
+        when the harness does not report usage (reconciliation skipped).
+        """
+        from harness_evaluator.adapters.registry import create_adapter
+        from harness_evaluator.gateway.reconcile import (
+            ReconciliationStatus,
+            reconcile_usage,
+        )
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        gateway_url = f"http://{self.gateway_host}:{self.gateway_port}"
+        adapter = create_adapter(
+            name=cell.harness.adapter,
+            workdir=str(self.workdir_base / cell.cell_id),
+            model=cell.model,
+            gateway_url=gateway_url,
+            trace_id=cell.cell_id,
+            config=cell.harness.config,
+        )
+        if adapter is None:
+            return None
+
+        self_reported = adapter.parse_self_reported_usage(
+            harness_result.stdout, harness_result.stderr
+        )
+        if self_reported is None:
+            return None
+
+        result = reconcile_usage(
+            proxy_usage=proxy_usage,
+            self_report_usage=self_reported,
+        )
+
+        max_discrepancy = (
+            max(result.discrepancies.values()) if result.discrepancies else 0.0
+        )
+        matched = result.status != ReconciliationStatus.DISCREPANCY
+        summary: dict[str, Any] = {
+            "matched": matched,
+            "max_discrepancy_pct": max_discrepancy,
+            "details": result.discrepancies,
+        }
+
+        results_store = ResultsStore(self.results_db)
+        results_store.save_reconciliation_result(
+            cell_id=cell.cell_id,
+            run_name=cell.run_name,
+            proxy_usage=result.proxy_usage,
+            self_reported_usage=result.self_report_usage,
+            matched=matched,
+            max_discrepancy_pct=max_discrepancy,
+            details=result.discrepancies,
+        )
+        return summary
 
     # ------------------------------------------------------------------
     # Host-side repo setup
