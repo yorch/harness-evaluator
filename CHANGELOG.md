@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.1](https://github.com/yorch/harness-evaluator/compare/v0.11.0...v0.11.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **runner:** chmod credential mounts for non-root container user ([#38](https://github.com/yorch/harness-evaluator/issues/38)) ([e63b81f](https://github.com/yorch/harness-evaluator/commit/e63b81f0d248612df47cc8b6acac1cc86649daa1))
+* **tui:** show ticking elapsed time and all running cells in footer ([24edc19](https://github.com/yorch/harness-evaluator/commit/24edc19fb1710b3595a25915e38a1411d42bd440))
+
+
+### Documentation
+
+* document harness output capture and gateway startup errors ([#36](https://github.com/yorch/harness-evaluator/issues/36)) ([3dd49ec](https://github.com/yorch/harness-evaluator/commit/3dd49ec79f60de2b86a612295201cf990bb32eda))
+
 ## [0.11.0](https://github.com/yorch/harness-evaluator/compare/v0.10.0...v0.11.0) (2026-08-31)
 
 
