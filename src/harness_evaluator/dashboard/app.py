@@ -780,6 +780,7 @@ def create_app(
                 "cache_write_tokens", "reasoning_tokens", "total_cost",
                 "latency_ms", "time_to_first_attempt_ms", "num_api_calls",
                 "num_tool_calls", "diff", "test_output", "harness_metadata",
+                "harness_stdout", "harness_stderr",
                 "timestamp", "retry_count",
             ],
             extrasaction="ignore",

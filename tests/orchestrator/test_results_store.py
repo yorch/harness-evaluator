@@ -99,3 +99,115 @@ class TestResultsStore:
 
         total = store.get_total_cost("test-run")
         assert total == pytest.approx(0.06)  # 0.01 + 0.02 + 0.03
+
+    def test_save_and_retrieve_harness_output(self, store, sample_cell):
+        store.save_result(
+            cell=sample_cell,
+            exit_class="fail",
+            success=0.0,
+            error_class="no_change",
+            error_message="No changes were made to the repository",
+            harness_stdout="Building project...\nDone.",
+            harness_stderr="Error: API key invalid",
+        )
+        result = store.get_result(sample_cell.cell_id)
+        assert result is not None
+        assert result["harness_stdout"] == "Building project...\nDone."
+        assert result["harness_stderr"] == "Error: API key invalid"
+
+    def test_harness_output_defaults_to_none(self, store, sample_cell):
+        store.save_result(
+            cell=sample_cell,
+            exit_class="pass",
+            success=1.0,
+        )
+        result = store.get_result(sample_cell.cell_id)
+        assert result is not None
+        assert result["harness_stdout"] is None
+        assert result["harness_stderr"] is None
+
+    def test_migration_adds_harness_output_columns(self, tmp_path):
+        """Existing DBs without harness_stdout/stderr get them via ALTER TABLE."""
+        import sqlite3
+
+        db_path = str(tmp_path / "old_db.db")
+        # Create an old-style schema without the new columns.
+        with sqlite3.connect(db_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE run_results (
+                    cell_id TEXT PRIMARY KEY,
+                    run_name TEXT NOT NULL,
+                    harness TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    track TEXT NOT NULL,
+                    repeat INTEGER NOT NULL,
+                    exit_class TEXT NOT NULL,
+                    success REAL NOT NULL,
+                    error_class TEXT,
+                    error_message TEXT,
+                    input_tokens INTEGER DEFAULT 0,
+                    output_tokens INTEGER DEFAULT 0,
+                    cache_read_tokens INTEGER DEFAULT 0,
+                    cache_write_tokens INTEGER DEFAULT 0,
+                    reasoning_tokens INTEGER DEFAULT 0,
+                    total_cost REAL DEFAULT 0.0,
+                    latency_ms REAL DEFAULT 0.0,
+                    time_to_first_attempt_ms REAL DEFAULT 0.0,
+                    num_api_calls INTEGER DEFAULT 0,
+                    num_tool_calls INTEGER DEFAULT 0,
+                    diff TEXT,
+                    test_output TEXT,
+                    harness_metadata TEXT,
+                    timestamp TEXT NOT NULL,
+                    retry_count INTEGER DEFAULT 0
+                );
+                CREATE TABLE phase_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cell_id TEXT NOT NULL,
+                    run_name TEXT NOT NULL,
+                    phase_name TEXT NOT NULL,
+                    trace_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    model_role TEXT NOT NULL,
+                    exit_code INTEGER NOT NULL,
+                    duration_ms REAL DEFAULT 0.0,
+                    timed_out INTEGER DEFAULT 0,
+                    input_tokens INTEGER DEFAULT 0,
+                    output_tokens INTEGER DEFAULT 0,
+                    total_cost REAL DEFAULT 0.0,
+                    num_api_calls INTEGER DEFAULT 0,
+                    error TEXT,
+                    timestamp TEXT NOT NULL,
+                    FOREIGN KEY (cell_id) REFERENCES run_results(cell_id)
+                );
+                """
+            )
+            conn.commit()
+
+        # Opening with ResultsStore should migrate the schema.
+        store = ResultsStore(db_path)
+        # Verify the new columns exist.
+        with sqlite3.connect(db_path) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(run_results)")}
+            assert "harness_stdout" in cols
+            assert "harness_stderr" in cols
+            phase_cols = {row[1] for row in conn.execute("PRAGMA table_info(phase_results)")}
+            assert "stdout" in phase_cols
+            assert "stderr" in phase_cols
+
+        # Verify we can save and retrieve with the new columns.
+        store.save_result(
+            cell=RunCell(
+                run_name="migrated-run",
+                harness=HarnessSpec(name="opencode", adapter="opencode"),
+                model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+                task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="x"),
+                repeat=0,
+            ),
+            exit_class="fail",
+            success=0.0,
+            harness_stdout="hello",
+            harness_stderr="world",
+        )

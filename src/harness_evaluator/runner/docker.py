@@ -36,6 +36,7 @@ from harness_evaluator.orchestrator.config import (
     TaskTrack,
 )
 from harness_evaluator.orchestrator.engine import RetryableError
+from harness_evaluator.runner.redaction import sanitize_output
 
 logger = logging.getLogger(__name__)
 
@@ -380,6 +381,8 @@ class DockerRunner:
                 "num_tool_calls": 0,
                 "diff": eval_result.diff,
                 "test_output": eval_result.test_output,
+                "harness_stdout": sanitize_output(harness_result.stdout),
+                "harness_stderr": sanitize_output(harness_result.stderr),
                 "harness_metadata": {
                     "harness": cell.harness.name,
                     "model": cell.model.name,
@@ -1064,6 +1067,8 @@ class DockerRunner:
                             "exit_code": -1,
                             "duration_ms": 0.0,
                             "error": "no adapter",
+                            "stdout": "",
+                            "stderr": f"No adapter for: {cell.harness.adapter}",
                         }
                     )
                     break
@@ -1144,6 +1149,8 @@ class DockerRunner:
                         "exit_code": result.exit_code,
                         "duration_ms": result.duration_ms,
                         "timed_out": result.timed_out,
+                        "stdout": sanitize_output(result.stdout),
+                        "stderr": sanitize_output(result.stderr),
                     }
                 )
 
