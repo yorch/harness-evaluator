@@ -70,8 +70,9 @@ class TestProxyNonStreamingAnthropic:
         the client tries to decompress already-decompressed bytes,
         causing BrotliDecompressionError.
         """
-        import brotli
         import json as json_mod
+
+        import brotli
 
         async def handle_messages(request: web.Request) -> web.Response:
             body = {
