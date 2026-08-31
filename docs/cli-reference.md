@@ -112,21 +112,47 @@ Run: broad-first-pass
 Gateway reachable on port 8877
 ```
 
-During the run, a live progress panel is shown (auto-off in non-TTY/CI):
+During the run, a Textual TUI is shown (auto-off in non-TTY/CI):
 
 ```
-╭─────────────────────── Eval Progress ───────────────────────╮
-│ ████████████░░░░░░░░░░░░░░░░░░░  120/1000 (12.0%)          │
-│ ✓ 100  ✗ 15  ⊘ 5  ► 1                                       │
-│ Cost: $1.2340 / $100.00  |  Elapsed: 342s                   │
-│ Running: opencode__claude-sonnet-4-...__swe-bugfix-003__r0  │
-╰─────────────────────────────────────────────────────────────╯
+┌─ Eval Log ─────────────────────────── harness-evaluator ─┐
+│ 12:34:56 INFO  Run 'sample': budget $100, 0 cells done   │
+│ 12:34:57 INFO  Cell claude-code__claude-sonnet-5__swe... │
+│ 12:35:01 WARN  Cell retrying (attempt 2/3)               │
+│ 12:35:12 ERROR Cell failed: test_timeout                 │
+│                                                           │
+│ (scrollable — scroll up to inspect, `f` to resume tail)  │
+├─ Eval Progress ──────────────────────────────────────────┤
+│ ████████████░░░░░░░░  120/1000 (12.0%)                   │
+│ ✓ 100  ✗ 15  ⊘ 5  ► 1                                   │
+│ Cost: $1.2340 / $100.00  |  Elapsed: 342s                │
+│ Running: opencode__claude-sonnet-5__swe-bugfix-003__r0  │
+└──────────────────────────────────────────────────────────┘
 ```
 
-The panel shows: a progress bar, completed/failed/skipped/running counts,
-cumulative cost (with budget cap if set), elapsed time, and the current
-cell ID (or running count for parallel runs). Use `--no-progress` to
-disable it, or `-v`/`-vv` to add per-cell log lines alongside it.
+The TUI has two regions:
+- **Log area** (top, scrollable) — shows all log output in real time,
+  color-coded by level (INFO, WARN, ERROR). Auto-follows the tail; scroll
+  up to pause, press `f` to resume.
+- **Progress footer** (bottom, fixed) — shows a progress bar,
+  completed/failed/skipped/running counts, cumulative cost (with budget
+  cap if set), elapsed time, and the current cell ID.
+
+Keyboard shortcuts:
+
+| Key | Action |
+|-----|--------|
+| `q` / `Ctrl+C` | Quit (cancels the run) |
+| `d` | Toggle DEBUG log level |
+| `t` | Toggle timestamps in log |
+| `f` | Toggle auto-follow (tail mode) |
+
+The TUI defaults to INFO log level (more useful than the WARNING default
+of non-TUI mode, since the log area makes output readable). Use `-v` /
+`-vv` flags for the non-TUI fallback path.
+
+When not a TTY (CI, pipes) or `--no-progress` is passed, the TUI is
+skipped and logs go to stderr via a Rich handler.
 
 ```
 Run complete

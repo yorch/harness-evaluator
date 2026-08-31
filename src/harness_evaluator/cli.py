@@ -268,7 +268,6 @@ def run(
     ),
 ) -> None:
     """Execute an evaluation run from a config file."""
-    _configure_logging(verbose)
     from rich.live import Live
 
     from harness_evaluator.orchestrator.config import RunConfig
@@ -346,18 +345,30 @@ def run(
         results_db=cfg.results_db,
     )
 
-    # Decide whether to show the live progress panel.
+    # Decide whether to show the live TUI.
     # Auto-off in non-TTY (CI, pipes) even if --progress was passed.
-    use_live = show_progress and sys.stdout.isatty()
+    use_tui = show_progress and sys.stdout.isatty()
 
-    if use_live:
+    progress_result: Any = None
+
+    if use_tui:
+        try:
+            from harness_evaluator.tui import EvalApp
+
+            app = EvalApp(cfg, store, runner.run_cell, cells)
+            app.run()
+            progress_result = app.result
+        except ImportError:
+            # Textual not installed — fall back to Rich Live panel.
+            use_tui = False
+
+    if not use_tui and progress_result is None:
+        # Rich Live fallback (non-TTY or textual not installed).
+        _configure_logging(verbose)
         start_time = time.monotonic()
         latest: list[OrchestratorProgress | None] = [None]
 
         def on_progress(snapshot: OrchestratorProgress) -> None:
-            # Non-blocking reference swap (GIL-atomic). The Live refresh
-            # thread reads this on its own schedule, decoupled from cell
-            # completion rate so elapsed time ticks smoothly.
             latest[0] = snapshot
 
         def render() -> Panel:
@@ -366,14 +377,15 @@ def run(
                 snap = OrchestratorProgress(total_cells=len(cells))
             return _render_progress_panel(snap, start_time, cfg.budget_usd)
 
-        with Live(render(), console=console, refresh_per_second=4, transient=True):
-            orchestrator = Orchestrator(
-                cfg, store, run_cell_fn=runner.run_cell, on_progress=on_progress
-            )
+        if show_progress and sys.stdout.isatty():
+            with Live(render(), console=console, refresh_per_second=4, transient=True):
+                orchestrator = Orchestrator(
+                    cfg, store, run_cell_fn=runner.run_cell, on_progress=on_progress
+                )
+                progress_result = asyncio.run(orchestrator.run())
+        else:
+            orchestrator = Orchestrator(cfg, store, run_cell_fn=runner.run_cell)
             progress_result = asyncio.run(orchestrator.run())
-    else:
-        orchestrator = Orchestrator(cfg, store, run_cell_fn=runner.run_cell)
-        progress_result = asyncio.run(orchestrator.run())
 
     progress = progress_result
 

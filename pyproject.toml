@@ -30,6 +30,7 @@ dependencies = [
     "pandas>=2.0",
     "statsmodels>=0.14",
     "httpx>=0.27",
+    "textual>=8.2.8",
 ]
 
 [project.optional-dependencies]
