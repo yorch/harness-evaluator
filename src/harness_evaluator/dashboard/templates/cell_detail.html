@@ -1,0 +1,157 @@
+{% extends "_base.html" %}
+{% block title %}harness-evaluator — {{ run_name }} — {{ cell.cell_id }}{% endblock %}
+{% block content %}
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="/">&larr; All runs</a> / <a href="/run/{{ run_name | urlencode }}">{{ run_name }}</a>
+    </nav>
+    <h1>
+        <span translate="no">{{ cell.cell_id }}</span>
+        <button type="button" class="copy-btn" data-copy="{{ cell.cell_id }}" aria-label="Copy cell ID">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+        </button>
+    </h1>
+
+    {% set exit_class = 'pass' if cell.exit_class == 'pass' else ('partial' if cell.exit_class == 'partial' else ('kill' if cell.exit_class in ('retryable_kill', 'non_retryable_kill') else 'fail')) %}
+
+    <div class="summary-cards">
+        <div class="summary-card">
+            <div class="value {{ exit_class }}">{{ cell.exit_class }}</div><div class="label">Exit Class</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{{ "%.2f"|format(cell.success) }}</div><div class="label">Success</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">${{ "%.6f"|format(cell.total_cost) }}</div><div class="label">Cost</div>
+        </div>
+        <div class="summary-card">
+            <div class="value">{{ "%.1f"|format(cell.latency_ms / 1000) }}s</div><div class="label">Latency</div>
+        </div>
+    </div>
+
+    <section class="section">
+        <h2>Cell Details</h2>
+        <div class="card">
+            <dl style="display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0;">
+                <dt style="color: var(--muted); font-size: 0.85rem;">Run</dt>
+                <dd style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;" translate="no">{{ cell.run_name }}</dd>
+                <dt style="color: var(--muted); font-size: 0.85rem;">Harness</dt>
+                <dd style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;" translate="no">{{ cell.harness }}</dd>
+                <dt style="color: var(--muted); font-size: 0.85rem;">Model</dt>
+                <dd style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;" translate="no">{{ cell.model }}</dd>
+                <dt style="color: var(--muted); font-size: 0.85rem;">Task</dt>
+                <dd style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;" translate="no">{{ cell.task_id }}</dd>
+                <dt style="color: var(--muted); font-size: 0.85rem;">Track</dt>
+                <dd style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;" translate="no">{{ cell.track }}</dd>
+                <dt style="color: var(--muted); font-size: 0.85rem;">Repeat</dt>
+                <dd style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;">r{{ cell.repeat }}</dd>
+                <dt style="color: var(--muted); font-size: 0.85rem;">Timestamp</dt>
+                <dd style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;" translate="no">{{ cell.timestamp }}</dd>
+                {% if cell.retry_count %}<dt style="color: var(--muted); font-size: 0.85rem;">Retries</dt><dd style="margin: 0; font-family: var(--font-mono); font-size: 0.85rem;">{{ cell.retry_count }}</dd>{% endif %}
+            </dl>
+        </div>
+    </section>
+
+    <section class="section">
+        <h2>Token Usage</h2>
+        <div class="table-wrapper">
+            <table>
+                <thead><tr><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Cache Read</th><th scope="col">Cache Write</th><th scope="col">Reasoning</th><th scope="col">Total</th></tr></thead>
+                <tbody><tr>
+                    <td>{{ cell.input_tokens }}</td>
+                    <td>{{ cell.output_tokens }}</td>
+                    <td>{{ cell.cache_read_tokens }}</td>
+                    <td>{{ cell.cache_write_tokens }}</td>
+                    <td>{{ cell.reasoning_tokens }}</td>
+                    <td>{{ cell.input_tokens + cell.output_tokens + cell.cache_read_tokens + cell.cache_write_tokens + cell.reasoning_tokens }}</td>
+                </tr></tbody>
+            </table>
+        </div>
+        <div class="table-wrapper" style="margin-top: 0.5rem;">
+            <table>
+                <thead><tr><th scope="col">API Calls</th><th scope="col">Tool Calls</th><th scope="col">Time to First Attempt</th></tr></thead>
+                <tbody><tr>
+                    <td>{{ cell.num_api_calls }}</td>
+                    <td>{{ cell.num_tool_calls }}</td>
+                    <td>{{ "%.1f"|format(cell.time_to_first_attempt_ms / 1000) }}s</td>
+                </tr></tbody>
+            </table>
+        </div>
+    </section>
+
+    {% if cell.error_class or cell.error_message %}
+    <section class="section">
+        <h2>Error</h2>
+        <div class="card">
+            {% if cell.error_class %}<p><strong class="fail">Error Class:</strong> <span class="mono" translate="no">{{ cell.error_class }}</span></p>{% endif %}
+            {% if cell.error_message %}<pre class="code-block">{{ cell.error_message }}</pre>{% endif %}
+        </div>
+    </section>
+    {% endif %}
+
+    {% if cell.diff %}
+    <section class="section">
+        <h2>Diff</h2>
+        <pre class="code-block">{{ cell.diff }}</pre>
+    </section>
+    {% endif %}
+
+    {% if cell.test_output %}
+    <section class="section">
+        <h2>Test Output</h2>
+        <pre class="code-block">{{ cell.test_output }}</pre>
+    </section>
+    {% endif %}
+
+    {% if cell.harness_metadata %}
+    <section class="section">
+        <h2>Harness Metadata</h2>
+        <pre class="code-block">{{ cell.harness_metadata }}</pre>
+    </section>
+    {% endif %}
+
+    {% if phases %}
+    <section class="section">
+        <h2>Phase Results</h2>
+        <div class="table-wrapper">
+            <table>
+                <thead><tr><th scope="col">Phase</th><th scope="col">Model</th><th scope="col">Role</th>
+                    <th scope="col">Exit Code</th><th scope="col">Duration</th><th scope="col">Input Tokens</th>
+                    <th scope="col">Output Tokens</th><th scope="col">Cost</th><th scope="col">API Calls</th>
+                    <th scope="col">Timed Out</th></tr></thead>
+                <tbody>
+                {% for p in phases %}
+                <tr>
+                    <td class="mono" translate="no">{{ p.phase_name }}</td>
+                    <td class="mono truncate" translate="no">{{ p.model }}</td>
+                    <td>{{ p.model_role }}</td>
+                    <td>{{ p.exit_code }}</td>
+                    <td>{{ "%.1f"|format(p.duration_ms / 1000) }}s</td>
+                    <td>{{ p.input_tokens }}</td>
+                    <td>{{ p.output_tokens }}</td>
+                    <td>${{ "%.6f"|format(p.total_cost) }}</td>
+                    <td>{{ p.num_api_calls }}</td>
+                    <td>{{ "yes" if p.timed_out else "no" }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if reconciliation %}
+    <section class="section">
+        <h2>Reconciliation</h2>
+        <div class="card">
+            <p><strong>Matched:</strong> {{ "yes" if reconciliation.matched else "no" }}</p>
+            <p><strong>Max Discrepancy:</strong> {{ "%.1f"|format(reconciliation.max_discrepancy_pct) }}%</p>
+            {% if reconciliation.proxy_usage_json %}<p style="margin-top: 0.5rem; color: var(--muted); font-size: 0.85rem;">Proxy Usage:</p><pre class="code-block">{{ reconciliation.proxy_usage_json }}</pre>{% endif %}
+            {% if reconciliation.self_reported_usage_json %}<p style="margin-top: 0.5rem; color: var(--muted); font-size: 0.85rem;">Self-Reported Usage:</p><pre class="code-block">{{ reconciliation.self_reported_usage_json }}</pre>{% endif %}
+            {% if reconciliation.details_json %}<p style="margin-top: 0.5rem; color: var(--muted); font-size: 0.85rem;">Details:</p><pre class="code-block">{{ reconciliation.details_json }}</pre>{% endif %}
+        </div>
+    </section>
+    {% endif %}
+{% endblock %}

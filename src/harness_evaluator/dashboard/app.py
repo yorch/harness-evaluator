@@ -29,21 +29,24 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import csv
 import hashlib
 import hmac
+import io
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request as StarletteRequest
-from starlette.responses import Response
 
 from harness_evaluator.orchestrator.results_store import ResultsStore
-from harness_evaluator.reporting.static_report import ReportGenerator
+from harness_evaluator.reporting.static_report import ReportGenerator, sanitize_csv_field
 
 # Jinja2 environment with autoescaping for XSS safety
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
@@ -89,9 +92,34 @@ WHERE run_name = ?
   AND (? IS NULL OR harness = ?)
   AND (? IS NULL OR track = ?)
   AND (? IS NULL OR success >= ?)
-ORDER BY harness, model, task_id, repeat
+ORDER BY {order_by}
 LIMIT ? OFFSET ?
 """
+
+SQL_ALL_FILTERED = """
+SELECT * FROM run_results
+WHERE run_name = ?
+  AND (? IS NULL OR model = ?)
+  AND (? IS NULL OR harness = ?)
+  AND (? IS NULL OR track = ?)
+  AND (? IS NULL OR success >= ?)
+ORDER BY {order_by}
+"""
+
+SORT_COLUMNS = frozenset({
+    "harness", "model", "task_id", "repeat", "exit_class",
+    "success", "total_cost", "latency_ms", "num_api_calls",
+})
+
+DEFAULT_ORDER_BY = "harness, model, task_id, repeat"
+
+
+def _build_order_by(sort: str | None, order: str | None) -> str:
+    """Build a safe ORDER BY clause from validated sort column and direction."""
+    if sort and sort in SORT_COLUMNS:
+        direction = "DESC" if (order or "").upper() == "DESC" else "ASC"
+        return f"{sort} {direction}"
+    return DEFAULT_ORDER_BY
 
 SQL_FILTERED_COUNT = """
 SELECT COUNT(*) FROM run_results
@@ -191,9 +219,13 @@ class TokenAuthMiddleware(BaseHTTPMiddleware):
             return HTMLResponse(
                 status_code=401,
                 content=(
-                    "<!DOCTYPE html><html><head><title>401 Unauthorized"
-                    "</title></head><body><h1>401 Unauthorized</h1>"
-                    "<p>Authentication required.</p>"
+                    "<!DOCTYPE html><html lang='en'><head>"
+                    "<meta charset='utf-8'>"
+                    "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+                    "<title>401 Unauthorized</title>"
+                    "<style>a{color:#1971c2}</style>"
+                    "</head><body><h1>401 Unauthorized</h1>"
+                    "<p>Authentication required. Use the login link below.</p>"
                     '<p><a href="/login">Login</a></p>'
                     "</body></html>"
                 ),
@@ -292,11 +324,15 @@ def create_app(
         min_success: float | None,
         limit: int,
         offset: int,
+        sort: str | None = None,
+        order: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get paginated, filtered results."""
+        order_by = _build_order_by(sort, order)
+        sql = SQL_PAGINATED_RESULTS.format(order_by=order_by)
         with _get_db_conn() as conn:
             rows = conn.execute(
-                SQL_PAGINATED_RESULTS,
+                sql,
                 (
                     run_name,
                     model, model,
@@ -307,6 +343,35 @@ def create_app(
                 ),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def _get_all_filtered_results(
+        run_name: str,
+        model: str | None,
+        harness: str | None,
+        track: str | None,
+        min_success: float | None,
+        sort: str | None = None,
+        order: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Get all filtered results (no pagination, for export)."""
+        order_by = _build_order_by(sort, order)
+        sql = SQL_ALL_FILTERED.format(order_by=order_by)
+        with _get_db_conn() as conn:
+            rows = conn.execute(
+                sql,
+                (
+                    run_name,
+                    model, model,
+                    harness, harness,
+                    track, track,
+                    min_success, min_success,
+                ),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def _get_theme(request: StarletteRequest) -> str | None:
+        """Read the theme cookie ('light', 'dark', or None for auto)."""
+        return request.cookies.get("theme")
 
     def _get_filtered_count(
         run_name: str,
@@ -412,8 +477,15 @@ def create_app(
         # Show a simple login form (token is missing or invalid)
         return HTMLResponse(
             content=(
-                "<!DOCTYPE html><html><head><title>Login</title></head>"
-                "<body><h1>Dashboard Login</h1>"
+                "<!DOCTYPE html><html lang='en'><head>"
+                "<meta charset='utf-8'>"
+                "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+                "<title>Login</title>"
+                "<style>body{font-family:-apple-system,sans-serif;margin:2rem}"
+                "label{display:block;margin:1rem 0}"
+                "input{padding:0.35rem 0.5rem;font-size:1rem}"
+                "button{padding:0.35rem 1rem;cursor:pointer}</style>"
+                "</head><body><h1>Dashboard Login</h1>"
                 "<form method='get' action='/login'>"
                 "<label>Token: <input type='password' name='token' "
                 "autocomplete='off'></label>"
@@ -430,11 +502,12 @@ def create_app(
         return resp
 
     @app.get("/", response_class=HTMLResponse)
-    async def index() -> str:
+    async def index(request: StarletteRequest) -> str:
         """Dashboard home page with run overview."""
         runs = await asyncio.to_thread(_get_run_summaries)
+        theme = _get_theme(request)
         template = _env.get_template("index.html")
-        return template.render(runs=runs)
+        return template.render(runs=runs, theme=theme)
 
     def _get_run_summary_stats(run_name: str) -> tuple[int, int, float]:
         """Get total/passed/cost for a run in a single query."""
@@ -454,6 +527,7 @@ def create_app(
 
     @app.get("/run/{run_name}", response_class=HTMLResponse)
     async def run_detail(
+        request: StarletteRequest,
         run_name: str,
         model: str | None = Query(None),
         harness: str | None = Query(None),
@@ -461,6 +535,8 @@ def create_app(
         min_success: float | None = Query(None, ge=0.0, le=1.0),
         page: int = Query(1, ge=1),
         per_page: int = Query(50, ge=1, le=500),
+        sort: str | None = Query(None),
+        order: str | None = Query(None),
     ) -> str:
         """Detailed view for a specific run with filtering and pagination."""
         if not await asyncio.to_thread(_run_exists, run_name):
@@ -481,7 +557,8 @@ def create_app(
         offset = (page - 1) * per_page
         results = await asyncio.to_thread(
             _get_paginated_results,
-            run_name, model, harness, track, min_success, per_page, offset,
+            run_name, model, harness, track, min_success,
+            per_page, offset, sort, order,
         )
 
         cell_ids = [r["cell_id"] for r in results]
@@ -490,6 +567,9 @@ def create_app(
 
         # Get live state (if run is in progress)
         state_summary = await asyncio.to_thread(_get_run_state_summary, run_name)
+        is_in_progress = bool(state_summary) and (
+            "running" in state_summary or "pending" in state_summary
+        )
 
         # Build leaderboard from full run (not filtered)
         all_results = await asyncio.to_thread(store.get_all_results, run_name)
@@ -502,6 +582,19 @@ def create_app(
             _get_run_summary_stats, run_name
         )
 
+        # Run metadata for reproducibility panel
+        run_metadata = await asyncio.to_thread(store.get_run_metadata, run_name)
+
+        # Build base query string for pagination/sort links (without page/sort/order)
+        base_query = urlencode({
+            "model": model or "",
+            "harness": harness or "",
+            "track": track or "",
+            "min_success": min_success if min_success is not None else "",
+            "per_page": per_page,
+        })
+
+        theme = _get_theme(request)
         template = _env.get_template("run_detail.html")
         return template.render(
             run_name=run_name,
@@ -524,6 +617,12 @@ def create_app(
             state_summary=state_summary,
             failed_cells=failed_cells,
             phase_results=phase_results,
+            is_in_progress=is_in_progress,
+            run_metadata=run_metadata,
+            sort=sort,
+            order=order,
+            base_query=base_query,
+            theme=theme,
         )
 
     @app.get("/api/runs")
@@ -541,6 +640,8 @@ def create_app(
         min_success: float | None = Query(None, ge=0.0, le=1.0),
         page: int = Query(1, ge=1),
         per_page: int = Query(50, ge=1, le=500),
+        sort: str | None = Query(None),
+        order: str | None = Query(None),
     ) -> JSONResponse:
         """Get filtered, paginated results for a run as JSON."""
         if not await asyncio.to_thread(_run_exists, run_name):
@@ -556,7 +657,8 @@ def create_app(
         offset = (page - 1) * per_page
         results = await asyncio.to_thread(
             _get_paginated_results,
-            run_name, model, harness, track, min_success, per_page, offset,
+            run_name, model, harness, track, min_success,
+            per_page, offset, sort, order,
         )
 
         return JSONResponse(
@@ -597,5 +699,101 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
         failed_cells = await asyncio.to_thread(_get_failed_cells, run_name)
         return {"run_name": run_name, "failed_cells": failed_cells}
+
+    @app.get(
+        "/run/{run_name}/cell/{cell_id}", response_class=HTMLResponse
+    )
+    async def cell_detail(
+        request: StarletteRequest,
+        run_name: str,
+        cell_id: str,
+    ) -> str:
+        """Detailed view for a single evaluation cell."""
+        if not await asyncio.to_thread(_run_exists, run_name):
+            raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
+
+        cell = await asyncio.to_thread(store.get_result, cell_id)
+        if not cell or cell.get("run_name") != run_name:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Cell '{cell_id}' not found in run '{run_name}'",
+            )
+
+        phases = await asyncio.to_thread(store.get_phase_results, cell_id)
+        reconciliation = await asyncio.to_thread(
+            store.get_reconciliation_result, cell_id
+        )
+        theme = _get_theme(request)
+        template = _env.get_template("cell_detail.html")
+        return template.render(
+            run_name=run_name,
+            cell=cell,
+            phases=phases,
+            reconciliation=reconciliation,
+            theme=theme,
+        )
+
+    @app.get("/run/{run_name}/export/{format}")
+    async def export_results(
+        run_name: str,
+        format: str,
+        model: str | None = Query(None),
+        harness: str | None = Query(None),
+        track: str | None = Query(None),
+        min_success: float | None = Query(None, ge=0.0, le=1.0),
+        sort: str | None = Query(None),
+        order: str | None = Query(None),
+    ) -> Response:
+        """Export filtered results as CSV or JSON."""
+        if format not in ("csv", "json"):
+            raise HTTPException(
+                status_code=400, detail="Format must be 'csv' or 'json'"
+            )
+        if not await asyncio.to_thread(_run_exists, run_name):
+            raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
+
+        results = await asyncio.to_thread(
+            _get_all_filtered_results,
+            run_name, model, harness, track, min_success, sort, order,
+        )
+
+        if format == "json":
+            return Response(
+                content=json.dumps(
+                    {"run_name": run_name, "count": len(results), "results": results},
+                    indent=2,
+                ),
+                media_type="application/json",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{run_name}.json"'
+                },
+            )
+
+        # CSV export with CSV-injection sanitization
+        output = io.StringIO()
+        writer = csv.DictWriter(
+            output,
+            fieldnames=[
+                "cell_id", "run_name", "harness", "model", "task_id", "track",
+                "repeat", "exit_class", "success", "error_class", "error_message",
+                "input_tokens", "output_tokens", "cache_read_tokens",
+                "cache_write_tokens", "reasoning_tokens", "total_cost",
+                "latency_ms", "time_to_first_attempt_ms", "num_api_calls",
+                "num_tool_calls", "diff", "test_output", "harness_metadata",
+                "timestamp", "retry_count",
+            ],
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for row in results:
+            writer.writerow({k: sanitize_csv_field(v) for k, v in row.items()})
+
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f'attachment; filename="{run_name}.csv"'
+            },
+        )
 
     return app
