@@ -309,6 +309,46 @@ class TestProxyTraceIdExtraction:
         assert len(calls) == 1
         assert calls[0].trace_id == "secret-cell"
 
+    async def test_trace_id_from_path_prefix(self, proxy_app):
+        """Test that trace_id is extracted from /__trace__/<id>/ path prefix."""
+        proxy_url, store, _ = proxy_app
+
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{proxy_url}/__trace__/path-cell-abc/v1/messages",
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
+        ) as resp:
+            assert resp.status == 200
+
+        calls = store.get_all()
+        assert len(calls) == 1
+        assert calls[0].trace_id == "path-cell-abc"
+        # The upstream path should not contain the __trace__ prefix
+        assert calls[0].path == "/v1/messages"
+
+    async def test_trace_id_path_prefix_not_forwarded(self, proxy_app):
+        """Test that the __trace__ prefix is stripped before forwarding upstream."""
+        proxy_url, store, _ = proxy_app
+
+        async with aiohttp.ClientSession() as session, session.post(
+            f"{proxy_url}/__trace__/cell-xyz/v1/messages",
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "Hi"}],
+            },
+        ) as resp:
+            assert resp.status == 200
+
+        calls = store.get_all()
+        assert len(calls) == 1
+        assert calls[0].trace_id == "cell-xyz"
+        # The path stored should be the stripped path, not the full one
+        assert "/__trace__/" not in calls[0].path
+
     def test_extract_trace_id_unit(self, tmp_db):
         """Unit test for _extract_trace_id with various inputs."""
         from harness_evaluator.gateway.proxy import GatewayProxy
@@ -316,22 +356,43 @@ class TestProxyTraceIdExtraction:
         store = CallStore(tmp_db)
         proxy = GatewayProxy(store)
 
-        # Header takes precedence
-        assert proxy._extract_trace_id(
-            {"x-harness-evaluator-trace-id": "abc"}, "trace_id=xyz"
-        ) == "abc"
+        # Header takes precedence (path is returned unchanged)
+        tid, path = proxy._extract_trace_id(
+            {"x-harness-evaluator-trace-id": "abc"}, "trace_id=xyz", "/v1/messages"
+        )
+        assert tid == "abc"
+        assert path == "/v1/messages"
 
         # Fallback to x-trace-id header
-        assert proxy._extract_trace_id(
-            {"x-trace-id": "def"}, "trace_id=xyz"
-        ) == "def"
+        tid, _ = proxy._extract_trace_id(
+            {"x-trace-id": "def"}, "trace_id=xyz", "/v1/messages"
+        )
+        assert tid == "def"
 
-        # Query param fallback
-        assert proxy._extract_trace_id({}, "trace_id=qry123") == "qry123"
+        # Path prefix /__trace__/<id>/... is extracted and stripped
+        tid, path = proxy._extract_trace_id(
+            {}, "", "/__trace__/cell-123/v1/messages"
+        )
+        assert tid == "cell-123"
+        assert path == "/v1/messages"
+
+        # Path prefix takes precedence over query param
+        tid, path = proxy._extract_trace_id(
+            {}, "trace_id=qry", "/__trace__/path-cell/v1/messages"
+        )
+        assert tid == "path-cell"
+        assert path == "/v1/messages"
+
+        # Query param fallback (no path prefix)
+        tid, path = proxy._extract_trace_id({}, "trace_id=qry123", "/v1/messages")
+        assert tid == "qry123"
+        assert path == "/v1/messages"
 
         # No trace id
-        assert proxy._extract_trace_id({}, "") is None
-        assert proxy._extract_trace_id({}, "other_param=foo") is None
+        tid, _ = proxy._extract_trace_id({}, "", "/v1/messages")
+        assert tid is None
+        tid, _ = proxy._extract_trace_id({}, "other_param=foo", "/v1/messages")
+        assert tid is None
 
 
 class TestProxyCanaryIntegration:

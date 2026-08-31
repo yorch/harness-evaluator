@@ -222,32 +222,68 @@ class GatewayProxy:
         return str(model)
 
     def _extract_trace_id(
-        self, headers: Mapping[str, str], query_string: str = ""
-    ) -> str | None:
-        """Extract trace ID from request headers or query string.
+        self,
+        headers: Mapping[str, str],
+        query_string: str = "",
+        path: str = "",
+    ) -> tuple[str | None, str]:
+        """Extract trace ID from request headers, path prefix, or query string.
 
-        The harness subprocesses append ``?trace_id=xxx`` to the gateway
-        URL (via the adapter's ``get_env()``), so we check the query
-        string in addition to the explicit ``x-harness-evaluator-trace-id`` header.
+        The primary mechanism is the ``/__trace__/<id>`` path prefix
+        (inserted by the adapter's ``_gateway_url_with_trace``), which
+        survives HTTP client URL joining. The query string ``?trace_id=``
+        is kept as a backward-compatible fallback. The
+        ``x-harness-evaluator-trace-id`` / ``x-trace-id`` headers are
+        also checked.
+
+        Returns ``(trace_id, stripped_path)`` where ``stripped_path`` is
+        the request path with the ``/__trace__/<id>`` prefix removed (or
+        the original path if no prefix was present).
         """
-        trace_id = headers.get("x-harness-evaluator-trace-id") or headers.get("x-trace-id")
+        # 1. Check explicit headers first.
+        trace_id = headers.get("x-harness-evaluator-trace-id") or headers.get(
+            "x-trace-id"
+        )
+        stripped_path = path
         if trace_id:
-            return trace_id
+            return trace_id, stripped_path
+
+        # 2. Check path prefix /__trace__/<id>/...
+        if path and path.startswith("/__trace__/"):
+            rest = path[len("/__trace__/"):]
+            slash = rest.find("/")
+            if slash > 0:
+                trace_id = rest[:slash]
+                stripped_path = rest[slash:]
+            elif slash == -1:
+                # /__trace__/<id> with no trailing path — unlikely but handle it
+                trace_id = rest
+                stripped_path = "/"
+            if trace_id:
+                return trace_id, stripped_path
+
+        # 3. Fallback: query string ?trace_id=xxx
         if query_string:
             params = parse_qs(query_string)
             trace_ids = params.get("trace_id")
             if trace_ids:
-                return trace_ids[0]
-        return None
+                return trace_ids[0], stripped_path
+        return None, stripped_path
 
     async def handle(self, request: web.Request) -> web.StreamResponse:
         """Handle all incoming requests — forward to upstream and capture."""
-        provider = self._detect_provider(request.path)
+        # Extract trace ID from path prefix and get the stripped path for
+        # provider detection and upstream forwarding.
+        trace_id, stripped_path = self._extract_trace_id(
+            request.headers, request.query_string, request.path
+        )
+
+        provider = self._detect_provider(stripped_path)
         if provider is None:
-            logger.warning("Unknown API path: %s, returning 404", request.path)
+            logger.warning("Unknown API path: %s, returning 404", stripped_path)
             return web.Response(
                 status=404,
-                text=json.dumps({"error": f"Unknown API path: {request.path}"}),
+                text=json.dumps({"error": f"Unknown API path: {stripped_path}"}),
                 content_type="application/json",
             )
 
@@ -271,14 +307,11 @@ class GatewayProxy:
 
         model = self._extract_model(provider, request_body or {})
         is_streaming = bool(request_body and request_body.get("stream", False))
-        trace_id = self._extract_trace_id(
-            request.headers, request.query_string
-        )
         call_id = str(uuid.uuid4())
 
-        # Build upstream URL, stripping the trace_id query param so it
-        # is not forwarded to the real provider API.
-        upstream_url = f"{upstream}{request.path}"
+        # Build upstream URL using the stripped path (no __trace__ prefix)
+        # and without the trace_id query param so neither is forwarded.
+        upstream_url = f"{upstream}{stripped_path}"
         if request.query_string:
             upstream_params = parse_qs(request.query_string)
             upstream_params.pop("trace_id", None)
@@ -336,6 +369,7 @@ class GatewayProxy:
                         request_body,
                         redacted_request_headers,
                         start_time,
+                        stripped_path,
                     )
                 else:
                     return await self._handle_non_streaming(
@@ -348,6 +382,7 @@ class GatewayProxy:
                         request_body,
                         redacted_request_headers,
                         start_time,
+                        stripped_path,
                     )
         except aiohttp.ClientError as e:
             latency_ms = (time.monotonic() - start_time) * 1000
@@ -358,7 +393,7 @@ class GatewayProxy:
                 provider=provider,
                 model=model,
                 method=request.method,
-                path=request.path,
+                path=stripped_path,
                 request_headers=redacted_request_headers,
                 request_body=request_body,
                 response_status=0,
@@ -377,7 +412,7 @@ class GatewayProxy:
                 provider=provider,
                 model=model,
                 method=request.method,
-                path=request.path,
+                path=stripped_path,
                 request_headers=redacted_request_headers,
                 request_body=request_body,
                 response_status=0,
@@ -399,6 +434,7 @@ class GatewayProxy:
         request_body: dict[str, Any] | None,
         redacted_request_headers: dict[str, str],
         start_time: float,
+        stripped_path: str,
     ) -> web.Response:
         """Handle non-streaming response: read body, parse usage, return."""
         body_bytes = await upstream_resp.read()
@@ -425,7 +461,7 @@ class GatewayProxy:
             provider=provider,
             model=model,
             method=request.method,
-            path=request.path,
+            path=stripped_path,
             request_headers=redacted_request_headers,
             request_body=request_body,
             response_status=upstream_resp.status,
@@ -467,6 +503,7 @@ class GatewayProxy:
         request_body: dict[str, Any] | None,
         redacted_request_headers: dict[str, str],
         start_time: float,
+        stripped_path: str,
     ) -> web.StreamResponse:
         """Handle streaming (SSE) response: parse stream in real-time, capture usage.
 
@@ -561,7 +598,7 @@ class GatewayProxy:
             provider=provider,
             model=model,
             method=request.method,
-            path=request.path,
+            path=stripped_path,
             request_headers=redacted_request_headers,
             request_body=request_body,
             response_status=upstream_resp.status,

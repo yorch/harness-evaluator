@@ -65,11 +65,10 @@ jobs:
       - name: Verify harnesses
         run: |
           # On PRs the image is loaded locally; on main it's pushed.
-          # Pull the sha-tagged image for verification so both paths work.
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            IMAGE="harness-evaluator-runner:latest"
-          else
-            IMAGE="ghcr.io/${{ github.repository_owner }}/harness-evaluator-runner:sha-$(git rev-parse --short HEAD)"
+          # Use the sha-tagged image name in both cases so the verify
+          # step works regardless of how docker/build-push-action tagged it.
+          IMAGE="ghcr.io/${{ github.repository_owner }}/harness-evaluator-runner:sha-$(git rev-parse --short HEAD)"
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
             docker pull "$IMAGE"
           fi
           docker run --rm "$IMAGE" bash -c '

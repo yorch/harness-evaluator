@@ -119,7 +119,7 @@ class TestAdapterEnv:
         )
         assert adapter is not None
         env = adapter.get_env()
-        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877?trace_id=test-cell-1"
+        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877/__trace__/test-cell-1"
         assert env["HARNESS_EVALUATOR_TRACE_ID"] == "test-cell-1"
 
     def test_openai_gateway_env(self, tmp_workdir, openai_model):
@@ -132,7 +132,7 @@ class TestAdapterEnv:
         )
         assert adapter is not None
         env = adapter.get_env()
-        assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8877/v1?trace_id=test-cell-2"
+        assert env["OPENAI_BASE_URL"] == "http://127.0.0.1:8877/__trace__/test-cell-2/v1"
         assert env["HARNESS_EVALUATOR_TRACE_ID"] == "test-cell-2"
 
     def test_no_gateway_url(self, tmp_workdir, anthropic_model):
@@ -172,7 +172,7 @@ class TestAdapterEnv:
         )
         assert adapter is not None
         env = adapter.get_env()
-        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877?trace_id=cell-abc-123"
+        assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8877/__trace__/cell-abc-123"
 
     def test_gateway_url_preserves_existing_query_params(
         self, tmp_workdir, anthropic_model
@@ -189,7 +189,7 @@ class TestAdapterEnv:
         env = adapter.get_env()
         url = env["ANTHROPIC_BASE_URL"]
         assert "foo=bar" in url
-        assert "trace_id=cell-xyz" in url
+        assert "/__trace__/cell-xyz" in url
 
     def test_gateway_url_trace_id_openai(self, tmp_workdir, openai_model):
         """trace_id is appended to the OpenAI gateway URL too."""
@@ -202,7 +202,7 @@ class TestAdapterEnv:
         )
         assert adapter is not None
         env = adapter.get_env()
-        assert env["OPENAI_BASE_URL"] == "http://localhost:9999/v1?trace_id=openai-cell"
+        assert env["OPENAI_BASE_URL"] == "http://localhost:9999/__trace__/openai-cell/v1"
 
 
 class TestAdapterRunMissingExecutable:

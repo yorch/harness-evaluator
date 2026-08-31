@@ -41,7 +41,7 @@ def _adapter_cls(name: str):
 
 
 class TestOpenAIBaseUrlV1Suffix:
-    """Verify OPENAI_BASE_URL ends with /v1 (or /v1?trace_id=...)."""
+    """Verify OPENAI_BASE_URL ends with /v1 (or /__trace__/.../v1)."""
 
     def test_openai_base_url_ends_with_v1(
         self, tmp_workdir, openai_model
@@ -63,7 +63,7 @@ class TestOpenAIBaseUrlV1Suffix:
     def test_openai_base_url_ends_with_v1_and_trace(
         self, tmp_workdir, openai_model
     ) -> None:
-        """With a trace_id, OPENAI_BASE_URL ends with /v1?trace_id=..."""
+        """With a trace_id, OPENAI_BASE_URL has /__trace__/<id>/v1 path."""
         adapter = create_adapter(
             "codex",
             workdir=str(tmp_workdir),
@@ -74,11 +74,11 @@ class TestOpenAIBaseUrlV1Suffix:
         assert adapter is not None
         env = adapter.get_env()
         url = env["OPENAI_BASE_URL"]
-        assert "/v1?trace_id=cell-xyz" in url, (
-            f"OPENAI_BASE_URL should contain /v1?trace_id=..., got: {url}"
+        assert "/__trace__/cell-xyz/v1" in url, (
+            f"OPENAI_BASE_URL should contain /__trace__/cell-xyz/v1, got: {url}"
         )
-        assert url.split("?")[0].endswith("/v1"), (
-            f"OPENAI_BASE_URL path should end with /v1, got: {url}"
+        assert url.endswith("/v1"), (
+            f"OPENAI_BASE_URL should end with /v1, got: {url}"
         )
 
     def test_openai_base_url_v1_not_duplicated(
@@ -95,8 +95,8 @@ class TestOpenAIBaseUrlV1Suffix:
         assert adapter is not None
         env = adapter.get_env()
         url = env["OPENAI_BASE_URL"]
-        # Should end with /v1?trace_id=cell-dup, not /v1/v1?...
-        assert url == "http://127.0.0.1:8877/v1?trace_id=cell-dup", (
+        # Should be /__trace__/cell-dup/v1, not /v1/v1 or /__trace__/cell-dup/v1/v1
+        assert url == "http://127.0.0.1:8877/__trace__/cell-dup/v1", (
             f"OPENAI_BASE_URL should not duplicate /v1, got: {url}"
         )
 
@@ -117,4 +117,4 @@ class TestOpenAIBaseUrlV1Suffix:
         assert "/v1" not in url, (
             f"ANTHROPIC_BASE_URL should not have /v1, got: {url}"
         )
-        assert url == "http://127.0.0.1:8877?trace_id=anthropic-cell"
+        assert url == "http://127.0.0.1:8877/__trace__/anthropic-cell"
