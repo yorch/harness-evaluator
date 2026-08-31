@@ -78,18 +78,19 @@ def default_task_library() -> str:
 
 
 def default_docker_image() -> str:
-    """Return the default runner image, pinned to the installed harness-evaluator version.
+    """Return the default runner image.
 
-    A given harness-evaluator version pairs with the matching published runner image so
-    runs are reproducible. Falls back to ``:latest`` if the version is
-    unavailable.
+    Defaults to ``:latest`` rather than version-pinned because:
+    - The installed package version may be ahead of the latest published
+      Docker image (e.g. dev installs, release-please bumps).
+    - Version-tagged images only exist for released versions on GHCR.
+    - ``:latest`` is always available once the first image is published.
+
+    To pin a specific image for reproducibility, set ``docker_image``
+    explicitly in the run config (e.g.
+    ``ghcr.io/yorch/harness-evaluator-runner:v0.5.0``).
     """
-    try:
-        from harness_evaluator import __version__
-
-        return f"ghcr.io/yorch/harness-evaluator-runner:{__version__}"
-    except Exception:
-        return "ghcr.io/yorch/harness-evaluator-runner:latest"
+    return "ghcr.io/yorch/harness-evaluator-runner:latest"
 
 
 class AuthMode(StrEnum):
