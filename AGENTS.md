@@ -114,13 +114,15 @@ ci: bump actions/checkout to v7
 - `.github/workflows/ci.yml` — ruff + mypy + pytest on every push/PR to main
 - `.github/workflows/release-please.yml` — runs on push to main, opens a
   "Release Please" PR with version bump + changelog from conventional commits;
-  merging that PR creates the `v*` tag and GitHub Release
-- `.github/workflows/publish.yml` — triggered by `v*` tags (created by
-  release-please): builds wheel/sdist, publishes to PyPI (trusted publishing /
-  OIDC), uploads artifacts to the GitHub Release, and verifies PyPI publication
+  merging that PR creates the `v*` tag + GitHub Release and then publishes to
+  PyPI and builds/pushes the Docker image (all in the same workflow, because
+  tags created by `GITHUB_TOKEN` do not trigger downstream `on: push: tags`
+  workflows)
+- `.github/workflows/publish.yml` — manual fallback (`workflow_dispatch`) for
+  republishing a specific ref to PyPI; not triggered automatically
 - `.github/workflows/docker.yml` — builds and verifies the Docker image on
-  Dockerfile changes (main only for push, PRs verify build); also pushes a
-  version-tagged runner image on `v*` tags
+  Dockerfile changes (main push + PRs); version-tagged images are built by
+  `release-please.yml` on release
 - `.github/workflows/astro.yml` — builds and deploys the Astro+Starlight docs
   site to GitHub Pages on changes to `site/`, `docs/`, or the workflow
 - `.github/workflows/docker-versions.yml` — manually-triggered workflow that
@@ -134,7 +136,8 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 1. Merge PRs to `main` with conventional commit titles (`feat:`, `fix:`, etc.)
 2. release-please automatically opens a "Release Please" PR that bumps
    `pyproject.toml` version and updates `CHANGELOG.md`
-3. Merge the Release Please PR → creates a `v*` tag + GitHub Release
-4. The tag triggers `publish.yml` (PyPI + artifacts) and `docker.yml` (image)
+3. Merge the Release Please PR → creates a `v*` tag + GitHub Release, then
+   publishes to PyPI and pushes a version-tagged Docker image (all within
+   `release-please.yml`)
 
 Do not manually tag or bump versions — let release-please handle it.
