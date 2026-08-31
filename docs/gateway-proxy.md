@@ -32,6 +32,7 @@ verification.
  │     │  1. Detect provider from API path           │               │
  │     │     /v1/messages        → Anthropic         │               │
  │     │     /v1/chat/completions → OpenAI           │               │
+ │     │     /codex/responses   → OpenAI (ChatGPT)   │               │
  │     │                                            │               │
  │     │  2. Read & parse request body               │               │
  │     │     Extract: model, stream flag, trace_id   │               │
@@ -70,13 +71,23 @@ verification.
 
 The proxy detects which provider to forward to based on the API path:
 
-| Path prefix              | Provider   |
-|--------------------------|------------|
-| `/v1/messages`           | Anthropic  |
-| `/v1/chat/completions`   | OpenAI     |
-| `/v1/responses`          | OpenAI     |
+| Path prefix              | Provider          | Upstream                       |
+|--------------------------|-------------------|--------------------------------|
+| `/v1/messages`           | Anthropic         | `api.anthropic.com`            |
+| `/v1/chat/completions`   | OpenAI            | `api.openai.com`               |
+| `/v1/responses`          | OpenAI            | `api.openai.com`               |
+| `/codex/responses`       | OpenAI (ChatGPT)  | `chatgpt.com/backend-api`      |
 
 Unknown paths return a `404` with a JSON error.
+
+The `/codex/responses` route is used by Codex when authenticating with a
+ChatGPT subscription (`auth_mode: codex_chatgpt`). The request path is
+appended to the ChatGPT backend upstream naturally, so a request to
+`/codex/responses` is forwarded to `https://chatgpt.com/backend-api/codex/responses`.
+The `OPENAI_CHATGPT` provider uses the same OpenAI response parser as `OPENAI`
+(the ChatGPT backend returns OpenAI-format responses), so token usage and cost
+are captured the same way. See [Adapters → Gateway routing for the ChatGPT backend](adapters/#gateway-routing-for-the-chatgpt-backend)
+and the [Subscription auth guide](guides/subscription/) for details.
 
 ### 2. Request forwarding
 
@@ -239,6 +250,12 @@ OPENAI_BASE_URL=http://host.docker.internal:8877/v1
 For OpenAI, the adapter appends `/v1` to the path so the base URL ends with
 `/v1` (the proxy routes `/v1/chat/completions` and `/v1/responses`).
 A `trace_id` query parameter is also appended for trace propagation.
+
+For Codex with a ChatGPT subscription (`auth_mode: codex_chatgpt`), the adapter
+passes `chatgpt_base_url` (with a `/codex` path) via the `-c` config flag
+instead of `openai_base_url`. The proxy routes `/codex/responses` to the
+ChatGPT backend. See the [Subscription auth guide](guides/subscription/) for
+the full setup.
 
 The harness then makes normal API calls, which hit the proxy. The proxy
 forwards them to the real provider with the original API key (passed through

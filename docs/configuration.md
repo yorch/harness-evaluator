@@ -103,7 +103,7 @@ List of model specifications. Each model is paired with each harness.
 
 #### `tasks`
 
-List of task IDs to run, or `["*"]` to run all tasks in the library. Task IDs are resolved against the task library.
+List of task IDs to run, or `["*"]` to run all tasks in the library. Task IDs are resolved against the task library. Note that `["*"]` includes any `multi_phase` tasks — these require at least one model with `role: review` (and one with `role: implementation`) or `build_matrix()` will raise a `ValueError`. To run only single-phase tasks, list their IDs explicitly (see `runs/sample-run.yaml`).
 
 #### `task_library_path`
 
@@ -731,7 +731,7 @@ defense in depth, but a hostile task definition can execute arbitrary commands.
 
 ```
 tasks/
-├── swe-bugfix-001.yaml          # Task definitions (20 total)
+├── swe-bugfix-001.yaml          # Task definitions (21 total)
 ├── swe-bugfix-002.yaml
 ├── swe-bugfix-003.yaml
 ├── swe-bugfix-004.yaml
@@ -751,7 +751,8 @@ tasks/
 ├── open-design-006.yaml
 ├── open-design-007.yaml
 ├── open-design-008.yaml
-└── repos/                       # Task repo fixtures (SWE only)
+├── multi-phase-bugfix-001.yaml  # Multi-phase task (implement → review → revise)
+└── repos/                       # Task repo fixtures (SWE + multi-phase)
     ├── swe-bugfix-001/
     │   ├── src/
     │   │   ├── __init__.py
@@ -765,12 +766,13 @@ tasks/
 
 ### Task mix overview
 
-The library contains 20 tasks across two tracks and two languages:
+The library contains 21 tasks across three tracks and two languages:
 
 | Track | Count | Python | TypeScript | Difficulties |
 |-------|-------|--------|------------|--------------|
 | SWE | 12 | 9 | 3 | easy, medium, hard |
 | Open-ended | 8 | 5 | 3 | easy, medium, hard |
+| Multi-phase | 1 | 1 | 0 | easy |
 
 **SWE tasks** (bug fixes, features, refactors, performance):
 
@@ -802,6 +804,12 @@ The library contains 20 tasks across two tracks and two languages:
 | open-design-007 | medium | TypeScript | Pub/sub event emitter |
 | open-design-008 | hard | TypeScript | Finite state machine with guards |
 
-A curated run config that uses all 20 tasks is at `runs/task-mix.yaml`.
+**Multi-phase tasks** (implementation + adversarial review):
+
+| ID | Difficulty | Language | Description |
+|----|-----------|----------|-------------|
+| multi-phase-bugfix-001 | easy | Python | Off-by-one bugfix with implement → review → revise phases |
+
+A curated run config that uses all 20 single-phase tasks is at `runs/task-mix.yaml`. The multi-phase task has its own sample config at `runs/sample-multi-phase.yaml`.
 
 > **Note**: Do not edit `tasks/repos/*/` contents directly — they are task fixtures. Change the source and re-init via the runner's `_git_init_fresh`.

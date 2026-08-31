@@ -177,11 +177,12 @@ Two tracks:
 
 ### Results Store (`orchestrator/results_store.py`)
 
-SQLite-backed store with three tables:
+SQLite-backed store with four tables:
 
 - `run_results` — per-cell metrics (tokens, cost, latency, success, error class, diff, test output)
 - `run_state` — cell execution state (pending, running, completed, failed, skipped) for resumability and live progress
 - `run_metadata` — full run config JSON, harness-evaluator version, Docker image for reproducibility
+- `phase_results` — per-phase results for `multi_phase` cells (one row per phase per cell)
 
 ### Reporting (`reporting/`)
 
@@ -202,7 +203,7 @@ harness-evaluator uses two separate SQLite databases:
 | Database | Default path | Contents |
 |----------|-------------|----------|
 | Gateway DB | `harness_evaluator_gateway.db` | `captured_calls` table — every provider API call with full token/cost/latency data |
-| Results DB | `harness_evaluator_results.db` | `run_results`, `run_state`, `run_metadata` tables — per-cell eval results and run state |
+| Results DB | `harness_evaluator_results.db` | `run_results`, `run_state`, `run_metadata`, `phase_results` tables — per-cell eval results, run state, and per-phase breakdowns |
 
 The gateway DB is written to by the proxy and read by the Docker runner (to aggregate per-cell token usage via `trace_id`). The results DB is written to by the orchestrator and read by reports, dashboard, and stats.
 

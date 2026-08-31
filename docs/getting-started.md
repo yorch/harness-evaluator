@@ -276,6 +276,29 @@ budget_usd: 20.0
 
 See [Configuration](configuration/) for the full schema.
 
+## Running with a subscription (Claude Code OAuth / Codex ChatGPT)
+
+If you have a Claude Pro/Max or ChatGPT subscription, you can run Claude Code or
+Codex against your subscription instead of pay-per-token API keys. Token usage is
+still captured for analysis, but cost is recorded as `$0` and does not count
+against `budget_usd`.
+
+Set `auth_mode` and `credentials_path` on the model, and `cost_mode: subscription`:
+
+```yaml
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    auth_mode: claude_oauth
+    credentials_path: "~/.claude/.credentials.json"
+    cost_mode: subscription
+```
+
+For the full setup — obtaining the OAuth credential files, the Codex ChatGPT
+variant, how credentials are mounted into containers, and security notes — see
+the [Subscription auth guide](guides/subscription/).
+
 ## Troubleshooting
 
 ### Gateway not reachable
