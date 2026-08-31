@@ -329,6 +329,54 @@ def create_app(
             ).fetchone()
             return row[0] if row else 0
 
+    def _get_failed_cells(run_name: str) -> list[dict[str, Any]]:
+        with _get_db_conn() as conn:
+            state_rows = conn.execute(
+                "SELECT cell_id, status, error FROM run_state"
+                " WHERE run_name = ? AND status IN ('failed', 'skipped')"
+                " ORDER BY status, cell_id",
+                (run_name,),
+            ).fetchall()
+            result_rows = conn.execute(
+                "SELECT cell_id, exit_class, error_class, error_message"
+                " FROM run_results"
+                " WHERE run_name = ? AND exit_class != 'pass'"
+                " ORDER BY cell_id",
+                (run_name,),
+            ).fetchall()
+        seen: set[str] = set()
+        cells: list[dict[str, Any]] = []
+        for row in state_rows:
+            cells.append(
+                {"cell_id": row["cell_id"], "status": row["status"], "error": row["error"] or ""}
+            )
+            seen.add(row["cell_id"])
+        for row in result_rows:
+            if row["cell_id"] in seen:
+                continue
+            msg = row["error_message"] or ""
+            if row["error_class"]:
+                msg = f"{row['error_class']}: {msg}" if msg else row["error_class"]
+            cells.append({"cell_id": row["cell_id"], "status": "failed", "error": msg})
+        return cells
+
+    def _get_phase_results_for_cells(
+        cell_ids: list[str],
+    ) -> dict[str, list[dict[str, Any]]]:
+        if not cell_ids:
+            return {}
+        placeholders = ",".join("?" * len(cell_ids))
+        with _get_db_conn() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM phase_results WHERE cell_id IN ({placeholders})"
+                " ORDER BY cell_id, id ASC",
+                cell_ids,
+            ).fetchall()
+        result: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            result.setdefault(row["cell_id"], []).append(dict(row))
+        return result
+
     # --- Login endpoint (only meaningful when auth is enabled) ---
 
     @app.get("/login", response_class=HTMLResponse)
@@ -436,6 +484,10 @@ def create_app(
             run_name, model, harness, track, min_success, per_page, offset,
         )
 
+        cell_ids = [r["cell_id"] for r in results]
+        phase_results = await asyncio.to_thread(_get_phase_results_for_cells, cell_ids)
+        failed_cells = await asyncio.to_thread(_get_failed_cells, run_name)
+
         # Get live state (if run is in progress)
         state_summary = await asyncio.to_thread(_get_run_state_summary, run_name)
 
@@ -470,6 +522,8 @@ def create_app(
             passed=passed,
             cost=cost,
             state_summary=state_summary,
+            failed_cells=failed_cells,
+            phase_results=phase_results,
         )
 
     @app.get("/api/runs")
@@ -535,5 +589,13 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
         state = await asyncio.to_thread(_get_run_state_summary, run_name)
         return {"run_name": run_name, "state": state}
+
+    @app.get("/api/run/{run_name}/errors")
+    async def api_run_errors(run_name: str) -> dict[str, Any]:
+        """Get failed/skipped cells with error messages for a run."""
+        if not await asyncio.to_thread(_run_exists, run_name):
+            raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
+        failed_cells = await asyncio.to_thread(_get_failed_cells, run_name)
+        return {"run_name": run_name, "failed_cells": failed_cells}
 
     return app

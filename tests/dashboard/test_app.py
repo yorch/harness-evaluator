@@ -213,6 +213,211 @@ class TestDashboardAPI:
         resp = client.get("/api/run/nonexistent/status")
         assert resp.status_code == 404
 
+    def test_api_run_errors(self, store_with_results):
+        """Test the errors endpoint returns failed/skipped cells."""
+        db_path = store_with_results
+        store = ResultsStore(db_path)
+        store.set_cell_state("test-cell-fail", "test-run", "failed", "Docker timeout")
+        store.set_cell_state("test-cell-skip", "test-run", "skipped", "Budget cap")
+
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get("/api/run/test-run/errors")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["run_name"] == "test-run"
+        assert "failed_cells" in data
+        cell_ids = {c["cell_id"] for c in data["failed_cells"]}
+        assert "test-cell-fail" in cell_ids
+        assert "test-cell-skip" in cell_ids
+        # Should also include run_results cells with exit_class != 'pass'
+        # (the fixture has claude-code cells with exit_class='fail')
+        fail_cell = next(c for c in data["failed_cells"] if c["cell_id"] == "test-cell-fail")
+        assert fail_cell["error"] == "Docker timeout"
+        assert fail_cell["status"] == "failed"
+
+    def test_api_run_errors_404(self, client):
+        resp = client.get("/api/run/nonexistent/errors")
+        assert resp.status_code == 404
+
+    def test_run_detail_shows_error_message(self, tmp_path):
+        """Test that error_message is rendered in the run detail page."""
+        db_path = str(tmp_path / "error_test.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="err-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell, exit_class="fail", success=0.0,
+            error_class="crash", error_message="Segmentation fault in harness",
+            total_cost=0, latency_ms=100, num_api_calls=1,
+        )
+
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get("/run/err-run")
+        assert resp.status_code == 200
+        assert "Segmentation fault in harness" in resp.text
+        assert "crash" in resp.text
+
+    def test_run_detail_shows_failed_cells_section(self, tmp_path):
+        """Test that failed/skipped cells from run_state are shown."""
+        db_path = str(tmp_path / "failed_test.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="fail-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell, exit_class="pass", success=1.0,
+            total_cost=0, latency_ms=100, num_api_calls=1,
+        )
+        store.set_cell_state("cell-xyz", "fail-run", "failed", "OOM killed")
+
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get("/run/fail-run")
+        assert resp.status_code == 200
+        assert "Failed / Skipped Cells" in resp.text
+        assert "cell-xyz" in resp.text
+        assert "OOM killed" in resp.text
+
+    def test_run_detail_shows_phase_results(self, tmp_path):
+        """Test that phase results are rendered for multi-phase cells."""
+        db_path = str(tmp_path / "phase_test.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="phase-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell, exit_class="pass", success=1.0,
+            total_cost=0, latency_ms=100, num_api_calls=1,
+        )
+        store.save_phase_results(
+            cell_id=cell.cell_id,
+            run_name="phase-run",
+            phases=[
+                {
+                    "name": "plan",
+                    "trace_id": "tr-1",
+                    "model": "m",
+                    "model_role": "planning",
+                    "exit_code": 0,
+                    "duration_ms": 5000,
+                    "timed_out": False,
+                    "usage": None,
+                    "total_cost": 0.01,
+                    "num_api_calls": 2,
+                    "error": None,
+                },
+                {
+                    "name": "implement",
+                    "trace_id": "tr-2",
+                    "model": "m",
+                    "model_role": "implementation",
+                    "exit_code": 1,
+                    "duration_ms": 10000,
+                    "timed_out": True,
+                    "usage": None,
+                    "total_cost": 0.02,
+                    "num_api_calls": 5,
+                    "error": "Phase timed out",
+                },
+            ],
+        )
+
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get("/run/phase-run")
+        assert resp.status_code == 200
+        assert "Phase Details" in resp.text
+        assert "plan" in resp.text
+        assert "implement" in resp.text
+        assert "Phase timed out" in resp.text
+
+    def test_run_detail_error_message_xss_safe(self, tmp_path):
+        """error_message with HTML payloads must be escaped in the dashboard."""
+        db_path = str(tmp_path / "xss_err.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="xss-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        xss_payload = '"><script>alert(1)</script>'
+        store.save_result(
+            cell=cell, exit_class="fail", success=0.0,
+            error_class="crash", error_message=xss_payload,
+            total_cost=0, latency_ms=100, num_api_calls=1,
+        )
+        # Also test run_state.error XSS
+        store.set_cell_state("xss-cell", "xss-run", "failed", xss_payload)
+
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get("/run/xss-run")
+        assert resp.status_code == 200
+        # The raw script tag must not appear
+        assert "<script>alert(1)</script>" not in resp.text
+        # The escaped version should be present
+        assert "&lt;script&gt;" in resp.text
+
+    def test_run_detail_phase_error_xss_safe(self, tmp_path):
+        """phase_results.error with HTML payloads must be escaped."""
+        db_path = str(tmp_path / "xss_phase.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="xss-phase-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell, exit_class="pass", success=1.0,
+            total_cost=0, latency_ms=100, num_api_calls=1,
+        )
+        xss_payload = '"><script>alert(99)</script>'
+        store.save_phase_results(
+            cell_id=cell.cell_id,
+            run_name="xss-phase-run",
+            phases=[
+                {
+                    "name": "p1",
+                    "trace_id": "tr-1",
+                    "model": "m",
+                    "model_role": "implementation",
+                    "exit_code": 1,
+                    "duration_ms": 100,
+                    "timed_out": False,
+                    "usage": None,
+                    "total_cost": 0,
+                    "num_api_calls": 1,
+                    "error": xss_payload,
+                },
+            ],
+        )
+
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get("/run/xss-phase-run")
+        assert resp.status_code == 200
+        assert "<script>alert(99)</script>" not in resp.text
+        assert "&lt;script&gt;" in resp.text
+
 
 class TestDashboardEmpty:
     def test_home_with_no_data(self, tmp_path):
@@ -300,6 +505,7 @@ class TestDashboardTokenAuth:
             "/api/run/test-run",
             "/api/run/test-run/leaderboard",
             "/api/run/test-run/status",
+            "/api/run/test-run/errors",
         ]
         for route in routes:
             resp = authed_client.get(route)

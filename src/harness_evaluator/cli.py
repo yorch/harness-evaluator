@@ -593,6 +593,8 @@ def results(
     table.add_column("Tokens")
     table.add_column("Cost")
     table.add_column("Time(s)")
+    table.add_column("Error Class")
+    table.add_column("Error Message")
 
     for r in rows:
         total_tokens = (
@@ -602,6 +604,9 @@ def results(
             + r["cache_write_tokens"]
             + r["reasoning_tokens"]
         )
+        error_message = r.get("error_message") or ""
+        if len(error_message) > 60:
+            error_message = error_message[:60] + "…"
         table.add_row(
             r["harness"],
             r["model"],
@@ -611,6 +616,8 @@ def results(
             str(total_tokens),
             f"${r['total_cost']:.6f}",
             f"{r['latency_ms'] / 1000:.1f}",
+            r.get("error_class") or "",
+            error_message,
         )
 
     console.print(table)

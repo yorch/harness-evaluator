@@ -8,6 +8,13 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from harness_evaluator.cli import app
+from harness_evaluator.orchestrator.config import (
+    HarnessSpec,
+    ModelSpec,
+    RunCell,
+    TaskSpec,
+    TaskTrack,
+)
 
 runner = CliRunner()
 
@@ -205,6 +212,63 @@ class TestResultsCommand:
         assert result.exit_code == 1
         assert "Results DB not found" in result.stdout
         assert not db.exists(), "DB file should not be created"
+
+    def test_results_shows_error_columns(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`results` table includes error_class and error_message columns."""
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        db = tmp_path / "results.db"
+        store = ResultsStore(str(db))
+        cell = RunCell(
+            run_name="err-run",
+            harness=HarnessSpec(name="claude-code", adapter="claude-code"),
+            model=ModelSpec(name="claude-sonnet-4", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="swe-001", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell, exit_class="fail", success=0.0,
+            error_class="crash", error_message="Segmentation fault in harness",
+            total_cost=0.01, latency_ms=5000, num_api_calls=1,
+        )
+        # Use a wide terminal so Rich doesn't truncate column headers.
+        result = runner.invoke(
+            app, ["results", "err-run", "--db", str(db)],
+            env={"COLUMNS": "200"},
+        )
+        assert result.exit_code == 0
+        assert "Error Class" in result.stdout
+        assert "Error Message" in result.stdout
+        assert "crash" in result.stdout
+        assert "Segmentation fault in harness" in result.stdout
+
+    def test_results_truncates_long_error_message(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """Long error messages are truncated with ellipsis in the results table."""
+        from harness_evaluator.orchestrator.results_store import ResultsStore
+
+        long_msg = "A" * 100
+        db = tmp_path / "results.db"
+        store = ResultsStore(str(db))
+        cell = RunCell(
+            run_name="trunc-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell, exit_class="fail", success=0.0,
+            error_class="err", error_message=long_msg,
+            total_cost=0, latency_ms=0, num_api_calls=0,
+        )
+        result = runner.invoke(
+            app, ["results", "trunc-run", "--db", str(db)],
+            env={"COLUMNS": "200"},
+        )
+        assert result.exit_code == 0
+        # The full 100-char message should NOT appear (truncated to 60+…).
+        assert long_msg not in result.stdout
+        assert "A" * 60 + "\u2026" in result.stdout
 
 
 class TestReportCommand:

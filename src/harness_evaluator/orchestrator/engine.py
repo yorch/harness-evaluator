@@ -244,16 +244,17 @@ class Orchestrator:
                         estimate,
                         cell.cell_id,
                     )
+                    skip_reason = (
+                        f"Budget cap reached (${self._remaining_budget:.4f} "
+                        f"remaining < ${estimate:.4f} estimated)"
+                    )
                     self.store.set_cell_state(
                         cell.cell_id, cell.run_name, "skipped",
-                        "Budget cap reached",
+                        skip_reason,
                     )
                     async with self._progress_lock:
                         self.progress.skipped += 1
-                        self.progress.skip_reasons[cell.cell_id] = (
-                            f"Budget cap reached (${self._remaining_budget:.4f} "
-                            f"remaining < ${estimate:.4f} estimated)"
-                        )
+                        self.progress.skip_reasons[cell.cell_id] = skip_reason
                     await self._notify_progress()
                     return
                 self._remaining_budget -= estimate

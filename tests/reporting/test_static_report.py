@@ -66,6 +66,49 @@ class TestReportGenerator:
         assert "opencode" in html
         assert "claude-code" in html
 
+    def test_html_includes_error_message_column(self, tmp_path):
+        """HTML report should render error_message in the detailed results table."""
+        store = ResultsStore(str(tmp_path / "err_results.db"))
+        cell = RunCell(
+            run_name="err-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell, exit_class="fail", success=0.0,
+            error_class="crash", error_message="Segmentation fault",
+            total_cost=0, latency_ms=100, num_api_calls=1,
+        )
+        gen = ReportGenerator(store)
+        paths = gen.generate("err-run", tmp_path / "reports")
+        html = Path(paths["html"]).read_text()
+        assert "Error Message" in html
+        assert "Segmentation fault" in html
+
+    def test_html_escapes_error_message_xss(self, tmp_path):
+        """HTML report must escape error_message to prevent XSS."""
+        store = ResultsStore(str(tmp_path / "xss_results.db"))
+        cell = RunCell(
+            run_name="xss-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        xss_payload = '"><script>alert(1)</script>'
+        store.save_result(
+            cell=cell, exit_class="fail", success=0.0,
+            error_class="crash", error_message=xss_payload,
+            total_cost=0, latency_ms=100, num_api_calls=1,
+        )
+        gen = ReportGenerator(store)
+        paths = gen.generate("xss-run", tmp_path / "reports")
+        html = Path(paths["html"]).read_text()
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;" in html
+
     def test_generate_json(self, store_with_results, tmp_path):
         gen = ReportGenerator(store_with_results)
         paths = gen.generate("test-run", tmp_path / "reports")
