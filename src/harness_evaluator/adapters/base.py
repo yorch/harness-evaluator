@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import urlparse, urlunparse
 
 from harness_evaluator.gateway.models import TokenUsage
 from harness_evaluator.orchestrator.config import AuthMode, ModelSpec
@@ -117,7 +117,14 @@ class BaseAdapter(ABC):
         )
 
     def _gateway_url_with_trace(self) -> str:
-        """Return the gateway URL with trace_id appended as a query param.
+        """Return the gateway URL with trace_id embedded in the path.
+
+        The trace ID is inserted as a path prefix (``/__trace__/<id>``)
+        rather than a query parameter because HTTP clients strip query
+        params from the base URL when appending a request path
+        (e.g. ``base_url + /v1/messages`` drops ``?trace_id=xxx``).
+        The gateway proxy strips the ``/__trace__/<id>`` prefix before
+        forwarding upstream.
 
         If no trace_id is set, returns the gateway URL unchanged.
         Preserves any existing query parameters.
@@ -136,9 +143,10 @@ class BaseAdapter(ABC):
             parsed = parsed._replace(path=parsed.path.rstrip("/") + "/v1")
         if not self.trace_id:
             return urlunparse(parsed)
-        params = parse_qsl(parsed.query)
-        params.append(("trace_id", self.trace_id))
-        return urlunparse(parsed._replace(query=urlencode(params)))
+        # Insert trace ID as a path prefix so it survives URL joining.
+        # e.g. http://host:8877/v1 → http://host:8877/__trace__/cell-id/v1
+        new_path = f"/__trace__/{self.trace_id}{parsed.path}"
+        return urlunparse(parsed._replace(path=new_path))
 
     def get_env(self) -> dict[str, str]:
         """Get environment variables for the harness process.

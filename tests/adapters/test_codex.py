@@ -53,11 +53,11 @@ class TestCodexGetCommand:
     def test_command_includes_trace_aware_gateway_url(
         self, tmp_workdir, openai_model, monkeypatch
     ) -> None:
-        """get_command() embeds the trace-aware gateway URL with trace_id=.
+        """get_command() embeds the trace-aware gateway URL with /__trace__/.
 
         When HARNESS_EVALUATOR_TRACE_ID is set in the env (mirrored from the adapter's
         trace_id), the gateway URL passed to codex via ``-c
-        openai_base_url=...`` must include the ``trace_id=`` query param so
+        openai_base_url=...`` must include the ``/__trace__/<id>`` path prefix so
         the gateway can attribute provider calls to this cell.
         """
         trace_id = "codex-cell-abc-123"
@@ -81,11 +81,11 @@ class TestCodexGetCommand:
         )
         base_url_arg = base_url_args[0]
 
-        # The URL must carry the trace_id query param.
-        assert "trace_id=codex-cell-abc-123" in base_url_arg, (
-            f"trace_id query param missing from gateway URL: {base_url_arg}"
+        # The URL must carry the trace_id as a path prefix.
+        assert "/__trace__/codex-cell-abc-123/" in base_url_arg, (
+            f"trace_id path prefix missing from gateway URL: {base_url_arg}"
         )
-        # The OpenAI base URL must end with /v1 (with trace appended).
+        # The OpenAI base URL must end with /v1 (with trace prefix).
         assert "/v1" in base_url_arg, (
             f"gateway URL missing /v1 suffix: {base_url_arg}"
         )
@@ -108,7 +108,7 @@ class TestCodexGetCommand:
     def test_command_no_trace_id_when_unset(
         self, tmp_workdir, openai_model
     ) -> None:
-        """Without a trace_id, the gateway URL has no trace_id query param."""
+        """Without a trace_id, the gateway URL has no __trace__ prefix."""
         adapter = create_adapter(
             "codex",
             workdir=str(tmp_workdir),
@@ -121,7 +121,7 @@ class TestCodexGetCommand:
             arg for arg in cmd if arg.startswith("openai_base_url=")
         ]
         assert base_url_args
-        assert "trace_id=" not in base_url_args[0]
+        assert "__trace__" not in base_url_args[0]
 
     def test_command_via_registry(
         self, tmp_workdir, openai_model
@@ -140,4 +140,4 @@ class TestCodexGetCommand:
             arg for arg in cmd if arg.startswith("openai_base_url=")
         ]
         assert base_url_args
-        assert "trace_id=reg-cell" in base_url_args[0]
+        assert "/__trace__/reg-cell/" in base_url_args[0]

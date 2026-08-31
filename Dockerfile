@@ -39,7 +39,10 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 # ---------------------------------------------------------------------------
 # Tasks may need pytest, pytest-asyncio, or other common packages.
 # Install into the system environment so `python -m pytest` works.
-RUN pip3 install --no-cache-dir --break-system-packages \
+# PIP_BREAK_SYSTEM_PACKAGES is set so task setup scripts that run
+# `pip install -r requirements.txt` don't fail under PEP 668.
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+RUN pip3 install --no-cache-dir \
         pytest \
         pytest-asyncio \
         pyyaml \

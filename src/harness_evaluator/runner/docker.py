@@ -859,6 +859,12 @@ class DockerRunner:
         # These are passed to the container via --env, NOT the whole host env.
         env = adapter.get_env()
 
+        # Allow pip install in task setup scripts despite PEP 668.
+        # The container's Python is externally-managed (Debian), so task
+        # setup scripts that run `pip install -r requirements.txt` would
+        # fail without this. The Dockerfile also sets this as an ENV.
+        env["PIP_BREAK_SYSTEM_PACKAGES"] = "1"
+
         # Resolve OAuth credential directory mounts for subscription auth.
         credential_mounts, cred_env, git_excludes = (
             self._resolve_credential_mounts(
@@ -1093,7 +1099,8 @@ class DockerRunner:
                     base_env = {
                         k: v for k, v in env.items()
                         if k in ("PATH", "HOME", "USER", "SHELL", "LANG",
-                                 "LC_ALL", "TERM", "TMPDIR")
+                                 "LC_ALL", "TERM", "TMPDIR",
+                                 "PIP_BREAK_SYSTEM_PACKAGES")
                     }
                     container_id = await self._start_container(
                         workdir,
