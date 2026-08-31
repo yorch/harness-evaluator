@@ -660,3 +660,246 @@ class TestDashboardCookieAuth:
         """The login form page must not contain the expected token."""
         resp = authed_client.get("/login")
         assert self.TOKEN not in resp.text
+
+
+class TestDashboardCellDetail:
+    """Tests for the per-cell detail page."""
+
+    def test_cell_detail_returns_html(self, client, store_with_results):
+        """Cell detail page renders for a valid cell."""
+        # Get a cell_id from the API
+        resp = client.get("/api/run/test-run?per_page=1")
+        cell_id = resp.json()["results"][0]["cell_id"]
+        resp = client.get(f"/run/test-run/cell/{cell_id}")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers.get("content-type", "")
+        assert cell_id in resp.text
+
+    def test_cell_detail_404_for_unknown_cell(self, client):
+        """Cell detail returns 404 for a nonexistent cell."""
+        resp = client.get("/run/test-run/cell/nonexistent-cell-id")
+        assert resp.status_code == 404
+
+    def test_cell_detail_404_for_unknown_run(self, client):
+        """Cell detail returns 404 when the run doesn't exist."""
+        resp = client.get("/run/nonexistent/cell/some-cell")
+        assert resp.status_code == 404
+
+    def test_cell_detail_shows_diff_and_test_output(self, tmp_path):
+        """Cell detail page shows diff and test_output when present."""
+        db_path = str(tmp_path / "cell_detail.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="test-run",
+            harness=HarnessSpec(name="opencode", adapter="opencode"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t1", name="T1", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell,
+            exit_class="pass",
+            success=1.0,
+            total_cost=0.01,
+            latency_ms=5000,
+            num_api_calls=2,
+            diff="--- a/file.py\n+++ b/file.py\n@@ -1,3 +1,3 @@",
+            test_output="All tests passed",
+            error_message="something went wrong",
+        )
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        cell_id = cell.cell_id
+        resp = client.get(f"/run/test-run/cell/{cell_id}")
+        assert resp.status_code == 200
+        assert "Diff" in resp.text
+        assert "Test Output" in resp.text
+        assert "Error" in resp.text
+
+    def test_cell_detail_xss_safe(self, tmp_path):
+        """Cell detail escapes HTML in cell fields."""
+        db_path = str(tmp_path / "cell_xss.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="test-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell,
+            exit_class="pass",
+            success=1.0,
+            total_cost=0,
+            latency_ms=100,
+            num_api_calls=1,
+            error_message='<script>alert("xss")</script>',
+        )
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get(f"/run/test-run/cell/{cell.cell_id}")
+        assert resp.status_code == 200
+        assert "<script>alert" not in resp.text
+
+
+class TestDashboardSort:
+    """Tests for server-side sortable columns."""
+
+    def test_sort_by_success(self, client):
+        """Sort results by success descending."""
+        resp = client.get("/run/test-run", params={"sort": "success", "order": "desc"})
+        assert resp.status_code == 200
+        # The sort indicator should be present
+        assert "↓" in resp.text or "sort-indicator" in resp.text
+
+    def test_sort_by_cost(self, client):
+        """Sort results by total_cost ascending."""
+        resp = client.get("/run/test-run", params={"sort": "total_cost", "order": "asc"})
+        assert resp.status_code == 200
+        assert "↑" in resp.text or "sort-indicator" in resp.text
+
+    def test_sort_invalid_column_ignored(self, client):
+        """Invalid sort column falls back to default ordering."""
+        resp = client.get("/run/test-run", params={"sort": "DROP TABLE", "order": "asc"})
+        assert resp.status_code == 200
+        # Should still show results
+        assert "opencode" in resp.text
+
+    def test_sort_aria_sort_present(self, client):
+        """Sortable headers have aria-sort attribute."""
+        resp = client.get("/run/test-run", params={"sort": "success", "order": "desc"})
+        assert 'aria-sort="descending"' in resp.text
+
+    def test_api_sort_supported(self, client):
+        """API endpoint supports sort parameter."""
+        resp = client.get("/api/run/test-run", params={"sort": "success", "order": "desc"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["results"]) > 0
+
+
+class TestDashboardExport:
+    """Tests for CSV/JSON export."""
+
+    def test_export_csv(self, client):
+        """CSV export returns text/csv with content."""
+        resp = client.get("/run/test-run/export/csv")
+        assert resp.status_code == 200
+        assert "text/csv" in resp.headers.get("content-type", "")
+        assert "attachment" in resp.headers.get("content-disposition", "")
+        # Should contain header row
+        assert "cell_id" in resp.text
+        assert "harness" in resp.text
+
+    def test_export_json(self, client):
+        """JSON export returns application/json with content."""
+        resp = client.get("/run/test-run/export/json")
+        assert resp.status_code == 200
+        assert "application/json" in resp.headers.get("content-type", "")
+        data = resp.json()
+        assert data["run_name"] == "test-run"
+        assert len(data["results"]) > 0
+
+    def test_export_csv_with_filter(self, client):
+        """CSV export respects filters."""
+        resp = client.get("/run/test-run/export/csv", params={"harness": "opencode"})
+        assert resp.status_code == 200
+        # Should only contain opencode rows (4 results)
+        lines = resp.text.strip().split("\n")
+        # 1 header + 4 data rows
+        assert len(lines) == 5
+
+    def test_export_invalid_format(self, client):
+        """Invalid format returns 400."""
+        resp = client.get("/run/test-run/export/xml")
+        assert resp.status_code == 400
+
+    def test_export_404_for_unknown_run(self, client):
+        """Export returns 404 for unknown run."""
+        resp = client.get("/run/nonexistent/export/csv")
+        assert resp.status_code == 404
+
+
+class TestDashboardTheme:
+    """Tests for theme cookie support."""
+
+    def test_theme_cookie_passed_to_template(self, client):
+        """Theme cookie value appears in data-theme attribute."""
+        resp = client.get("/", cookies={"theme": "dark"})
+        assert resp.status_code == 200
+        assert 'data-theme="dark"' in resp.text
+
+    def test_no_theme_cookie_defaults_to_auto(self, client):
+        """Without a theme cookie, data-theme is 'auto'."""
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert 'data-theme="auto"' in resp.text
+
+    def test_theme_cookie_on_run_detail(self, client):
+        """Theme cookie works on run detail page too."""
+        resp = client.get("/run/test-run", cookies={"theme": "light"})
+        assert resp.status_code == 200
+        assert 'data-theme="light"' in resp.text
+
+
+class TestDashboardAccessibility:
+    """Tests for accessibility improvements."""
+
+    def test_home_has_viewport_meta(self, client):
+        """Home page has viewport meta tag."""
+        resp = client.get("/")
+        assert 'name="viewport"' in resp.text
+
+    def test_home_has_lang_attr(self, client):
+        """Home page has html lang attribute."""
+        resp = client.get("/")
+        assert '<html lang="en"' in resp.text
+
+    def test_home_has_skip_link(self, client):
+        """Home page has a skip link."""
+        resp = client.get("/")
+        assert "skip-link" in resp.text
+        assert 'href="#main"' in resp.text
+
+    def test_run_detail_has_filter_labels(self, client):
+        """Filter form has visible labels."""
+        resp = client.get("/run/test-run")
+        assert "<label" in resp.text
+        assert 'for="filter-model"' in resp.text
+        assert 'for="filter-harness"' in resp.text
+
+    def test_run_detail_tables_have_thead(self, client):
+        """Tables have proper thead/tbody structure."""
+        resp = client.get("/run/test-run")
+        assert "<thead>" in resp.text
+        assert "<tbody>" in resp.text
+        assert 'scope="col"' in resp.text
+
+    def test_run_detail_has_nav_landmark(self, client):
+        """Run detail page has nav landmark."""
+        resp = client.get("/run/test-run")
+        assert "<nav" in resp.text
+
+    def test_pagination_uses_ellipsis_char(self, client):
+        """Pagination uses … (ellipsis) not ... (three dots)."""
+        resp = client.get("/run/test-run", params={"per_page": 2, "page": 1})
+        if "…" not in resp.text and "..." in resp.text:
+            pytest.fail("Pagination uses '...' instead of '…'")
+
+    def test_home_has_copy_button(self, client):
+        """Run cards have copy-to-clipboard buttons."""
+        resp = client.get("/")
+        assert "copy-btn" in resp.text
+        assert "data-copy" in resp.text
+
+    def test_run_detail_has_export_links(self, client):
+        """Run detail page has CSV and JSON export links."""
+        resp = client.get("/run/test-run")
+        assert "Export CSV" in resp.text
+        assert "Export JSON" in resp.text
+
+    def test_run_detail_has_cell_links(self, client):
+        """Results table links to cell detail pages."""
+        resp = client.get("/run/test-run")
+        assert "/cell/" in resp.text
