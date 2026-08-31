@@ -237,6 +237,23 @@ harness-evaluator gateway --db /data/harness_evaluator_gateway.db
 harness-evaluator gateway -v
 ```
 
+### Startup errors
+
+If the gateway cannot bind to the requested host/port (port already in use,
+privileged port without permissions, unresolvable host), the CLI prints a
+user-friendly error message with suggested fixes and exits with code 1
+instead of dumping a Python stack trace:
+
+```
+Error: Cannot start gateway
+Port 8877 is already in use on 127.0.0.1.
+This usually means another gateway (or another process) is already listening on that port.
+Options:
+  - Stop the other process and retry
+  - Use a different port: harness-evaluator gateway --port 8878
+  - Check what is listening: lsof -i :8877 (Linux/macOS) or netstat -ano | findstr :8877 (Windows)
+```
+
 ## harness-evaluator canary
 
 Verify that the gateway proxy accurately captures token usage. Reads the last captured call from the gateway DB and compares proxy-captured usage against the provider's response.

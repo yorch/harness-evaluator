@@ -111,7 +111,8 @@ harness-evaluator/
 │   │   ├── engine.py           # Orchestrator with retry + budget logic
 │   │   └── results_store.py    # SQLite results storage
 │   ├── runner/
-│   │   └── docker.py           # Docker container lifecycle
+│   │   ├── docker.py           # Docker container lifecycle
+│   │   └── redaction.py        # Secret redaction from harness output
 │   ├── adapters/               # Per-harness CLI wrappers
 │   │   ├── base.py             # BaseAdapter, AdapterInfo, AdapterResult
 │   │   ├── registry.py         # Adapter registry (lazy-loaded)

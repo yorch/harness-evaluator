@@ -72,7 +72,7 @@ The HTML is generated with Jinja2 autoescaping enabled to prevent stored XSS fro
 
 The CSV includes all `run_results` columns:
 
-`cell_id`, `run_name`, `harness`, `model`, `task_id`, `track`, `repeat`, `exit_class`, `success`, `error_class`, `error_message`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, `total_cost`, `latency_ms`, `time_to_first_attempt_ms`, `num_api_calls`, `num_tool_calls`, `diff`, `test_output`, `harness_metadata`, `timestamp`, `retry_count`
+`cell_id`, `run_name`, `harness`, `model`, `task_id`, `track`, `repeat`, `exit_class`, `success`, `error_class`, `error_message`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, `total_cost`, `latency_ms`, `time_to_first_attempt_ms`, `num_api_calls`, `num_tool_calls`, `diff`, `test_output`, `harness_metadata`, `harness_stdout`, `harness_stderr`, `timestamp`, `retry_count`
 
 For `multi_phase` cells, the `harness_metadata` JSON column includes:
 
@@ -200,7 +200,8 @@ Each cell in the results table links to a dedicated cell detail page
 - Error class and error message
 - Git diff of changes (with syntax highlighting)
 - Test output
-- Phase results (for multi-phase cells)
+- Harness output (collapsible stderr open by default, stdout collapsed) — sanitized and truncated to the last 50KB with secrets redacted
+- Phase results with per-phase stdout/stderr (for multi-phase cells)
 - Reconciliation results (if available)
 
 #### Filtering

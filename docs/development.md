@@ -28,7 +28,7 @@ uv run ruff check src/ tests/
 # Type check (fast, ~3s)
 uv run mypy src/harness_evaluator/
 
-# Tests (full suite ~40s, 600+ tests)
+# Tests (full suite ~60s, 638 tests)
 uv run pytest tests/ -q
 
 # All gates at once
@@ -245,7 +245,8 @@ tests/
 │   └── test_static_report.py # Report generation, path traversal
 ├── runner/
 │   ├── test_docker.py        # Docker runner (mocked subprocess)
-│   └── test_docker_integration.py  # Real Docker (skipped if no Docker)
+│   ├── test_docker_integration.py  # Real Docker (skipped if no Docker)
+│   └── test_redaction.py     # Secret redaction from harness output
 ├── stats/
 │   └── test_stats.py         # Statistical analysis
 └── test_smoke.py             # CLI smoke tests (all commands)

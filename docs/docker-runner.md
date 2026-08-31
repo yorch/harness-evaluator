@@ -100,6 +100,7 @@ The container runs `sleep <timeout+30>` so the runner can `docker exec` into it 
 5. Host: docker exec -w /workspace/repo <container> <harness command>
    │  Execute the harness CLI (from adapter.get_command())
    │  Timeout enforced via asyncio.wait_for
+   │  stdout/stderr captured, sanitized (secrets redacted), and stored
    │
 6. Host: docker stop <container_id>
    │  Stop and remove the container (--rm handles removal)
@@ -120,6 +121,22 @@ The runner uses a long-running container (`sleep <timeout+30>`) and `docker exec
 - Multiple exec commands in the same container
 - Clean separation of setup and execution phases
 - The container's filesystem state persists between exec calls
+
+### Harness output capture
+
+The runner captures harness stdout and stderr from the `docker exec` subprocess.
+Before storing the output in the results database, it is sanitized by
+`src/harness_evaluator/runner/redaction.py`:
+
+- **Secret redaction**: API keys, OAuth tokens, bearer tokens, and `sk-` prefixed
+  keys are replaced with `[REDACTED]` to prevent secret leakage to the database,
+  dashboard, and CSV/JSON exports.
+- **Truncation**: Output is capped to the last 50KB per stream (error messages
+  and stack traces appear at the end). A truncation notice is prepended when cut.
+
+The sanitized output is stored in `run_results.harness_stdout` /
+`harness_stderr` (and `phase_results.stdout` / `stderr` for multi-phase tasks)
+and displayed on the dashboard cell detail page.
 
 ## Security hardening
 

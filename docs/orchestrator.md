@@ -221,6 +221,8 @@ Progress counters are mutated under a `_progress_lock` (`asyncio.Lock`) to preve
 | `diff` | TEXT | Git diff of changes |
 | `test_output` | TEXT | Test command output |
 | `harness_metadata` | TEXT | JSON metadata (harness, model, observability tier) |
+| `harness_stdout` | TEXT | Sanitized harness stdout (last 50KB; secrets redacted) |
+| `harness_stderr` | TEXT | Sanitized harness stderr (last 50KB; secrets redacted) |
 | `timestamp` | TEXT | ISO timestamp |
 | `retry_count` | INTEGER | Number of retries (0 = first attempt) |
 
@@ -270,6 +272,8 @@ Stores per-phase results for `multi_phase` cells. One row per phase per cell.
 | `total_cost` | REAL | Phase cost in USD |
 | `num_api_calls` | INTEGER | Number of API calls in this phase |
 | `error` | TEXT | Error message (if any) |
+| `stdout` | TEXT | Sanitized phase stdout (last 50KB; secrets redacted) |
+| `stderr` | TEXT | Sanitized phase stderr (last 50KB; secrets redacted) |
 | `timestamp` | TEXT | ISO timestamp |
 
 Query per-phase costs with:
@@ -282,6 +286,26 @@ ORDER BY id ASC;
 ```
 
 The `harness_metadata` JSON in `run_results` also includes a `phases` list (with trace IDs, models, durations, and exit codes) and a `review_model` field for quick access without joining.
+
+### Harness output capture and secret redaction
+
+When a harness runs, its stdout and stderr are captured and stored in
+`run_results.harness_stdout` / `run_results.harness_stderr` (and
+`phase_results.stdout` / `phase_results.stderr` for multi-phase tasks).
+This is essential for debugging cells where the harness produced no changes
+(e.g. API key invalid, rate limited, crash) — the output explains *why*.
+
+Before persistence, the output is sanitized by `src/harness_evaluator/runner/redaction.py`:
+
+- **Secret redaction**: API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`),
+  OAuth tokens (`CLAUDE_CODE_OAUTH_TOKEN`), bearer tokens, and `sk-` prefixed
+  keys are replaced with `[REDACTED]`. This prevents secret leakage to the
+  database, dashboard, and CSV/JSON exports.
+- **Truncation**: Output is capped to the last 50KB per stream (error
+  messages and stack traces appear at the end). A truncation notice is
+  prepended when output is cut.
+
+Existing databases are migrated in place via `ALTER TABLE` — no data loss.
 
 ## Run metadata
 

@@ -303,7 +303,7 @@ Then open http://127.0.0.1:8080 in your browser.
 
 - **Run overview**: List all runs with summary stats (cells, passed, failed, cost)
 - **Run detail**: Per-run view with leaderboards, filtered results table, failed/skipped cells section, and collapsible phase details
-- **Cell detail**: Per-cell page with diff, test output, phase results, and reconciliation
+- **Cell detail**: Per-cell page with diff, test output, harness stdout/stderr, phase results, and reconciliation
 - **Error visibility**: Error class and error message columns in results table; failed/skipped cells section with persisted error reasons
 - **Filtering**: Filter by model, harness, task track, and minimum success rate
 - **Sorting**: Click any column header to sort
