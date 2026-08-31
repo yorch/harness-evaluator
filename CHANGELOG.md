@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/yorch/harness-evaluator/compare/v0.5.0...v0.6.0) (2026-08-31)
+
+
+### Features
+
+* **cli:** add --version flag and version command ([b43bc05](https://github.com/yorch/harness-evaluator/commit/b43bc050fc51c23d4b1415d74350811c743e41b2))
+
 ## [0.5.0](https://github.com/yorch/harness-evaluator/compare/v0.4.0...v0.5.0) (2026-08-31)
 
 
