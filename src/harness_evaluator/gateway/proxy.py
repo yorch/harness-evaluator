@@ -57,6 +57,13 @@ HOP_BY_HOP = frozenset(
         "upgrade",
         "host",
         "content-length",
+        # aiohttp auto-decompresses the upstream response body when reading
+        # it (via .read() or .content.iter_any()). If we forward the original
+        # Content-Encoding header, the client sees e.g. "br" and tries to
+        # decompress already-decompressed bytes, causing
+        # BrotliDecompressionError / encoding errors. Strip it so the client
+        # receives plain uncompressed bytes.
+        "content-encoding",
     }
 )
 

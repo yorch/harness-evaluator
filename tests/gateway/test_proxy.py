@@ -62,6 +62,85 @@ class TestProxyNonStreamingAnthropic:
         assert abs(call.cost.output_cost - expected_output_cost) < 1e-10
         assert call.cost.total > 0
 
+    async def test_content_encoding_stripped_from_response(self, tmp_db, tmp_path):
+        """Content-Encoding must be stripped from proxy responses.
+
+        aiohttp auto-decompresses the upstream response body. If the
+        Content-Encoding header (e.g. "br") is forwarded to the client,
+        the client tries to decompress already-decompressed bytes,
+        causing BrotliDecompressionError.
+        """
+        import brotli
+        import json as json_mod
+
+        async def handle_messages(request: web.Request) -> web.Response:
+            body = {
+                "id": "msg_test",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-sonnet-4-20250514",
+                "content": [{"type": "text", "text": "Hello!"}],
+                "stop_reason": "end_turn",
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 0,
+                },
+            }
+            # Actually brotli-compress the body so aiohttp can decompress it
+            compressed = brotli.compress(json_mod.dumps(body).encode())
+            resp = web.Response(
+                status=200,
+                body=compressed,
+                content_type="application/json",
+            )
+            # Simulate the upstream sending Content-Encoding: br
+            resp.headers["Content-Encoding"] = "br"
+            return resp
+
+        app = web.Application()
+        app.router.add_post("/v1/messages", handle_messages)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        upstream_port = site._server.sockets[0].getsockname()[1]
+        upstream_url = f"http://127.0.0.1:{upstream_port}"
+
+        store = CallStore(tmp_db)
+        proxy_app_obj, proxy = create_proxy_app(
+            store,
+            upstream_overrides={Provider.ANTHROPIC: upstream_url},
+            verify_ssl=False,
+        )
+        proxy_runner = web.AppRunner(proxy_app_obj)
+        await proxy_runner.setup()
+        proxy_site = web.TCPSite(proxy_runner, "127.0.0.1", 0)
+        await proxy_site.start()
+        proxy_port = proxy_site._server.sockets[0].getsockname()[1]
+        proxy_url = f"http://127.0.0.1:{proxy_port}"
+
+        try:
+            async with aiohttp.ClientSession() as session, session.post(
+                f"{proxy_url}/v1/messages",
+                json={
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 100,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                },
+            ) as resp:
+                assert resp.status == 200
+                # Content-Encoding must NOT be in the response headers
+                assert "Content-Encoding" not in resp.headers
+                # Body should be readable as plain JSON
+                body = await resp.json()
+                assert body["content"][0]["text"] == "Hello!"
+        finally:
+            await proxy.close()
+            await proxy_runner.cleanup()
+            await runner.cleanup()
+
 
 class TestProxyStreamingAnthropic:
     async def test_streaming_request_captured(self, proxy_app):
