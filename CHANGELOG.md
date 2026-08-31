@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0](https://github.com/yorch/harness-evaluator/compare/v0.10.0...v0.11.0) (2026-08-31)
+
+
+### Features
+
+* **runner:** capture and display harness stdout/stderr in dashboard ([#35](https://github.com/yorch/harness-evaluator/issues/35)) ([34b27a2](https://github.com/yorch/harness-evaluator/commit/34b27a2b2eb6257a8ccd6d22bf232a4d44f7b307))
+
+
+### Bug Fixes
+
+* **gateway:** user-friendly error when port is already in use ([#34](https://github.com/yorch/harness-evaluator/issues/34)) ([1b06cd1](https://github.com/yorch/harness-evaluator/commit/1b06cd139634aab724e086bef0e25549bac08d51))
+
+
+### Documentation
+
+* fix remaining stale references and clarify Docker image contents ([#33](https://github.com/yorch/harness-evaluator/issues/33)) ([f787805](https://github.com/yorch/harness-evaluator/commit/f7878053c17f88b908d6f8c82c16d0b9a25610f4))
+* sync documentation with recent features and adapters ([5f44388](https://github.com/yorch/harness-evaluator/commit/5f44388d89a1c940e13be6f73f6593acf1edea80))
+
 ## [0.10.0](https://github.com/yorch/harness-evaluator/compare/v0.9.0...v0.10.0) (2026-08-31)
 
 
