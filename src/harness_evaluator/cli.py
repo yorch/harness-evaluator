@@ -446,6 +446,11 @@ def report(
         paths = gen.generate(run_name, output)
     except ValueError as e:
         console.print(f"[red]{e}[/red]")
+        runs = store.list_runs()
+        if runs:
+            console.print("\nAvailable runs:")
+            for r in runs:
+                console.print(f"  {r['run_name']}")
         raise typer.Exit(1) from None
 
     console.print("[bold green]Reports generated:[/bold green]")
@@ -455,17 +460,67 @@ def report(
 
 @app.command()
 def results(
-    run_name: str = typer.Argument(..., help="Name of the run to show"),
+    run_name: str = typer.Argument(
+        None, help="Name of the run to show (omit to list available runs)"
+    ),
     db: str = typer.Option("harness_evaluator_results.db", help="Results DB path"),
 ) -> None:
-    """Show results summary for a run in the console."""
+    """Show results summary for a run in the console.
+
+    If no run name is given, lists all runs in the database so you can
+    discover the name to use. The run name comes from the ``name:`` field
+    in the run config YAML, not the filename.
+    """
     from harness_evaluator.orchestrator.results_store import ResultsStore
 
     store = ResultsStore(db)
+
+    # If no run name given, list available runs.
+    if run_name is None:
+        runs = store.list_runs()
+        if not runs:
+            console.print(
+                "[yellow]No runs found in the database.[/yellow]\n"
+                "Run `harness-evaluator run <config.yaml>` first, then use "
+                "the `name:` from that config to view results."
+            )
+            raise typer.Exit(1)
+
+        table = Table(title="Available runs")
+        table.add_column("Run Name", style="bold")
+        table.add_column("Cells", justify="right")
+        table.add_column("Completed", justify="right")
+        table.add_column("Failed", justify="right")
+        table.add_column("Avg Success", justify="right")
+        table.add_column("Total Cost", justify="right")
+
+        for r in runs:
+            table.add_row(
+                r["run_name"],
+                str(r["total_cells"]),
+                str(r["completed"] or 0),
+                str(r["failed"] or 0),
+                f"{r['avg_success'] or 0:.2f}",
+                f"${r['total_cost'] or 0:.4f}",
+            )
+
+        console.print(table)
+        console.print(
+            "\n[dim]Use `harness-evaluator results <run-name>` to see "
+            "per-cell details.[/dim]"
+        )
+        raise typer.Exit()
+
     rows = store.get_all_results(run_name)
 
     if not rows:
         console.print(f"[red]No results found for run '{run_name}'[/red]")
+        # Show available runs to help the user.
+        runs = store.list_runs()
+        if runs:
+            console.print("\nAvailable runs:")
+            for r in runs:
+                console.print(f"  {r['run_name']}")
         raise typer.Exit(1)
 
     table = Table(title=f"Results: {run_name}")
@@ -542,6 +597,11 @@ def stats(
     results = store.get_all_results(run_name)
     if not results:
         console.print(f"[red]No results found for run '{run_name}'[/red]")
+        runs = store.list_runs()
+        if runs:
+            console.print("\nAvailable runs:")
+            for r in runs:
+                console.print(f"  {r['run_name']}")
         raise typer.Exit(1)
 
     console.print(f"\n[bold]Statistical Analysis: {run_name}[/bold]")
@@ -646,6 +706,8 @@ def dashboard(
     ),
 ) -> None:
     """Start the interactive web dashboard."""
+    import sqlite3
+
     import uvicorn
 
     from harness_evaluator.dashboard.app import create_app
@@ -659,25 +721,76 @@ def dashboard(
         )
 
     auth_token = token or None
-    app = create_app(results_db=db, token=auth_token)
     url = f"http://{host}:{port}"
+
+    # Inspect the DB so the user knows whether there is anything to look at
+    # before the server starts. A missing or empty database is not fatal — the
+    # dashboard renders an empty state — but it is a common source of confusion
+    # (e.g. wrong --db path), so we surface it up front.
+    db_path = Path(db)
+    db_exists = db_path.exists()
+    run_count = 0
+    if db_exists:
+        try:
+            with sqlite3.connect(str(db_path)) as conn:
+                row = conn.execute(
+                    "SELECT COUNT(DISTINCT run_name) FROM run_results"
+                ).fetchone()
+                run_count = row[0] if row else 0
+        except sqlite3.DatabaseError:
+            # Corrupt or non-dashboard DB; the app will still try to open it.
+            db_exists = False
+
+    # Build the startup panel content.
+    db_label = (
+        f"[green]{db}[/green]" if db_exists else f"[yellow]{db}[/yellow] (not found)"
+    )
+    runs_label = (
+        f"{run_count} run{'s' if run_count != 1 else ''} available"
+        if db_exists and run_count > 0
+        else "empty — no runs yet"
+        if db_exists
+        else "will be created empty"
+    )
+    auth_label = (
+        "[yellow]token required[/yellow]" if auth_token else "[dim]disabled (open)[/dim]"
+    )
+
+    lines = [
+        f"Database:  {db_label}",
+        f"Runs:      {runs_label}",
+        f"URL:       [bold]{url}[/bold]",
+        f"Auth:      {auth_label}",
+        "",
+    ]
     if auth_token:
-        console.print(
-            f"[bold green]Starting dashboard on {url}[/bold green] "
-            f"[dim](auth: token required)[/dim]"
+        lines.append(
+            f"Browser:   open [link={url}/login]{url}/login[/link] and enter the token"
         )
-        console.print(
-            f"[dim]Browser: open {url}/login and enter the token[/dim]"
+        lines.append(
+            "API:       curl -H 'Authorization: Bearer <token>' "
+            f"{url}/api/runs"
         )
-        console.print(
-            f"[dim]API:    curl -H 'Authorization: Bearer <token>' {url}/api/runs[/dim]"
-        )
-        # Disable uvicorn access logs when auth is on to avoid leaking the
-        # token (the ?token= query param would appear in access log lines).
-        uvicorn.run(app, host=host, port=port, access_log=False)
     else:
-        console.print(f"[bold green]Starting dashboard on {url}[/bold green]")
-        uvicorn.run(app, host=host, port=port)
+        lines.append(
+            f"Browser:   open [link={url}]{url}[/link] to view results"
+        )
+        lines.append(f"API:       curl {url}/api/runs")
+    lines.append("")
+    lines.append("[dim]Press Ctrl+C to stop the server.[/dim]")
+
+    console.print(Panel("\n".join(lines), title="[bold]Dashboard[/bold]", border_style="blue"))
+
+    if not db_exists:
+        console.print(
+            "[dim]Tip: pass --db <path> to point at a results database, "
+            "or run `harness-evaluator run <config>` first to populate one.[/dim]"
+        )
+
+    app = create_app(results_db=db, token=auth_token)
+    # Disable uvicorn access logs when auth is on to avoid leaking the
+    # token (the ?token= query param would appear in access log lines).
+    uvicorn.run(app, host=host, port=port, access_log=auth_token is None)
 
 
 @app.command()

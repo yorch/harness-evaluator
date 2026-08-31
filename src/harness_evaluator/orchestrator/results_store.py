@@ -120,6 +120,31 @@ class ResultsStore:
             conn.executescript(SCHEMA)
             conn.commit()
 
+    def list_runs(self) -> list[dict[str, Any]]:
+        """List all run names with aggregate stats (cell counts, success rate).
+
+        Returns a list of dicts sorted by run name, each containing:
+        ``run_name``, ``total_cells``, ``completed``, ``failed``,
+        ``avg_success``, ``total_cost``.
+        """
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT
+                       run_name,
+                       COUNT(*) AS total_cells,
+                       SUM(CASE WHEN exit_class = 'success' THEN 1 ELSE 0 END)
+                           AS completed,
+                       SUM(CASE WHEN exit_class NOT IN ('success', 'skipped')
+                                THEN 1 ELSE 0 END) AS failed,
+                       AVG(success) AS avg_success,
+                       SUM(total_cost) AS total_cost
+                   FROM run_results
+                   GROUP BY run_name
+                   ORDER BY run_name"""
+            ).fetchall()
+            return [dict(row) for row in rows]
+
     def save_result(
         self,
         cell: RunCell,
