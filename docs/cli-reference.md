@@ -160,6 +160,16 @@ Run complete
   Failed: 400
   Skipped: 0
   Cost: $12.3456
+
+Next steps
+  View per-cell results:
+    harness-evaluator results broad-first-pass
+  Generate HTML/JSON/CSV reports:
+    harness-evaluator report broad-first-pass
+  Statistical analysis:
+    harness-evaluator stats broad-first-pass
+  Interactive dashboard:
+    harness-evaluator dashboard --db harness_evaluator_results.db
 ```
 
 ### Dry run output
@@ -325,17 +335,21 @@ See [Reporting](reporting/) for report format details.
 
 Show results summary for a run in the console as a Rich table.
 
+If no run name is given, lists all runs in the database with aggregate
+stats (cells, completed, failed, avg success, total cost). The run name
+comes from the `name:` field in the run config YAML, not the filename.
+
 ### Usage
 
 ```bash
-harness-evaluator results <run_name> [options]
+harness-evaluator results [run_name] [options]
 ```
 
 ### Arguments
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `run_name` | string | Yes | Name of the run to show |
+| `run_name` | string | No | Name of the run to show (omit to list available runs) |
 
 ### Options
 
@@ -346,6 +360,10 @@ harness-evaluator results <run_name> [options]
 ### Examples
 
 ```bash
+# List all runs in the database
+harness-evaluator results
+
+# Show per-cell results for a specific run
 harness-evaluator results broad-first-pass
 harness-evaluator results minimal-first-run --db /data/harness_evaluator_results.db
 ```

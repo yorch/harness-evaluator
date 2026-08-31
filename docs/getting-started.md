@@ -174,12 +174,32 @@ Run complete
   Failed: 0
   Skipped: 0
   Cost: $0.0037
+
+Next steps
+  View per-cell results:
+    harness-evaluator results minimal-first-run
+  Generate HTML/JSON/CSV reports:
+    harness-evaluator report minimal-first-run
+  Statistical analysis:
+    harness-evaluator stats minimal-first-run
+  Interactive dashboard:
+    harness-evaluator dashboard --db harness_evaluator_results.db
 ```
+
+The run name (`minimal-first-run`) comes from the `name:` field in your
+config YAML, not the filename. To list all runs in the database, run
+`harness-evaluator results` with no argument.
 
 ### Step 9: View results
 
+The "Next steps" section at the end of the run output shows the exact
+commands to use. You can also discover them at any time:
+
 ```bash
-# Console summary
+# List all runs in the database (useful if you forgot the run name)
+uvx harness-evaluator results
+
+# Console summary of a specific run
 uvx harness-evaluator results minimal-first-run
 
 # Static HTML/JSON/CSV report
@@ -188,7 +208,7 @@ uvx harness-evaluator report minimal-first-run --output ./reports
 # Interactive dashboard
 uvx harness-evaluator dashboard --port 8080
 
-# Statistical analysis
+# Statistical analysis (mixed-effects model, variance decomposition)
 uvx harness-evaluator stats minimal-first-run
 ```
 
