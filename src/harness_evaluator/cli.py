@@ -271,6 +271,11 @@ def run(
         "--progress/--no-progress",
         help="Show a live progress panel during the run (auto-off in non-TTY)",
     ),
+    no_tui: bool = typer.Option(
+        False,
+        "--no-tui",
+        help="Skip the Textual TUI and run sequentially with a Rich progress panel",
+    ),
 ) -> None:
     """Execute an evaluation run from a config file."""
     from rich.live import Live
@@ -397,7 +402,8 @@ def run(
 
     # Decide whether to show the live TUI.
     # Auto-off in non-TTY (CI, pipes) even if --progress was passed.
-    use_tui = show_progress and sys.stdout.isatty()
+    # --no-tui forces the Rich Live fallback (sequential, no Textual app).
+    use_tui = show_progress and not no_tui and sys.stdout.isatty()
 
     progress_result: Any = None
 
