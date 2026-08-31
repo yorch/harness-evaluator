@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/yorch/harness-evaluator/compare/v0.3.0...v0.3.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **ci:** move PyPI publish and Docker into release-please workflow ([#6](https://github.com/yorch/harness-evaluator/issues/6)) ([41490ab](https://github.com/yorch/harness-evaluator/commit/41490ab1d48deb192c5093f6e30a11757605f4fd))
+* **ci:** use inputs.ref and GH_REPO in publish workflow_dispatch ([c20ead7](https://github.com/yorch/harness-evaluator/commit/c20ead7e4d046c98bc0c42905ddcb67f9a8f267a))
+
 ## [0.3.0](https://github.com/yorch/harness-evaluator/compare/v0.2.0...v0.3.0) (2026-08-31)
 
 
