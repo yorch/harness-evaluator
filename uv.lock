@@ -561,7 +561,7 @@ wheels = [
 
 [[package]]
 name = "harness-evaluator"
-version = "0.7.0"
+version = "0.7.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from harness_evaluator.tui.app import EvalApp
-from harness_evaluator.tui.widgets import FooterState
 
 
 @pytest.fixture
