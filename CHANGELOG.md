@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/yorch/harness-evaluator/compare/v0.8.0...v0.8.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* remove accidentally committed workdir and add to .gitignore ([794a00e](https://github.com/yorch/harness-evaluator/commit/794a00e4a09f9f9db7b28408a3240297b15c3023))
+* **tui:** same-thread log writes and auto-exit on eval completion ([88c6c1e](https://github.com/yorch/harness-evaluator/commit/88c6c1e170a5002e349a1e804f6d76c2aff7bf11))
+
 ## [0.8.0](https://github.com/yorch/harness-evaluator/compare/v0.7.1...v0.8.0) (2026-08-31)
 
 
