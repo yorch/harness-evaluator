@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.9.0](https://github.com/yorch/harness-evaluator/compare/v0.8.1...v0.9.0) (2026-08-31)
+
+
+### Features
+
+* **adapters:** add Gemini, Aider, Copilot, Antigravity, Cursor, Kiro adapters ([#29](https://github.com/yorch/harness-evaluator/issues/29)) ([275643e](https://github.com/yorch/harness-evaluator/commit/275643ec4b613b7333fe4a5692e91bf3c0a3740f))
+* **cli:** list available runs when results command has no run name ([9c9245b](https://github.com/yorch/harness-evaluator/commit/9c9245be61ebb5c033607cfddf6808250cb00128))
+* **cli:** make report and stats run_name optional, list runs when omitted ([#27](https://github.com/yorch/harness-evaluator/issues/27)) ([c6e75bd](https://github.com/yorch/harness-evaluator/commit/c6e75bd5271a56e2906535418cdcc132dbbb4f8f))
+* **cli:** print next-steps commands after run completion ([7c6cc33](https://github.com/yorch/harness-evaluator/commit/7c6cc331ee197ad9ad04df28757a5b423f02b762))
+* **dashboard:** surface error details across all user-facing surfaces ([#28](https://github.com/yorch/harness-evaluator/issues/28)) ([37067c1](https://github.com/yorch/harness-evaluator/commit/37067c1f2f181895c0e6d45d59fbbf80e51043dd))
+
+
+### Bug Fixes
+
+* **cli:** pass --db to all next-steps commands, not just dashboard ([6500eac](https://github.com/yorch/harness-evaluator/commit/6500eac031bd346cbb3d76cfb472b1b0aa66d3ba))
+* **cli:** show resumability warning before TUI starts ([29f9a94](https://github.com/yorch/harness-evaluator/commit/29f9a94d25bcf97ce4f5731e02ca9b832df35632))
+* **orchestrator:** track and display skip reasons in run summary ([f7f739a](https://github.com/yorch/harness-evaluator/commit/f7f739a025d1ff5ce1dc4319e3337f559342d871))
+
 ## [0.8.1](https://github.com/yorch/harness-evaluator/compare/v0.8.0...v0.8.1) (2026-08-31)
 
 
