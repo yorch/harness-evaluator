@@ -345,6 +345,16 @@ def run(
         results_db=cfg.results_db,
     )
 
+    # Check for already-completed cells (resumability) before starting the
+    # TUI so the user sees a clear explanation if cells will be skipped.
+    completed_cells = store.get_completed_cells(cfg.name)
+    if completed_cells:
+        console.print(
+            f"[yellow]Resuming run '{cfg.name}': {len(completed_cells)} cell(s) "
+            f"already completed and will be skipped. "
+            f"Use a different run name or delete {cfg.results_db} to start fresh.[/yellow]"
+        )
+
     # Decide whether to show the live TUI.
     # Auto-off in non-TTY (CI, pipes) even if --progress was passed.
     use_tui = show_progress and sys.stdout.isatty()
