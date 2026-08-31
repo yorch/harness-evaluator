@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/yorch/harness-evaluator/compare/v0.6.1...v0.7.0) (2026-08-31)
+
+
+### Features
+
+* **gateway:** add periodic stats summary and update AGENTS.md ([#20](https://github.com/yorch/harness-evaluator/issues/20)) ([d96952f](https://github.com/yorch/harness-evaluator/commit/d96952f131936fb4481f8c26f5c64b3182e6dd37))
+
 ## [0.6.1](https://github.com/yorch/harness-evaluator/compare/v0.6.0...v0.6.1) (2026-08-31)
 
 
