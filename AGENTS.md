@@ -141,3 +141,20 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
    `release-please.yml`)
 
 Do not manually tag or bump versions — let release-please handle it.
+
+### PyPI trusted publishing
+
+PyPI publishing uses [trusted publishing (OIDC)](https://docs.pypi.org/trusted-publishers/).
+The `release-please.yml` workflow must be registered as a trusted publisher
+on PyPI for the `harness-evaluator` project:
+
+- **Workflow name**: `release-please.yml`
+- **Environment**: `release`
+- **Repository**: `yorch/harness-evaluator`
+
+If the PyPI publish job fails with `invalid-publisher`, the trusted
+publisher configuration needs to be updated at
+<https://pypi.org/manage/project/harness-evaluator/settings/publishing/>.
+
+As a fallback, `publish.yml` can be triggered manually via `workflow_dispatch`
+with a `ref` input (e.g. `v0.3.2`) to publish a specific tag.
