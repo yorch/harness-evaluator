@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/yorch/harness-evaluator/compare/v0.7.0...v0.7.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **gateway:** use path-based trace ID to survive HTTP client URL joining ([#22](https://github.com/yorch/harness-evaluator/issues/22)) ([b97609e](https://github.com/yorch/harness-evaluator/commit/b97609e80d1dab53105c8b8a25f576b28b74d6c7))
+
 ## [0.7.0](https://github.com/yorch/harness-evaluator/compare/v0.6.1...v0.7.0) (2026-08-31)
 
 
