@@ -56,6 +56,7 @@ class OrchestratorProgress:
     total_cost: float = 0.0
     errors: list[str] = field(default_factory=list)
     current_cell: str | None = None
+    skip_reasons: dict[str, str] = field(default_factory=dict)
 
     @property
     def done(self) -> int:
@@ -82,6 +83,7 @@ class OrchestratorProgress:
             total_cost=self.total_cost,
             errors=list(self.errors),
             current_cell=self.current_cell,
+            skip_reasons=dict(self.skip_reasons),
         )
 
 
@@ -170,6 +172,9 @@ class Orchestrator:
         completed = self.store.get_completed_cells(self.config.name)
         pending_cells = [c for c in cells if c.cell_id not in completed]
         self.progress.skipped = len(cells) - len(pending_cells)
+        for c in cells:
+            if c.cell_id in completed:
+                self.progress.skip_reasons[c.cell_id] = "already completed (resumability)"
         await self._notify_progress()
         logger.info(
             "Run '%s': %d total cells, %d already completed, %d to run",
@@ -245,6 +250,10 @@ class Orchestrator:
                     )
                     async with self._progress_lock:
                         self.progress.skipped += 1
+                        self.progress.skip_reasons[cell.cell_id] = (
+                            f"Budget cap reached (${self._remaining_budget:.4f} "
+                            f"remaining < ${estimate:.4f} estimated)"
+                        )
                     await self._notify_progress()
                     return
                 self._remaining_budget -= estimate

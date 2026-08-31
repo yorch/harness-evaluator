@@ -405,6 +405,20 @@ def run(
     console.print(f"  Skipped: {progress.skipped}")
     console.print(f"  Cost: ${progress.total_cost:.4f}")
 
+    # Show skip reasons if any cells were skipped
+    if progress.skip_reasons:
+        console.print(f"\n[yellow]Skipped cells ({len(progress.skip_reasons)}):[/yellow]")
+        # Group by reason for conciseness
+        from collections import Counter
+
+        reason_counts = Counter(progress.skip_reasons.values())
+        for reason, count in reason_counts.most_common():
+            console.print(f"  {count} cell(s): {reason}")
+        # Show individual cell IDs if 10 or fewer
+        if len(progress.skip_reasons) <= 10:
+            for cell_id, reason in sorted(progress.skip_reasons.items()):
+                console.print(f"    {cell_id}: {reason}")
+
     # Show first few failures if any
     if progress.errors:
         console.print(f"\n[red]First {min(5, len(progress.errors))} errors:[/red]")
