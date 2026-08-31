@@ -12,7 +12,7 @@ const base = import.meta.env.BASE_URL;
   <link rel="alternate" type="text/markdown" href={`${base}llms-full.txt`} />
   <meta
     name="description"
-    content="harness-evaluator — Compare agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency."
+    content="harness-evaluator — Compare agentic coding harnesses (Claude Code, Codex, Pi, OpenCode, OMP, Aider, Gemini CLI, Antigravity, Copilot, Cursor, Kiro) on token efficiency, task effectiveness, and time efficiency."
   />
   <title>harness-evaluator — Harness Evaluator</title>
 
@@ -822,7 +822,7 @@ const base = import.meta.env.BASE_URL;
       <div class="container">
         <div class="section-header reveal">
           <h2>Supported Harnesses</h2>
-          <p>Five harnesses across three observability tiers.</p>
+          <p>Eleven harnesses across three observability tiers.</p>
         </div>
         <table class="harness-table reveal">
           <thead>
@@ -841,6 +841,12 @@ const base = import.meta.env.BASE_URL;
               <td>Open-source, system prompt visible</td>
             </tr>
             <tr>
+              <td>Aider</td>
+              <td><code>aider</code></td>
+              <td><span class="tier-badge tier-full">full</span></td>
+              <td>Open-source, multi-provider</td>
+            </tr>
+            <tr>
               <td>Claude Code</td>
               <td><code>claude-code</code></td>
               <td><span class="tier-badge tier-partial">partial</span></td>
@@ -853,6 +859,18 @@ const base = import.meta.env.BASE_URL;
               <td>Closed, proxy captures traffic</td>
             </tr>
             <tr>
+              <td>Gemini CLI</td>
+              <td><code>gemini</code></td>
+              <td><span class="tier-badge tier-partial">partial</span></td>
+              <td>Google, proxy captures traffic</td>
+            </tr>
+            <tr>
+              <td>Antigravity</td>
+              <td><code>antigravity</code></td>
+              <td><span class="tier-badge tier-partial">partial</span></td>
+              <td>Google, proxy captures traffic</td>
+            </tr>
+            <tr>
               <td>Pi</td>
               <td><code>pi</code></td>
               <td><span class="tier-badge tier-minimal">minimal</span></td>
@@ -863,6 +881,24 @@ const base = import.meta.env.BASE_URL;
               <td><code>omp</code></td>
               <td><span class="tier-badge tier-minimal">minimal</span></td>
               <td>May bypass proxy</td>
+            </tr>
+            <tr>
+              <td>GitHub Copilot</td>
+              <td><code>copilot</code></td>
+              <td><span class="tier-badge tier-minimal">minimal</span></td>
+              <td>GitHub, may bypass proxy</td>
+            </tr>
+            <tr>
+              <td>Cursor</td>
+              <td><code>cursor</code></td>
+              <td><span class="tier-badge tier-minimal">minimal</span></td>
+              <td>Multi-provider, may bypass proxy</td>
+            </tr>
+            <tr>
+              <td>Kiro</td>
+              <td><code>kiro</code></td>
+              <td><span class="tier-badge tier-minimal">minimal</span></td>
+              <td>AWS, may bypass proxy</td>
             </tr>
           </tbody>
         </table>

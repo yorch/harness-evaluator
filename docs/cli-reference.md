@@ -288,17 +288,21 @@ Tokens: 129. This is expected for streaming responses.
 
 Generate static reports (HTML, JSON, CSV) for a completed run.
 
+If no run name is given, lists all runs in the database with aggregate
+stats (cells, completed, failed, avg success, total cost). The run name
+comes from the `name:` field in the run config YAML, not the filename.
+
 ### Usage
 
 ```bash
-harness-evaluator report <run_name> [options]
+harness-evaluator report [run_name] [options]
 ```
 
 ### Arguments
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `run_name` | string | Yes | Name of the run to report on |
+| `run_name` | string | No | Name of the run to report on (omit to list available runs) |
 
 ### Options
 
@@ -310,6 +314,9 @@ harness-evaluator report <run_name> [options]
 ### Examples
 
 ```bash
+# List all runs in the database
+harness-evaluator report
+
 # Generate reports for a run
 harness-evaluator report broad-first-pass
 
@@ -372,13 +379,17 @@ harness-evaluator results minimal-first-run --db /data/harness_evaluator_results
 
 ```
                       Results: broad-first-pass
-┏━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┓
-┃ Harness   ┃ Model              ┃ Task             ┃ Exit   ┃ Success ┃ Tokens  ┃ Cost     ┃ Time(s) ┃
-┡━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━┩
-│ opencode  │ claude-sonnet-4-.. │ swe-bugfix-001   │ pass   │ 1.00    │ 1234    │ $0.0037  │ 12.3    │
-│ claude-c. │ claude-sonnet-4-.. │ swe-bugfix-001   │ fail   │ 0.00    │ 5678    │ $0.0170  │ 45.6    │
-└───────────┴────────────────────┴──────────────────┴────────┴─────────┴─────────┴──────────┴─────────┘
+┏━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Harness   ┃ Model              ┃ Task             ┃ Exit   ┃ Success ┃ Tokens  ┃ Cost     ┃ Time(s) ┃ Error Cl. ┃ Error Message ┃
+┡━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ opencode  │ claude-sonnet-4-.. │ swe-bugfix-001   │ pass   │ 1.00    │ 1234    │ $0.0037  │ 12.3    │            │               │
+│ claude-c. │ claude-sonnet-4-.. │ swe-bugfix-001   │ fail   │ 0.00    │ 5678    │ $0.0170  │ 45.6    │ crash      │ Segfault in…  │
+└───────────┴────────────────────┴──────────────────┴────────┴─────────┴─────────┴──────────┴─────────┴────────────┴───────────────┘
 ```
+
+The `Error Class` and `Error Message` columns show the failure classification
+and details for non-passing cells. Long error messages are truncated to 60
+characters with an ellipsis (`…`) in the terminal.
 
 ## harness-evaluator adapters
 
@@ -400,17 +411,21 @@ See [Adapters](adapters/#listing-adapters) for example output.
 
 Generate statistical analysis for a run. See [Statistics](statistics/) for details on the models.
 
+If no run name is given, lists all runs in the database with aggregate
+stats (cells, completed, failed, avg success, total cost). The run name
+comes from the `name:` field in the run config YAML, not the filename.
+
 ### Usage
 
 ```bash
-harness-evaluator stats <run_name> [options]
+harness-evaluator stats [run_name] [options]
 ```
 
 ### Arguments
 
 | Argument | Type | Required | Description |
 |----------|------|----------|-------------|
-| `run_name` | string | Yes | Run name to analyze |
+| `run_name` | string | No | Name of the run to analyze (omit to list available runs) |
 
 ### Options
 
@@ -421,6 +436,10 @@ harness-evaluator stats <run_name> [options]
 ### Examples
 
 ```bash
+# List all runs in the database
+harness-evaluator stats
+
+# Run statistical analysis for a specific run
 harness-evaluator stats broad-first-pass
 harness-evaluator stats minimal-first-run --db /data/harness_evaluator_results.db
 ```
@@ -475,6 +494,29 @@ harness-evaluator dashboard --host 0.0.0.0
 Then open `http://127.0.0.1:8080` in your browser. When a token is set,
 navigate to `http://<host>:<port>/login` and enter the token to set a
 session cookie.
+
+### Startup output
+
+The dashboard command prints a summary panel before starting the server,
+showing the database path, number of runs available, server URL, auth
+status, and instructions for opening the browser and querying the API:
+
+```
+┌─ harness-evaluator Dashboard ──────────────────────────────┐
+│ Database:  ./harness_evaluator_results.db                  │
+│ Runs:      3 runs available                                │
+│ URL:       http://127.0.0.1:8080                           │
+│ Auth:      disabled (open)                                 │
+│                                                            │
+│ Browser:   open http://127.0.0.1:8080 to view results      │
+│ API:       curl http://127.0.0.1:8080/api/runs             │
+│                                                            │
+│ Press Ctrl+C to stop the server.                           │
+└────────────────────────────────────────────────────────────┘
+```
+
+If the database does not exist or is empty, the panel reports that and
+suggests passing `--db <path>` or running an evaluation first.
 
 ### Authentication
 

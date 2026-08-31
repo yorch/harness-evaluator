@@ -5,7 +5,7 @@ description: Comprehensive documentation for harness-evaluator — a harness eva
 
 # harness-evaluator Documentation
 
-**harness-evaluator** (harness evaluator) compares agentic coding harnesses — Claude Code, Codex, Pi, OpenCode, and OMP — against one or more models on a set of tasks. It measures which harnesses are most token-efficient, task-effective, and time-effective.
+**harness-evaluator** (harness evaluator) compares agentic coding harnesses — Claude Code, Codex, Pi, OpenCode, OMP, Aider, Gemini CLI, Antigravity, Copilot, Cursor, and Kiro — against one or more models on a set of tasks. It measures which harnesses are most token-efficient, task-effective, and time-effective.
 
 The comparison is **product-level**: which harness to *use* with a given model. The harness's system prompt, tool set, context strategy, and safety policy are part of what is being evaluated, not controlled for.
 
@@ -118,13 +118,20 @@ harness-evaluator/
 │   │   ├── claude_code.py      # Claude Code adapter
 │   │   ├── codex.py            # Codex adapter
 │   │   ├── opencode.py         # OpenCode adapter
+│   │   ├── aider.py            # Aider adapter
+│   │   ├── gemini.py           # Gemini CLI adapter
+│   │   ├── antigravity.py      # Antigravity CLI adapter
 │   │   ├── pi.py               # Pi adapter
-│   │   └── omp.py              # OMP adapter
+│   │   ├── omp.py              # OMP adapter
+│   │   ├── copilot.py          # GitHub Copilot CLI adapter
+│   │   ├── cursor.py           # Cursor CLI adapter
+│   │   └── kiro.py             # Kiro CLI adapter
 │   ├── evaluator/              # SWE hidden-test + open-ended LLM judge tracks
 │   │   ├── swe.py              # SWEEvaluator with error classification
 │   │   └── open_ended.py       # FrozenJudge, Rubric, StructuralChecker, calibration
 │   ├── dashboard/
-│   │   └── app.py              # FastAPI dashboard with Jinja2 templates
+│   │   ├── app.py              # FastAPI dashboard with Jinja2 templates
+│   │   └── templates/          # _base.html, index.html, run_detail.html, cell_detail.html
 │   ├── reporting/
 │   │   └── static_report.py    # HTML/JSON/CSV report generator
 │   └── stats/
@@ -133,6 +140,6 @@ harness-evaluator/
 ├── runs/                       # Sample run config YAMLs
 ├── tests/                      # pytest test suite
 ├── docs/                       # This documentation
-├── Dockerfile                  # Image with all 5 harnesses (node:22-slim base)
+├── Dockerfile                  # Image with all 11 harnesses (node:22-slim base)
 └── pyproject.toml              # Dependencies, ruff/mypy/pytest config
 ```

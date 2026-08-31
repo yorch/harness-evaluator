@@ -29,9 +29,9 @@ The HTML report includes:
 
 1. **Summary cards**: total cells, passed, failed, total cost, average success rate
 2. **Within-model leaderboards**: one table per model, sorted by success rate descending
-3. **Detailed results table**: every cell with harness, model, task, exit class, success, tokens, cost, time, error class
+3. **Detailed results table**: every cell with harness, model, task, exit class, success, tokens, cost, time, error class, error message
 
-The HTML is generated with Jinja2 autoescaping enabled to prevent stored XSS from user-supplied identifiers (run names, cell IDs, etc.) stored in the database.
+The HTML is generated with Jinja2 autoescaping enabled to prevent stored XSS from user-supplied identifiers (run names, cell IDs, error messages, etc.) stored in the database.
 
 ### JSON report structure
 
@@ -108,7 +108,12 @@ View results in the console with `harness-evaluator results`:
 harness-evaluator results broad-first-pass
 ```
 
-Prints a Rich table with columns: Harness, Model, Task, Exit, Success, Tokens, Cost, Time(s).
+Prints a Rich table with columns: Harness, Model, Task, Exit, Success,
+Tokens, Cost, Time(s), Error Class, Error Message. Long error messages
+are truncated to 60 characters with an ellipsis (`…`).
+
+If no run name is given, lists all runs in the database with aggregate
+stats (cells, completed, failed, avg success, total cost).
 
 ## Dashboard
 
@@ -177,9 +182,26 @@ Per-run view with:
 
 - **Summary stats**: total cells, passed, cost
 - **Live progress**: from `run_state` table (shows running/completed/failed/skipped counts if a run is in progress)
+- **Failed / Skipped Cells section**: lists cells from both `run_state` (failed/skipped) and `run_results` (exit_class != 'pass') with their error messages, so you can see why cells failed without scrolling through the full results table
 - **Leaderboards**: within-model harness comparison, sorted by success rate
-- **Filtered results table**: filter by model, harness, task track, and minimum success rate
+- **Filtered results table**: filter by model, harness, task track, and minimum success rate; columns include Error Class and Error Message (truncated with hover-to-view full text)
+- **Sortable columns**: click any column header to sort ascending or descending
 - **Pagination**: 50 results per page (configurable, max 500)
+- **Phase Details**: collapsible (`<details>`) per-cell phase tables for multi-phase tasks, showing phase name, model, role, exit code, duration, timeout status, tokens, cost, and per-phase errors. Phase results are loaded only for the current page's cells for performance
+- **Dark mode**: automatic via `prefers-color-scheme`, with a manual toggle in the page header
+- **CSV/JSON export**: download the filtered results as CSV or JSON via the export buttons
+
+#### Cell detail page
+
+Each cell in the results table links to a dedicated cell detail page
+(`/run/{run_name}/cell/{cell_id}`) showing:
+
+- Full cell metadata (harness, model, task, exit class, success, cost, tokens, timing)
+- Error class and error message
+- Git diff of changes (with syntax highlighting)
+- Test output
+- Phase results (for multi-phase cells)
+- Reconciliation results (if available)
 
 #### Filtering
 
@@ -272,6 +294,39 @@ Get live progress for a run (from `run_state` table).
 }
 ```
 
+#### `GET /api/run/{run_name}/errors`
+
+Get failed and skipped cells with error messages for a run. Combines
+`run_state` (failed/skipped) and `run_results` (exit_class != 'pass')
+entries, deduplicated by cell ID.
+
+```json
+{
+  "run_name": "broad-first-pass",
+  "failed_cells": [
+    {
+      "cell_id": "claude-code__claude-sonnet-4__swe-001__r0",
+      "status": "failed",
+      "error": "crash: Segmentation fault"
+    },
+    {
+      "cell_id": "opencode__gpt-4o__swe-003__r2",
+      "status": "skipped",
+      "error": "Budget cap reached ($0.0123 remaining < $0.0500 estimated)"
+    }
+  ]
+}
+```
+
+Returns 404 if the run name is not found.
+
+#### `GET /run/{run_name}/export/{format}`
+
+Export filtered results as a downloadable file. The `format` path
+parameter must be `csv` or `json`. Accepts the same filter query
+parameters as `/api/run/{run_name}` (`model`, `harness`, `track`,
+`min_success`, `sort`, `order`).
+
 ### SQL-level aggregation
 
 The dashboard uses SQL-level aggregation queries (not loading the full table) for run summaries and counts. This keeps the dashboard responsive even with large result sets.
@@ -284,10 +339,12 @@ Dashboard templates are in `src/harness_evaluator/dashboard/templates/`:
 
 | Template | Description |
 |----------|-------------|
+| `_base.html` | Shared layout with dark mode support, theme toggle, and accessibility landmarks |
 | `index.html` | Run overview page |
-| `run_detail.html` | Per-run detail with filtering and pagination |
+| `run_detail.html` | Per-run detail with filtering, sorting, pagination, failed cells, and phase details |
+| `cell_detail.html` | Per-cell detail with diff, test output, phases, and reconciliation |
 
-All templates use Jinja2 with `select_autoescape(["html", "xml"])` for XSS safety.
+All templates use Jinja2 with `select_autoescape(["html", "xml"])` for XSS safety. Error messages, run names, cell IDs, and all other user-supplied values are escaped.
 
 ## Key source files
 
@@ -295,5 +352,7 @@ All templates use Jinja2 with `select_autoescape(["html", "xml"])` for XSS safet
 |------|-------------|
 | `src/harness_evaluator/reporting/static_report.py` | `ReportGenerator` — HTML/JSON/CSV generation |
 | `src/harness_evaluator/dashboard/app.py` | `create_app()` — FastAPI dashboard factory |
+| `src/harness_evaluator/dashboard/templates/_base.html` | Shared layout template |
 | `src/harness_evaluator/dashboard/templates/index.html` | Run overview template |
 | `src/harness_evaluator/dashboard/templates/run_detail.html` | Run detail template |
+| `src/harness_evaluator/dashboard/templates/cell_detail.html` | Cell detail template |

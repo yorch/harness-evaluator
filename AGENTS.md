@@ -12,7 +12,7 @@ uv run ruff check src/ tests/
 # Type check (fast, ~3s)
 uv run mypy src/harness_evaluator/
 
-# Tests (full suite ~20s, 360 tests)
+# Tests (full suite ~40s, 500+ tests)
 uv run pytest tests/ -q
 
 # All gates at once — must pass before completing any change
@@ -36,7 +36,7 @@ proxy for token/cost accounting.
 - `src/harness_evaluator/gateway/` — HTTP/SSE proxy, parsers, SQLite store, reconciliation
 - `src/harness_evaluator/orchestrator/` — Matrix builder, budget engine, results store
 - `src/harness_evaluator/runner/` — Docker lifecycle (container per cell, exec-based)
-- `src/harness_evaluator/adapters/` — Per-harness CLI wrappers (claude, codex, opencode, pi, omp)
+- `src/harness_evaluator/adapters/` — Per-harness CLI wrappers (claude-code, codex, opencode, aider, gemini, antigravity, pi, omp, copilot, cursor, kiro)
 - `src/harness_evaluator/evaluator/` — SWE hidden-test + open-ended LLM judge tracks;
   `evaluator/utils.py` holds the shared, symlink-safe `get_workdir_diff`
 - `src/harness_evaluator/dashboard/` — FastAPI dashboard with Jinja2 templates
@@ -44,7 +44,7 @@ proxy for token/cost accounting.
 - `src/harness_evaluator/cli.py` — Typer-based CLI entry point
 - `tasks/` — Task YAML definitions and repo fixtures (bundled into the wheel
   at `harness_evaluator/tasks` so an installed harness-evaluator runs without a repo checkout)
-- `Dockerfile` — Image with all 5 harnesses + Bun (node:22-slim base). Harness
+- `Dockerfile` — Image with all 11 harnesses + Bun (node:22-slim base). Harness
   versions are build args (`CLAUDE_CODE_VERSION`, etc.) with pinned defaults.
 
 ## Code style

@@ -7,7 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Harness evaluator: compare agentic coding harnesses (Claude Code, Codex, Pi,
-OpenCode, OMP) on token efficiency, task effectiveness, and time efficiency.
+OpenCode, OMP, Aider, Gemini CLI, Antigravity, Copilot, Cursor, Kiro) on token
+efficiency, task effectiveness, and time efficiency.
 
 See [DESIGN.md](DESIGN.md) for the full design specification and
 [the docs site](https://yorch.github.io/harness-evaluator/) for comprehensive documentation.
@@ -210,10 +211,16 @@ Adapters wrap each coding harness with a uniform interface for the runner.
 | Harness | Adapter | Observability | Notes |
 |---------|---------|--------------|-------|
 | OpenCode | `opencode` | full | Open-source, system prompt visible |
+| Aider | `aider` | full | Open-source, multi-provider |
 | Claude Code | `claude-code` | partial | Closed, proxy captures traffic |
 | Codex | `codex` | partial | Closed, proxy captures traffic |
+| Gemini CLI | `gemini` | partial | Google, proxy captures traffic |
+| Antigravity | `antigravity` | partial | Google, proxy captures traffic |
 | Pi | `pi` | minimal | May bypass proxy |
 | OMP | `omp` | minimal | May bypass proxy |
+| GitHub Copilot | `copilot` | minimal | GitHub, may bypass proxy |
+| Cursor | `cursor` | minimal | Multi-provider, may bypass proxy |
+| Kiro | `kiro` | minimal | AWS, may bypass proxy |
 
 ### Listing adapters
 
@@ -291,13 +298,19 @@ Then open http://127.0.0.1:8080 in your browser.
 ### Features
 
 - **Run overview**: List all runs with summary stats (cells, passed, failed, cost)
-- **Run detail**: Per-run view with leaderboards and filtered results table
+- **Run detail**: Per-run view with leaderboards, filtered results table, failed/skipped cells section, and collapsible phase details
+- **Cell detail**: Per-cell page with diff, test output, phase results, and reconciliation
+- **Error visibility**: Error class and error message columns in results table; failed/skipped cells section with persisted error reasons
 - **Filtering**: Filter by model, harness, task track, and minimum success rate
-- **Leaderboards**: Within-model harness comparison sorted by success rate
+- **Sorting**: Click any column header to sort
+- **Dark mode**: Automatic via `prefers-color-scheme` with manual toggle
+- **Export**: Download filtered results as CSV or JSON
 - **REST API**: JSON endpoints for programmatic access:
   - `GET /api/runs` — list all runs
   - `GET /api/run/{name}` — get filtered results
   - `GET /api/run/{name}/leaderboard` — get leaderboard data
+  - `GET /api/run/{name}/status` — get live progress
+  - `GET /api/run/{name}/errors` — get failed/skipped cells with errors
 
 ## M6: Statistics (completed)
 

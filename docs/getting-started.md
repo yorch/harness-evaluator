@@ -54,7 +54,7 @@ This creates `harness-evaluator.yaml` in the current directory with a minimal st
 
 ### Step 3: Pull the Docker image
 
-The runner executes harnesses inside a Docker container. The image contains all 5 harnesses + Python + Git:
+The runner executes harnesses inside a Docker container. The image contains all 11 harnesses + Python + Git:
 
 ```bash
 docker pull ghcr.io/yorch/harness-evaluator-runner:latest
@@ -242,7 +242,7 @@ When running from source, you can use the bundled sample configs:
 # Minimal: 1 harness, 1 model, 1 task, 1 repeat
 harness-evaluator run runs/sample-minimal.yaml
 
-# Full sweep: 5 harnesses × 2 models × 20 tasks × 5 repeats
+# Full sweep: 11 harnesses × 2 models × 20 tasks × 5 repeats
 harness-evaluator run runs/sample-run.yaml
 ```
 

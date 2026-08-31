@@ -123,7 +123,13 @@ If `cell.budget` is set, that value is used as the estimate. Otherwise, the esti
 
 ### Budget exhaustion
 
-When the remaining budget is less than the estimated cell cost, the cell is skipped and marked with state `"skipped"` and reason `"Budget cap reached"`. The orchestrator logs a warning. After each cell completes, a post-update check warns if the total spend has exceeded the budget (can happen when a cell costs more than its reservation).
+When the remaining budget is less than the estimated cell cost, the cell is skipped and marked with state `"skipped"`. The skip reason persisted to `run_state.error` includes the dollar amounts for debugging:
+
+```
+Budget cap reached ($0.0123 remaining < $0.0500 estimated)
+```
+
+The orchestrator logs a warning. After each cell completes, a post-update check warns if the total spend has exceeded the budget (can happen when a cell costs more than its reservation).
 
 ## Retry logic
 
