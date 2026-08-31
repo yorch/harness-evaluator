@@ -26,6 +26,7 @@ models:                            # Required. List of model specs.
   - name: claude-sonnet-4-20250514 #   Model identifier
     provider: anthropic            #   anthropic | openai
     api_key_env: ANTHROPIC_API_KEY #   Env var name for API key
+    role: implementation           #   implementation | review (default: implementation)
     config:                        #   Model-specific config (optional)
       max_tokens: 16384
 tasks:                             # Required. List of task IDs or ["*"] for all.
@@ -97,6 +98,7 @@ List of model specifications. Each model is paired with each harness.
 | `name` | string | Yes | Model identifier (validated against `[A-Za-z0-9._-]+`) |
 | `provider` | string | Yes | `anthropic` or `openai` |
 | `api_key_env` | string | Yes | Environment variable name for the API key |
+| `role` | string | No | `implementation` (default) or `review`. Only affects `multi_phase` tasks — see [Multi-phase evaluation guide](../guides/multi-phase/). |
 | `config` | dict | No | Model-specific config (temperature, max_tokens, etc.) |
 
 #### `tasks`
@@ -191,6 +193,32 @@ repeats: 5
 budget_usd: 100.0
 ```
 
+### Multi-phase example
+
+A multi-phase run pairs an implementation model with an adversarial reviewer model. See `runs/sample-multi-phase.yaml` and `tasks/multi-phase-bugfix-001.yaml` for complete examples.
+
+```yaml
+name: multi-phase-demo
+harnesses:
+  - name: claude-code
+    adapter: claude_code
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    role: implementation
+  - name: claude-opus-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    role: review
+tasks:
+  - multi-phase-bugfix-001
+repeats: 1
+budget_usd: 10.0
+```
+
+The matrix expands to one cell per `implementation × review` model pair. For a walkthrough, see the [Multi-phase evaluation guide](../guides/multi-phase/).
+
 ## Task definitions
 
 Tasks are defined as YAML files in the task library directory. Each file can contain multiple tasks under a `tasks:` key.
@@ -201,7 +229,7 @@ Tasks are defined as YAML files in the task library directory. Each file can con
 tasks:
 - id: swe-bugfix-001               # Required. Unique task identifier.
   name: Fix off-by-one bug          # Required. Human-readable name.
-  track: swe                        # Required. swe | open_ended
+  track: swe                        # Required. swe | open_ended | multi_phase
   difficulty: easy                  # Optional. trivial | easy | medium | hard. Default: medium.
   description: |                    # Optional. Used by the LLM judge for open-ended tasks.
     Detailed description...
@@ -209,7 +237,7 @@ tasks:
   repo_commit: <commit-hash>       # Optional. Git commit to checkout.
   setup_script: pip install -r requirements.txt  # Optional. Shell script run before harness.
   task_prompt: |-                   # Required. The prompt given to the harness.
-    Fix the bug in src/solution.py...
+    Fix the bug in src/solution.py...    # Ignored when phases is non-empty (multi_phase).
   test_command: python -m pytest tests/  # Optional. Command to run tests.
   test_patch: |                     # Optional. Hidden test patch (SWE track only).
     diff --git a/tests/test_hidden.py...
@@ -219,6 +247,13 @@ tasks:
   metadata:                         # Optional. Free-form metadata dict.
     bug_type: off-by-one
     language: python
+  phases:                           # Optional. Ordered phases for multi_phase tasks.
+  - name: implement                 #   Required. Phase identifier [A-Za-z0-9._-]+.
+    model_role: implementation      #   implementation | review. Default: implementation.
+    task_prompt: |-                 #   Required. Prompt for this phase.
+      Fix the bug in src/solution.py...
+    input: none                     #   none | diff | output | review_feedback. Default: none.
+    timeout_seconds: 300            #   Optional. Per-phase timeout. Default: 600.
 ```
 
 ### TypeScript tasks
@@ -283,6 +318,9 @@ Determines which evaluator is used:
 |-------|-----------|--------|
 | `swe` | `SWEEvaluator` | Hidden tests + partial credit |
 | `open_ended` | `OpenEndedEvaluator` | LLM judge + rubric + structural checks |
+| `multi_phase` | `SWEEvaluator` | Hidden tests after all phases complete (same as `swe`) |
+
+For `multi_phase` tasks, the `phases` field defines an ordered sequence of harness invocations. See the [Multi-phase evaluation guide](../guides/multi-phase/) for a walkthrough.
 
 #### `repo_url`
 
@@ -301,6 +339,8 @@ Shell script executed inside the container before the harness runs. Written to `
 #### `task_prompt`
 
 The prompt given to the harness. This is the only instruction the harness receives — it does not see the test patch, expected files, or other evaluation metadata.
+
+For `multi_phase` tasks, the top-level `task_prompt` is still required but **ignored** when `phases` is non-empty. Each phase uses its own `task_prompt` from the `PhaseSpec`.
 
 #### `test_command`
 
@@ -321,6 +361,41 @@ Per-task timeout in seconds. Applied to both the harness execution and the test 
 #### `metadata`
 
 Free-form dictionary for additional task metadata. Stored with the task but not used by the evaluator. Useful for filtering or grouping tasks in analysis.
+
+#### `phases`
+
+Ordered list of phase definitions for `multi_phase` tasks. Empty (or omitted) for `swe` and `open_ended` tasks. Each phase is a `PhaseSpec`:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Phase identifier (validated against `[A-Za-z0-9._-]+`). Must be unique within the task. |
+| `model_role` | string | No | `implementation` (default) or `review`. Determines which model runs this phase. |
+| `task_prompt` | string | Yes | The prompt given to the harness for this phase. |
+| `input` | string | No | What to inject from prior phases: `none` (default), `diff`, `output`, or `review_feedback`. |
+| `timeout_seconds` | int | No | Per-phase timeout. Default: 600. |
+
+##### Phase input types
+
+| Input | Injects into the phase prompt |
+|-------|-------------------------------|
+| `none` | Nothing — the phase runs standalone. |
+| `diff` | Git diff from the prior implementation phase (captured before commit). |
+| `output` | Stdout + stderr from the prior phase. |
+| `review_feedback` | Stdout + stderr from a prior `review` phase. |
+
+##### Model roles
+
+| Role | Used by | Description |
+|------|---------|-------------|
+| `implementation` | All phases by default | The primary coding model. Assigned via `models[].role: implementation` in the run config. |
+| `review` | Phases with `model_role: review` | The adversarial reviewer model. Assigned via `models[].role: review` in the run config. |
+
+##### Validation rules
+
+- `multi_phase` tasks must define at least one phase.
+- At least one phase must have `model_role: implementation`.
+- Phase names must be unique within a task.
+- If any phase has `model_role: review`, the run config must include at least one model with `role: review` and one with `role: implementation`.
 
 ### SWE task example
 

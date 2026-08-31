@@ -318,7 +318,15 @@ class DockerRunner:
                             phase_usage.output_tokens += call.usage.output_tokens
                             phase_cost += call.cost.total
                             phase_api_calls += 1
-                        phase["usage"] = phase_usage
+                        # Store as plain dict for JSON serialization
+                        # (harness_metadata is json.dumps'd by save_result).
+                        phase["usage"] = {
+                            "input_tokens": phase_usage.input_tokens,
+                            "output_tokens": phase_usage.output_tokens,
+                            "cache_read_tokens": phase_usage.cache_read_tokens,
+                            "cache_write_tokens": phase_usage.cache_write_tokens,
+                            "reasoning_tokens": phase_usage.reasoning_tokens,
+                        }
                         phase["total_cost"] = phase_cost
                         phase["num_api_calls"] = phase_api_calls
 

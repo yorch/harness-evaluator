@@ -216,6 +216,47 @@ This ensures `git diff` works for evaluation. If no changes were made, the commi
 
 Local git identity is used (not `--global`) so the host's git config is not affected. This is required because containers/CI may not have a git identity configured.
 
+## Multi-phase execution
+
+For `multi_phase` tasks, the runner uses `_run_harness_multiphase()` instead of `_run_harness()`. This runs all phases sequentially inside the **same container** so repository state persists between phases.
+
+### Container lifecycle
+
+1. The container is started once, on the first phase, with a **minimal base env** (PATH, HOME, etc.) — no API keys are baked in.
+2. The setup script (if any) runs once before the first phase.
+3. Each phase runs via `docker exec`, receiving its full per-phase env (API key, base URL, trace ID) through `--env` flags. This prevents leaking one phase's credentials into another.
+4. The container lifetime is `max(phase.timeout_seconds for all phases) + 30` seconds, so a later phase with a longer timeout does not cause the container to exit early.
+5. The container is stopped after all phases complete (or on pipeline abort).
+
+### Per-phase trace IDs
+
+Each phase gets its own gateway trace ID: `{cell_id}__phase-{phase.name}`. This allows per-phase cost attribution — the runner aggregates token usage and cost across all phase trace IDs and saves a breakdown to the `phase_results` table.
+
+### Prompt injection
+
+A phase's `input` field controls what is injected from prior phases into the phase's prompt:
+
+| `input` | What is injected |
+|---------|-------------------|
+| `none` | Nothing — the phase runs standalone. |
+| `diff` | Git diff from the prior implementation phase, captured **before** commit using `get_workdir_diff()`. |
+| `output` | Stdout + stderr from the prior phase. |
+| `review_feedback` | Stdout + stderr from a prior `review` phase. |
+
+The injected content is appended to the phase's `task_prompt` in a clearly delimited section.
+
+### Pipeline abort
+
+If any phase exits with a non-zero code, the pipeline stops immediately. Implementation-phase changes are committed before the exit-code check (so the diff is available for debugging); review phases produce no repo changes. The final phase's exit code and output are returned as the cell result.
+
+### Credential mounts
+
+OAuth credential mounts (for `claude_oauth` or `codex_chatgpt` auth modes) are precomputed across all phase models before the container starts. This ensures that a review phase using a different auth mode has its credential directory available without restarting the container.
+
+### Final evaluation
+
+After all phases complete, the runner commits the final repository state and evaluates it with the `SWEEvaluator` (same as `swe` tasks). The test command and hidden test patch run against the cumulative diff from all phases.
+
 ## Token usage collection
 
 After harness execution and evaluation, the runner collects token usage from the gateway database:

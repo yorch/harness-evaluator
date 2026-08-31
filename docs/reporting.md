@@ -74,6 +74,13 @@ The CSV includes all `run_results` columns:
 
 `cell_id`, `run_name`, `harness`, `model`, `task_id`, `track`, `repeat`, `exit_class`, `success`, `error_class`, `error_message`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`, `total_cost`, `latency_ms`, `time_to_first_attempt_ms`, `num_api_calls`, `num_tool_calls`, `diff`, `test_output`, `harness_metadata`, `timestamp`, `retry_count`
 
+For `multi_phase` cells, the `harness_metadata` JSON column includes:
+
+- `phases`: list of per-phase dicts (`name`, `trace_id`, `model`, `model_role`, `exit_code`, `duration_ms`, `timed_out`, `usage`, `total_cost`, `num_api_calls`)
+- `review_model`: the adversarial reviewer model name (or `null`)
+
+Per-phase cost and token breakdowns are also available in the `phase_results` SQLite table — see [Orchestrator → phase-results table](orchestrator/#phase-results-table) for the schema and query examples.
+
 ### Leaderboard computation
 
 Leaderboards are **within-model**: each model gets its own table. For each harness within a model:
@@ -146,7 +153,7 @@ Per-run view with:
 |--------|-------------|
 | Model | Filter by model name |
 | Harness | Filter by harness name |
-| Track | Filter by task track (`swe` or `open_ended`) |
+| Track | Filter by task track (`swe`, `open_ended`, or `multi_phase`) |
 | Min success | Only show cells with success ≥ this value |
 
 Filter dropdowns are populated from the actual data in the results database (unique values per column).

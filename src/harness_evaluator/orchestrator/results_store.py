@@ -292,6 +292,15 @@ class ResultsStore:
             )
             for phase in phases:
                 usage = phase.get("usage")
+                # usage can be a TokenUsage object or a plain dict
+                if usage is None:
+                    in_tok = out_tok = 0
+                elif hasattr(usage, "input_tokens"):
+                    in_tok = usage.input_tokens
+                    out_tok = usage.output_tokens
+                else:
+                    in_tok = usage.get("input_tokens", 0)
+                    out_tok = usage.get("output_tokens", 0)
                 conn.execute(
                     """INSERT INTO phase_results
                        (cell_id, run_name, phase_name, trace_id, model,
@@ -309,8 +318,8 @@ class ResultsStore:
                         phase["exit_code"],
                         phase.get("duration_ms", 0.0),
                         1 if phase.get("timed_out") else 0,
-                        usage.input_tokens if usage else 0,
-                        usage.output_tokens if usage else 0,
+                        in_tok,
+                        out_tok,
                         phase.get("total_cost", 0.0),
                         phase.get("num_api_calls", 0),
                         phase.get("error"),

@@ -46,6 +46,7 @@ The comparison is **product-level**: which harness to *use* with a given model. 
 | [Adapters](adapters/) | Adapter system, registry, per-harness details, observability tiers |
 | [CLI Reference](cli-reference/) | All CLI commands, flags, and options with examples |
 | [Configuration](configuration/) | Run YAML config, task definitions, pricing tables, env vars |
+| [Guides](guides/multi-phase/) | Multi-phase evaluation with adversarial review |
 | [Reporting](reporting/) | Static reports (HTML/JSON/CSV), interactive dashboard |
 | [Statistics](statistics/) | Mixed-effects models, variance decomposition, bootstrap CIs |
 | [Development](development/) | Contributing, quality gates, code style, testing, conventions |
@@ -74,10 +75,11 @@ Leaderboards can be filtered by tier. Comparisons across tiers are flagged.
 
 ### Task tracks
 
-harness-evaluator supports two tracks with separate leaderboards (never cross-compared):
+harness-evaluator supports three tracks with separate leaderboards (never cross-compared):
 
 - **SWE-bench-style** (`swe`): repo + issue + hidden test patch. Objective pass/fail with partial credit.
 - **Open-ended** (`open_ended`): free-form tasks evaluated by a frozen LLM judge with a structured rubric and structural checks.
+- **Multi-phase** (`multi_phase`): sequential phases (implement → review → revise) with an adversarial reviewer model. Evaluated with hidden tests after all phases complete. See the [Multi-phase evaluation guide](guides/multi-phase/).
 
 ### Metrics
 

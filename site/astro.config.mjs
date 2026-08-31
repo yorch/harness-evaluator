@@ -59,6 +59,12 @@ export default defineConfig({
         { label: 'Adapters', slug: 'docs/adapters' },
         { label: 'CLI Reference', slug: 'docs/cli-reference' },
         { label: 'Configuration', slug: 'docs/configuration' },
+        {
+          label: 'Guides',
+          items: [
+            { label: 'Multi-phase Evaluation', slug: 'docs/guides/multi-phase' },
+          ],
+        },
         { label: 'Reporting', slug: 'docs/reporting' },
         { label: 'Statistics', slug: 'docs/statistics' },
         { label: 'Development', slug: 'docs/development' },
