@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/yorch/harness-evaluator/compare/v0.7.1...v0.8.0) (2026-08-31)
+
+
+### Features
+
+* **tui:** add Textual TUI with scrolling logs and fixed progress footer ([ec2c779](https://github.com/yorch/harness-evaluator/commit/ec2c77989aca176e5a47d8eda8a19041ca6b7d0f))
+
+
+### Bug Fixes
+
+* **tui:** remove unused import causing CI ruff failure ([83bd9c9](https://github.com/yorch/harness-evaluator/commit/83bd9c94e229f4c567c98abeab43b7720d41dc71))
+
 ## [0.7.1](https://github.com/yorch/harness-evaluator/compare/v0.7.0...v0.7.1) (2026-08-31)
 
 
