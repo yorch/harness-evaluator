@@ -97,16 +97,21 @@ def gateway(
 ) -> None:
     """Start the gateway proxy server for token accounting."""
     _configure_logging(verbose)
-    from harness_evaluator.gateway.proxy import run_proxy
+    from harness_evaluator.gateway.proxy import GatewayStartupError, run_proxy
 
     console.print(f"[bold green]Starting gateway proxy on {host}:{port}[/bold green]")
     console.print(f"Captured calls stored to: {db}")
     console.print(
         "Configure harnesses with:\n"
-        "  ANTHROPIC_BASE_URL=http://127.0.0.1:8877\n"
-        "  OPENAI_BASE_URL=http://127.0.0.1:8877"
+        f"  ANTHROPIC_BASE_URL=http://{host}:{port}\n"
+        f"  OPENAI_BASE_URL=http://{host}:{port}"
     )
-    run_proxy(host=host, port=port, db_path=db)
+    try:
+        run_proxy(host=host, port=port, db_path=db)
+    except GatewayStartupError as exc:
+        console.print("\n[bold red]Error: Cannot start gateway[/bold red]")
+        console.print(f"[red]{exc.message}[/red]")
+        raise typer.Exit(1) from exc
 
 
 _STARTER_CONFIG = """\

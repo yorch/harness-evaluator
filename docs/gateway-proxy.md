@@ -311,6 +311,31 @@ The proxy also accepts `verify_ssl` and `upstream_overrides` as keyword
 arguments to `run_proxy()` (used programmatically by the orchestrator), but
 these are not exposed as CLI flags.
 
+### Startup errors
+
+If the configured port is already in use, the gateway exits with a
+user-friendly error message instead of a raw Python traceback:
+
+```
+Starting gateway proxy on 127.0.0.1:8877
+Captured calls stored to: harness_evaluator_gateway.db
+Configure harnesses with:
+  ANTHROPIC_BASE_URL=http://127.0.0.1:8877
+  OPENAI_BASE_URL=http://127.0.0.1:8877
+
+Error: Cannot start gateway
+Port 8877 is already in use on 127.0.0.1.
+This usually means another gateway (or another process) is already listening on that port.
+Options:
+  - Stop the other process and retry
+  - Use a different port: harness-evaluator gateway --port 8878
+  - Check what is listening: lsof -i :8877 (Linux/macOS) or netstat -ano | findstr :8877 (Windows)
+```
+
+The exit code is `1`. The same error is shown for permission-denied
+(privileged port) and other bind failures. Programmatic callers of
+`run_proxy()` can catch `GatewayStartupError` to handle these cases.
+
 ## Key source files
 
 | File                                  | Description                          |

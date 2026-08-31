@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno as errno_module
 import json
 import logging
+import socket
 import ssl as ssl_module
 import time
 import uuid
@@ -763,6 +765,139 @@ def create_proxy_app(
     return app, proxy
 
 
+class GatewayStartupError(Exception):
+    """Raised when the gateway proxy cannot start (e.g. port in use)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        errno: int | None = None,
+        host: str | None = None,
+        port: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.errno = errno
+        self.host = host
+        self.port = port
+
+
+def _format_addrinuse_error(host: str, port: int) -> str:
+    """Build a user-friendly error message for EADDRINUSE."""
+    return (
+        f"Port {port} is already in use on {host}.\n"
+        f"This usually means another gateway (or another process) is "
+        f"already listening on that port.\n"
+        f"Options:\n"
+        f"  - Stop the other process and retry\n"
+        f"  - Use a different port: harness-evaluator gateway --port {port + 1}\n"
+        f"  - Check what is listening: lsof -i :{port} (Linux/macOS) "
+        f"or netstat -ano | findstr :{port} (Windows)"
+    )
+
+
+def _format_eacces_error(host: str, port: int) -> str:
+    """Build a user-friendly error message for EACCES (privileged port)."""
+    return (
+        f"Permission denied binding to {host}:{port}.\n"
+        f"Ports below 1024 require elevated privileges.\n"
+        f"Use a port >= 1024: harness-evaluator gateway --port 8877"
+    )
+
+
+def _check_port_available(host: str, port: int) -> None:
+    """Preflight check that the port is bindable.
+
+    Raises ``GatewayStartupError`` with a user-friendly message if the port
+    is invalid, already in use, requires elevated privileges, or the host
+    cannot be resolved. Supports both IPv4 and IPv6 hosts.
+    """
+    if not (1 <= port <= 65535):
+        raise GatewayStartupError(
+            f"Invalid port number: {port}. Must be between 1 and 65535.",
+            host=host,
+            port=port,
+        )
+
+    # Resolve the host to support IPv4, IPv6, and hostnames.
+    try:
+        infos = socket.getaddrinfo(
+            host, port, type=socket.SOCK_STREAM
+        )
+    except socket.gaierror as exc:
+        raise GatewayStartupError(
+            f"Cannot resolve host {host!r}: {exc}",
+            host=host,
+            port=port,
+        ) from exc
+
+    last_error: OSError | None = None
+    for family, socktype, proto, _canonname, sockaddr in infos:
+        sock = socket.socket(family, socktype, proto)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(sockaddr)
+        except OSError as exc:
+            last_error = exc
+            if exc.errno == errno_module.EADDRINUSE:
+                raise GatewayStartupError(
+                    _format_addrinuse_error(host, port),
+                    errno=exc.errno,
+                    host=host,
+                    port=port,
+                ) from exc
+            if exc.errno == errno_module.EACCES:
+                raise GatewayStartupError(
+                    _format_eacces_error(host, port),
+                    errno=exc.errno,
+                    host=host,
+                    port=port,
+                ) from exc
+            raise GatewayStartupError(
+                f"Cannot bind to {host}:{port}: {exc}",
+                errno=exc.errno,
+                host=host,
+                port=port,
+            ) from exc
+        finally:
+            sock.close()
+
+    # If no address family succeeded but no specific error was raised,
+    # report a generic failure.
+    if last_error is not None:
+        raise GatewayStartupError(
+            f"Cannot bind to {host}:{port}: {last_error}",
+            errno=last_error.errno,
+            host=host,
+            port=port,
+        ) from last_error
+
+
+def _convert_oserror_to_startup_error(exc: OSError, host: str, port: int) -> GatewayStartupError:
+    """Convert an OSError from web.run_app into a GatewayStartupError."""
+    if exc.errno == errno_module.EADDRINUSE:
+        return GatewayStartupError(
+            _format_addrinuse_error(host, port),
+            errno=exc.errno,
+            host=host,
+            port=port,
+        )
+    if exc.errno == errno_module.EACCES:
+        return GatewayStartupError(
+            _format_eacces_error(host, port),
+            errno=exc.errno,
+            host=host,
+            port=port,
+        )
+    return GatewayStartupError(
+        f"Cannot bind to {host}:{port}: {exc}",
+        errno=exc.errno,
+        host=host,
+        port=port,
+    )
+
+
 def run_proxy(
     host: str = "127.0.0.1",
     port: int = 8877,
@@ -770,9 +905,22 @@ def run_proxy(
     upstream_overrides: dict[Provider, str] | None = None,
     verify_ssl: bool = True,
 ) -> None:
-    """Run the gateway proxy server."""
+    """Run the gateway proxy server.
+
+    Raises ``GatewayStartupError`` if the port is already in use,
+    requires elevated privileges, or is otherwise unavailable.
+    The caller (typically the CLI) should catch this and present a
+    user-friendly error message.
+    """
+    _check_port_available(host, port)
     store = CallStore(db_path)
     app, proxy = create_proxy_app(
         store, upstream_overrides, verify_ssl=verify_ssl
     )
-    web.run_app(app, host=host, port=port, print=lambda msg: logger.info(msg))
+    try:
+        web.run_app(app, host=host, port=port, print=lambda msg: logger.info(msg))
+    except OSError as exc:
+        # Race condition: port was grabbed between the preflight check
+        # and web.run_app's actual bind. Convert to GatewayStartupError
+        # so the caller gets the same friendly message.
+        raise _convert_oserror_to_startup_error(exc, host, port) from exc
