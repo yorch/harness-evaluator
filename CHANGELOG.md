@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.3](https://github.com/yorch/harness-evaluator/compare/v0.3.2...v0.3.3) (2026-08-31)
+
+
+### Documentation
+
+* document PyPI trusted publishing requirement ([427c455](https://github.com/yorch/harness-evaluator/commit/427c455f8c0525bc7a9c08a88bfb544d663f0013))
+
 ## [0.3.2](https://github.com/yorch/harness-evaluator/compare/v0.3.1...v0.3.2) (2026-08-31)
 
 
