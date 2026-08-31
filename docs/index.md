@@ -140,6 +140,6 @@ harness-evaluator/
 ├── runs/                       # Sample run config YAMLs
 ├── tests/                      # pytest test suite
 ├── docs/                       # This documentation
-├── Dockerfile                  # Image with all 11 harnesses (node:22-slim base)
+├── Dockerfile                  # Image with 5 preinstalled harnesses + Bun (node:22-slim base)
 └── pyproject.toml              # Dependencies, ruff/mypy/pytest config
 ```

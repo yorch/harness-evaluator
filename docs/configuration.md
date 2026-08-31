@@ -151,7 +151,7 @@ budget_usd: 5.0
 
 ```yaml
 name: "broad-first-pass"
-description: "Broad first pass: all 5 harnesses, 2 providers, both task tracks"
+description: "Broad first pass: 5 harnesses, 2 providers, both task tracks"
 harnesses:
   - name: opencode
     adapter: opencode
@@ -694,7 +694,7 @@ All identifiers (run names, harness names, model names) are validated against `[
 
 ## Docker image configuration
 
-The runner image contains all five harnesses and their dependencies. You can either pull the pre-built image from GHCR or build it locally. See [Docker Runner](docker-runner/) for details on the image contents.
+The runner image contains 5 preinstalled harnesses (Claude Code, Codex, OpenCode, Pi, OMP) and their dependencies. The adapter registry also includes Aider, Gemini CLI, Antigravity, Copilot, Cursor, and Kiro — to use these, build a custom image with the harness binary installed (see [Building a specific harness version](#building-a-specific-harness-version) below). You can either pull the pre-built image from GHCR or build it locally. See [Docker Runner](docker-runner/) for details on the image contents.
 
 ### Pull the pre-built image (recommended)
 

@@ -162,19 +162,25 @@ Adapters are lazy-loaded: the first call to `get_adapter_class()` or `list_adapt
 
 ## Supported harnesses
 
-| Harness | Adapter name | Observability | Provider | Install command |
-|---------|-------------|--------------|----------|-----------------|
-| OpenCode | `opencode` | `full` | Both | `npm install -g opencode-ai` |
-| Aider | `aider` | `full` | Multi | `pip install aider-chat` |
-| Claude Code | `claude-code` | `partial` | Anthropic | `npm install -g @anthropic-ai/claude-code` |
-| Codex | `codex` | `partial` | OpenAI | `npm install -g @openai/codex` |
-| Gemini CLI | `gemini` | `partial` | Google | `npm install -g @google/gemini-cli` |
-| Antigravity CLI | `antigravity` | `partial` | Google | See [Antigravity CLI docs](https://antigravity.google/product/antigravity-cli) |
-| Pi | `pi` | `minimal` | Both | `npm install -g --ignore-scripts @earendil-works/pi-coding-agent` |
-| OMP | `omp` | `minimal` | Both | `npm install -g @oh-my-pi/pi-coding-agent` |
-| GitHub Copilot CLI | `copilot` | `minimal` | GitHub | `npm install -g @github/copilot` |
-| Cursor CLI | `cursor` | `minimal` | Multi | Install Cursor IDE from [cursor.com](https://cursor.com/downloads) |
-| Kiro CLI | `kiro` | `minimal` | AWS | `curl -fsSL https://cli.kiro.dev/install \| bash` |
+| Harness | Adapter name | Observability | Provider | Install command | In default image? |
+|---------|-------------|--------------|----------|-----------------|-------------------|
+| OpenCode | `opencode` | `full` | Both | `npm install -g opencode-ai` | Yes |
+| Aider | `aider` | `full` | Multi | `pip install aider-chat` | No |
+| Claude Code | `claude-code` | `partial` | Anthropic | `npm install -g @anthropic-ai/claude-code` | Yes |
+| Codex | `codex` | `partial` | OpenAI | `npm install -g @openai/codex` | Yes |
+| Gemini CLI | `gemini` | `partial` | Google | `npm install -g @google/gemini-cli` | No |
+| Antigravity CLI | `antigravity` | `partial` | Google | See [Antigravity CLI docs](https://antigravity.google/product/antigravity-cli) | No |
+| Pi | `pi` | `minimal` | Both | `npm install -g --ignore-scripts @earendil-works/pi-coding-agent` | Yes |
+| OMP | `omp` | `minimal` | Both | `npm install -g @oh-my-pi/pi-coding-agent` | Yes |
+| GitHub Copilot CLI | `copilot` | `minimal` | GitHub | `npm install -g @github/copilot` | No |
+| Cursor CLI | `cursor` | `minimal` | Multi | Install Cursor IDE from [cursor.com](https://cursor.com/downloads) | No |
+| Kiro CLI | `kiro` | `minimal` | AWS | `curl -fsSL https://cli.kiro.dev/install \| bash` | No |
+
+The default Docker image (`ghcr.io/yorch/harness-evaluator-runner:latest`)
+includes 5 harnesses (OpenCode, Claude Code, Codex, Pi, OMP). The other 6
+adapters are registered in the codebase but require a custom Docker image with
+the harness binary installed — see [Docker Runner](../docker-runner/) for
+build instructions.
 
 ## Observability tiers
 
@@ -493,7 +499,7 @@ All current adapters are Python CLI wrappers — each adapter's `get_command()` 
 
 ### Conclusion: Python CLI wrappers are sufficient
 
-After reviewing all five adapters, **TypeScript shims are not needed**. Every supported harness exposes a CLI interface that the Python orchestrator can invoke as a subprocess. No harness requires in-process integration that would necessitate a native Node.js shim.
+After reviewing all eleven adapters, **TypeScript shims are not needed**. Every supported harness exposes a CLI interface that the Python orchestrator can invoke as a subprocess. No harness requires in-process integration that would necessitate a native Node.js shim.
 
 ### Why CLI wrapping works for every harness
 
@@ -517,4 +523,4 @@ TypeScript shims would be warranted only if a future harness:
 
 3. **Needs streaming token-level interception** — if sub-agent attribution required intercepting individual LLM calls *within* the harness process (rather than at the HTTP proxy layer), a native shim with hooks into the harness's internal call stack would be necessary.
 
-None of these conditions apply to the current harness ecosystem. All five supported harnesses (Claude Code, Codex, OpenCode, Pi, OMP) are distributed as CLI binaries that respect standard environment-variable configuration, making Python CLI wrappers the simplest and most maintainable integration approach.
+None of these conditions apply to the current harness ecosystem. All eleven supported harnesses are distributed as CLI binaries that respect standard environment-variable configuration, making Python CLI wrappers the simplest and most maintainable integration approach.
