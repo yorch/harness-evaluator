@@ -151,6 +151,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <th>Cost</th>
             <th>Time (s)</th>
             <th>Error Class</th>
+            <th>Error Message</th>
         </tr>
         {% for r in results %}
         <tr>
@@ -165,6 +166,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <td>${{ r.cost }}</td>
             <td>{{ r.time_s }}</td>
             <td>{{ r.error_class or '' }}</td>
+            <td>{{ r.error_message or '' }}</td>
         </tr>
         {% endfor %}
     </table>
@@ -340,6 +342,7 @@ class ReportGenerator:
                     "cost": f"{r['total_cost']:.6f}",
                     "time_s": f"{r['latency_ms'] / 1000:.1f}",
                     "error_class": r.get("error_class") or "",
+                    "error_message": r.get("error_message") or "",
                 }
             )
 
