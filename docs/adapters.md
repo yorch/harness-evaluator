@@ -383,3 +383,35 @@ register_adapter("my-harness", MyHarnessAdapter)
 | `src/harness_evaluator/adapters/opencode.py` | OpenCode adapter |
 | `src/harness_evaluator/adapters/pi.py` | Pi adapter |
 | `src/harness_evaluator/adapters/omp.py` | OMP adapter |
+
+## TypeScript adapter shims: assessment
+
+All current adapters are Python CLI wrappers — each adapter's `get_command()` returns a bare binary name and argv list that the Docker runner executes inside the container via `docker exec`. The question arose whether **native TypeScript/Node.js adapter shims** are needed for harnesses that are themselves Node.js programs.
+
+### Conclusion: Python CLI wrappers are sufficient
+
+After reviewing all five adapters, **TypeScript shims are not needed**. Every supported harness exposes a CLI interface that the Python orchestrator can invoke as a subprocess. No harness requires in-process integration that would necessitate a native Node.js shim.
+
+### Why CLI wrapping works for every harness
+
+| Concern | How it's handled today | TS shim needed? |
+|---------|------------------------|-----------------|
+| **API traffic interception** | The gateway proxy captures all provider HTTP traffic via `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` env vars. This works at the HTTP layer, independent of the harness's runtime language. | No |
+| **Non-interactive execution** | Every harness has a non-interactive mode: `claude -p`, `codex exec`, `opencode run`, `pi -p`, `omp -p`. These are designed for automation and scripting. | No |
+| **Model selection** | All harnesses accept `--model` flags on the command line. | No |
+| **Output parsing** | Adapters parse stdout/stderr (JSON or text) after the process exits. No streaming interception is required. | No |
+| **Native Node.js module loading** | No harness requires loading Node.js modules in-process. The harness is a standalone binary installed via `npm install -g`. | No |
+| **TypeScript-specific tooling** | Harnesses are compiled/packaged before distribution. The evaluator invokes the published binary, not TypeScript source. | No |
+| **Sub-agent topology** | Not exposed by any harness regardless of language. The gateway proxy's per-call capture is the only available signal. | No |
+
+### When TypeScript shims would become necessary
+
+TypeScript shims would be warranted only if a future harness:
+
+1. **Requires in-process API interception** — e.g., a harness that monkey-patches `fetch` or `http` internally and cannot be redirected via env vars. The gateway proxy would not see the traffic, so a native shim running inside the harness process would be needed to capture it. No current harness has this limitation (even Pi and OMP, which *may* bypass the proxy, do so by ignoring the env var, not by intercepting in-process).
+
+2. **Exposes only a programmatic Node.js API** — if a harness shipped as a library (`import { run } from "some-harness"`) with no CLI entry point, a TypeScript shim would be needed to call the API and bridge results back to the Python orchestrator.
+
+3. **Needs streaming token-level interception** — if sub-agent attribution required intercepting individual LLM calls *within* the harness process (rather than at the HTTP proxy layer), a native shim with hooks into the harness's internal call stack would be necessary.
+
+None of these conditions apply to the current harness ecosystem. All five supported harnesses (Claude Code, Codex, OpenCode, Pi, OMP) are distributed as CLI binaries that respect standard environment-variable configuration, making Python CLI wrappers the simplest and most maintainable integration approach.

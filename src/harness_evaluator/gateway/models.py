@@ -110,7 +110,9 @@ class PricingTable(BaseModel):
 
 # Default pricing per provider/model (USD per 1M tokens).
 # These are defaults and can be overridden in config.
+# Sources: https://www.anthropic.com/pricing, https://openai.com/api/pricing/
 DEFAULT_PRICING: dict[str, PricingTable] = {
+    # --- Anthropic ---
     "claude-sonnet-4-20250514": PricingTable(
         input_per_million=3.0,
         output_per_million=15.0,
@@ -129,23 +131,73 @@ DEFAULT_PRICING: dict[str, PricingTable] = {
         cache_read_per_million=0.08,
         cache_write_per_million=1.0,
     ),
+    "claude-3-5-sonnet-20241022": PricingTable(
+        input_per_million=3.0,
+        output_per_million=15.0,
+        cache_read_per_million=0.30,
+        cache_write_per_million=3.75,
+    ),
+    "claude-3-opus-20240229": PricingTable(
+        input_per_million=15.0,
+        output_per_million=75.0,
+        cache_read_per_million=1.50,
+        cache_write_per_million=18.75,
+    ),
+    "claude-3-haiku-20240307": PricingTable(
+        input_per_million=0.25,
+        output_per_million=1.25,
+        cache_read_per_million=0.03,
+        cache_write_per_million=0.30,
+    ),
+    # --- OpenAI ---
     "gpt-4o": PricingTable(
         input_per_million=2.50,
         output_per_million=10.0,
+        cache_read_per_million=1.25,
     ),
     "gpt-4o-mini": PricingTable(
         input_per_million=0.15,
         output_per_million=0.60,
+        cache_read_per_million=0.075,
     ),
     "o1": PricingTable(
         input_per_million=15.0,
         output_per_million=60.0,
+        cache_read_per_million=7.50,
         reasoning_per_million=60.0,
     ),
+    "o1-mini": PricingTable(
+        input_per_million=1.10,
+        output_per_million=4.40,
+        cache_read_per_million=0.55,
+        reasoning_per_million=4.40,
+    ),
+    "o1-pro": PricingTable(
+        input_per_million=150.0,
+        output_per_million=600.0,
+    ),
+    "o3": PricingTable(
+        input_per_million=2.0,
+        output_per_million=8.0,
+        cache_read_per_million=0.50,
+    ),
     "o3-mini": PricingTable(
-        input_per_million=3.0,
-        output_per_million=12.0,
-        reasoning_per_million=12.0,
+        input_per_million=1.10,
+        output_per_million=4.40,
+        cache_read_per_million=0.55,
+        reasoning_per_million=4.40,
+    ),
+    "gpt-4-turbo": PricingTable(
+        input_per_million=10.0,
+        output_per_million=30.0,
+    ),
+    "gpt-4": PricingTable(
+        input_per_million=30.0,
+        output_per_million=60.0,
+    ),
+    "gpt-3.5-turbo": PricingTable(
+        input_per_million=0.50,
+        output_per_million=1.50,
     ),
 }
 
