@@ -228,6 +228,77 @@ class TestCodexSelfReportedUsage:
         )
         assert adapter.parse_self_reported_usage(stdout, "") is None
 
+    def test_parse_info_total_token_usage_path(self, tmp_path):
+        """Codex task.completed events nest usage under info.total_token_usage."""
+        adapter = CodexAdapter(
+            workdir=str(tmp_path), model=_openai_model()
+        )
+        stdout = json.dumps(
+            {
+                "type": "task.completed",
+                "info": {
+                    "total_token_usage": {
+                        "input_tokens": 5000,
+                        "output_tokens": 1200,
+                        "cached_input_tokens": 100,
+                        "reasoning_output_tokens": 50,
+                    }
+                },
+            }
+        )
+        usage = adapter.parse_self_reported_usage(stdout, "")
+        assert usage is not None
+        assert usage.input_tokens == 5000
+        assert usage.output_tokens == 1200
+        assert usage.cache_read_tokens == 100
+        assert usage.reasoning_tokens == 50
+
+    def test_parse_message_usage_path(self, tmp_path):
+        """Codex may nest usage under message.usage."""
+        adapter = CodexAdapter(
+            workdir=str(tmp_path), model=_openai_model()
+        )
+        stdout = json.dumps(
+            {
+                "type": "message",
+                "message": {
+                    "usage": {"input_tokens": 300, "output_tokens": 80}
+                },
+            }
+        )
+        usage = adapter.parse_self_reported_usage(stdout, "")
+        assert usage is not None
+        assert usage.input_tokens == 300
+        assert usage.output_tokens == 80
+
+    def test_returns_first_nonzero_usage_object(self, tmp_path):
+        """When multiple usage objects appear, the FIRST non-zero one wins."""
+        adapter = CodexAdapter(
+            workdir=str(tmp_path), model=_openai_model()
+        )
+        stdout = (
+            '{"input_tokens": 100, "output_tokens": 50}\n'
+            '{"input_tokens": 999, "output_tokens": 888}\n'
+        )
+        usage = adapter.parse_self_reported_usage(stdout, "")
+        assert usage is not None
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 50
+
+    def test_skips_malformed_json_then_parses_valid(self, tmp_path):
+        """A truncated JSON event line is skipped; the next valid line parses."""
+        adapter = CodexAdapter(
+            workdir=str(tmp_path), model=_openai_model()
+        )
+        stdout = (
+            '{"type":"turn.completed","usage":{"input_tokens":700,\n'
+            '{"input_tokens": 700, "output_tokens": 200}\n'
+        )
+        usage = adapter.parse_self_reported_usage(stdout, "")
+        assert usage is not None
+        assert usage.input_tokens == 700
+        assert usage.output_tokens == 200
+
 
 class TestOpenCodeSelfReportedUsage:
     def test_parse_json_usage_in_stdout(self, tmp_path):
