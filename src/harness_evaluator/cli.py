@@ -336,6 +336,41 @@ def run(
             )
             raise typer.Exit(1) from None
 
+        # Also check that the gateway is accessible from inside Docker
+        # containers. The gateway must bind to 0.0.0.0 (not just 127.0.0.1)
+        # for containers to reach it via host.docker.internal. This is a
+        # warning (not an error) because the user may be using
+        # --network=host or a custom setup.
+        if cfg.gateway_host == "host.docker.internal":
+            import subprocess
+
+            docker_check = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--add-host",
+                    "host.docker.internal:host-gateway",
+                    "python:3.12-slim",
+                    "python",
+                    "-c",
+                    f"import socket; s=socket.socket(); s.settimeout(2); "
+                    f"s.connect(('host.docker.internal', {cfg.gateway_port})); s.close()",
+                ],
+                capture_output=True,
+                timeout=30,
+            )
+            if docker_check.returncode != 0:
+                console.print(
+                    f"[yellow]Warning: Gateway is reachable on localhost but NOT "
+                    f"from inside Docker containers.[/yellow]\n"
+                    f"The gateway is likely bound to 127.0.0.1 only. "
+                    f"Restart it with:\n"
+                    f"  harness-evaluator gateway --host 0.0.0.0 --port {cfg.gateway_port}\n"
+                    f"Otherwise harnesses inside containers will fail with "
+                    f"'Connection refused'."
+                )
+
     store = ResultsStore(cfg.results_db)
 
     # Wire up the Docker runner

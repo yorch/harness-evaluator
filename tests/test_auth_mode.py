@@ -517,6 +517,61 @@ class TestResolveCredentialMounts:
         # Files in subdirectories must be readable.
         assert (Path(host_path) / "cache" / "data.json").stat().st_mode & 0o777 == 0o644
 
+    def test_claude_json_copied_into_credential_dir(
+        self, runner: DockerRunner, tmp_path: Path
+    ) -> None:
+        """claude-code's ~/.claude.json must be copied into the credential mount.
+
+        claude-code stores its main config at ~/.claude.json (in the home
+        directory root, NOT inside ~/.claude/). When CLAUDE_CONFIG_DIR is set,
+        claude-code looks for .claude.json inside that directory. Without
+        copying it, claude-code prints "Claude configuration file not found"
+        and may fail to function properly.
+        """
+        # Simulate the host layout: ~/.claude/ dir and ~/.claude.json file
+        home_dir = tmp_path / "home"
+        home_dir.mkdir()
+        cred_dir = home_dir / ".claude"
+        cred_dir.mkdir()
+        cred_file = cred_dir / ".credentials.json"
+        cred_file.write_text('{"token": "test"}')
+        # The main config file lives in the home dir root, NOT in .claude/
+        home_config = home_dir / ".claude.json"
+        home_config.write_text('{"numStartups": 1, "installMethod": "native"}')
+
+        mounts, env, excludes = runner._resolve_credential_mounts(
+            AuthMode.CLAUDE_OAUTH, str(cred_file)
+        )
+        assert len(mounts) == 1
+        host_path = mounts[0][0]
+
+        # .claude.json must be present inside the mounted credential dir
+        mounted_config = Path(host_path) / ".claude.json"
+        assert mounted_config.exists()
+        assert mounted_config.read_text() == '{"numStartups": 1, "installMethod": "native"}'
+        # Permissions must be readable by the container user
+        assert mounted_config.stat().st_mode & 0o777 == 0o644
+
+    def test_claude_json_missing_does_not_error(
+        self, runner: DockerRunner, tmp_path: Path
+    ) -> None:
+        """Missing ~/.claude.json should not cause an error."""
+        cred_dir = tmp_path / ".claude"
+        cred_dir.mkdir()
+        cred_file = cred_dir / ".credentials.json"
+        cred_file.write_text('{"token": "test"}')
+        # No .claude.json in the parent directory
+
+        mounts, env, excludes = runner._resolve_credential_mounts(
+            AuthMode.CLAUDE_OAUTH, str(cred_file)
+        )
+        assert len(mounts) == 1
+        host_path = mounts[0][0]
+        # .claude.json should not exist in the mount
+        assert not (Path(host_path) / ".claude.json").exists()
+        # But .credentials.json should still be there
+        assert (Path(host_path) / ".credentials.json").exists()
+
 
 # ---------------------------------------------------------------------------
 # Docker runner _build_run_args with credential mounts

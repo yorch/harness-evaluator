@@ -631,6 +631,15 @@ class DockerRunner:
             ignore_dangling_symlinks=True,
         )
 
+        # claude-code stores its main config at ~/.claude.json (in the home
+        # directory root, NOT inside ~/.claude/). When CLAUDE_CONFIG_DIR is
+        # set, claude-code looks for .claude.json inside that directory.
+        # Copy it there so the harness can find it inside the container.
+        if auth_mode == AuthMode.CLAUDE_OAUTH:
+            home_config = cred_dir.parent / ".claude.json"
+            if home_config.exists():
+                shutil.copy2(home_config, tmp_cred_dir / ".claude.json")
+
         # The Docker container runs as a non-root user (uid=999,
         # "harness-evaluator"). The temp dir created by mkdtemp is 0700
         # owned by root, and copied credential files retain their source
