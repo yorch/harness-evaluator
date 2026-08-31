@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from harness_evaluator.gateway.models import TokenUsage
 from harness_evaluator.orchestrator.config import AuthMode, ModelSpec
 
 
@@ -231,6 +232,25 @@ class BaseAdapter(ABC):
             )
         cmd = self.get_command(task_prompt)
         return await run_command(cmd, self._repo_dir(), self.get_env(), timeout)
+
+    def parse_self_reported_usage(
+        self, stdout: str, stderr: str
+    ) -> TokenUsage | None:
+        """Parse self-reported token usage from harness output.
+
+        Adapters that can extract token usage from their harness's stdout
+        or stderr should override this method. The default implementation
+        returns ``None``, meaning reconciliation is skipped for harnesses
+        that do not report usage.
+
+        Args:
+            stdout: The harness process stdout.
+            stderr: The harness process stderr.
+
+        Returns:
+            A :class:`TokenUsage` if usage was found, otherwise ``None``.
+        """
+        return None
 
     async def cleanup(self) -> None:
         """Clean up after the harness run. Override if needed."""
