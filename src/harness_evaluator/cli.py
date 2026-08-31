@@ -6,6 +6,7 @@ import asyncio
 import logging
 import sys
 import time
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,34 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+def _get_version() -> str:
+    """Return the installed package version."""
+    try:
+        return _pkg_version("harness-evaluator")
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        console.print(f"harness-evaluator {_get_version()}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(  # noqa: ARG001
+        None,
+        "--version",
+        "-V",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the harness-evaluator version and exit.",
+    ),
+) -> None:
+    """Harness evaluator: compare agentic coding harnesses on effectiveness and efficiency."""
 
 
 def _configure_logging(verbose: int = 0) -> None:
@@ -47,6 +76,12 @@ def _configure_logging(verbose: int = 0) -> None:
     # Replace any prior handlers so repeated invocations in the same process
     # (e.g. tests) do not stack duplicate handlers.
     root.handlers = [handler]
+
+
+@app.command()
+def version() -> None:
+    """Print the harness-evaluator version and exit."""
+    console.print(f"harness-evaluator {_get_version()}")
 
 
 @app.command()
