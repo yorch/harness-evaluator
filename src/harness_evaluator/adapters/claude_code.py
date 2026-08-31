@@ -98,33 +98,53 @@ class ClaudeCodeAdapter(BaseAdapter):
         Claude Code with ``--output-format json`` emits a JSON object with a
         ``usage`` field containing ``input_tokens``, ``output_tokens``,
         ``cache_creation_input_tokens``, and ``cache_read_input_tokens``.
-        Returns ``None`` when the output is not valid JSON or lacks usage.
+        Tolerates leading/trailing text (warnings, progress lines) by
+        scanning for the first valid JSON object. Returns ``None`` when
+        no usage is found.
         """
-        if not stdout:
-            return None
-        try:
-            clean = _strip_ansi(stdout).strip()
-            parsed = json.loads(clean)
-        except (json.JSONDecodeError, ValueError):
-            return None
-        usage = parsed.get("usage")
-        if not isinstance(usage, dict):
-            return None
-        input_tokens = usage.get("input_tokens", 0)
-        output_tokens = usage.get("output_tokens", 0)
-        if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
-            return None
-        # Only return if at least one field is non-zero (a real run).
-        if input_tokens == 0 and output_tokens == 0:
-            return None
-        cache_read = usage.get("cache_read_input_tokens", 0) or 0
-        cache_write = usage.get("cache_creation_input_tokens", 0) or 0
-        return TokenUsage(
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cache_read_tokens=cache_read if isinstance(cache_read, int) else 0,
-            cache_write_tokens=cache_write if isinstance(cache_write, int) else 0,
-        )
+        for text in (stdout, stderr):
+            if not text:
+                continue
+            clean = _strip_ansi(text)
+            decoder = json.JSONDecoder()
+            idx = 0
+            length = len(clean)
+            while idx < length:
+                brace = clean.find("{", idx)
+                if brace == -1:
+                    break
+                try:
+                    parsed, end = decoder.raw_decode(clean, brace)
+                except (json.JSONDecodeError, ValueError):
+                    idx = brace + 1
+                    continue
+                idx = end
+                if not isinstance(parsed, dict):
+                    continue
+                usage = parsed.get("usage")
+                if not isinstance(usage, dict):
+                    continue
+                input_tokens = usage.get("input_tokens", 0)
+                output_tokens = usage.get("output_tokens", 0)
+                if not isinstance(input_tokens, int) or not isinstance(
+                    output_tokens, int
+                ):
+                    continue
+                if input_tokens == 0 and output_tokens == 0:
+                    continue
+                cache_read = usage.get("cache_read_input_tokens", 0) or 0
+                cache_write = usage.get("cache_creation_input_tokens", 0) or 0
+                return TokenUsage(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    cache_read_tokens=cache_read
+                    if isinstance(cache_read, int)
+                    else 0,
+                    cache_write_tokens=cache_write
+                    if isinstance(cache_write, int)
+                    else 0,
+                )
+        return None
 
     def get_command(self, task_prompt: str) -> list[str]:
         """Return the claude command list for execution inside a container."""

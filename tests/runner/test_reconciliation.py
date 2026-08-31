@@ -264,6 +264,34 @@ class TestRunCellReconciliation:
             }
         )
 
+        # Seed the gateway DB so num_api_calls > 0 and reconciliation runs.
+        # The runner deletes prior calls by trace_id before executing, so we
+        # patch delete_by_trace to preserve our seeded call.
+        from harness_evaluator.gateway.models import (
+            CapturedCall,
+            CostBreakdown,
+            Provider,
+        )
+        from harness_evaluator.gateway.models import (
+            TokenUsage as GWTokenUsage,
+        )
+        from harness_evaluator.gateway.store import CallStore
+
+        gw_store = CallStore(str(runner.gateway_db))
+        gw_store.save(
+            CapturedCall(
+                id="test-call-1",
+                trace_id=cell.cell_id,
+                provider=Provider.ANTHROPIC,
+                model="claude-sonnet-4-20250514",
+                usage=GWTokenUsage(input_tokens=100, output_tokens=50),
+                cost=CostBreakdown(),
+                method="POST",
+                path="/v1/messages",
+                response_status=200,
+            )
+        )
+
         mock_run_async.side_effect = [
             CompletedProcess(
                 returncode=0, stdout="container-id-recon\n", stderr=""
@@ -300,6 +328,9 @@ class TestRunCellReconciliation:
 
         with patch(
             "harness_evaluator.evaluator.swe.SWEEvaluator", return_value=mock_eval
+        ), patch(
+            "harness_evaluator.gateway.store.CallStore.delete_by_trace",
+            return_value=None,
         ):
             result = await runner.run_cell(cell)
 

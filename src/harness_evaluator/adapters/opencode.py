@@ -22,39 +22,63 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 
 from harness_evaluator.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from harness_evaluator.adapters.registry import register_adapter
 from harness_evaluator.gateway.models import TokenUsage
 
-_JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def _extract_opencode_usage(text: str) -> TokenUsage | None:
     """Scan text for a JSON object with token usage fields.
 
     OpenCode output may contain a JSON usage summary with
-    ``input_tokens`` and ``output_tokens`` fields.
+    ``input_tokens`` and ``output_tokens`` fields, possibly nested under
+    a ``usage`` key. Uses ``raw_decode`` to handle nested JSON and
+    strips ANSI escapes before parsing.
     """
-    for match in _JSON_OBJECT_RE.finditer(text):
+    clean = _strip_ansi(text)
+    decoder = json.JSONDecoder()
+    idx = 0
+    length = len(clean)
+    while idx < length:
+        brace = clean.find("{", idx)
+        if brace == -1:
+            break
         try:
-            obj = json.loads(match.group())
+            obj, end = decoder.raw_decode(clean, brace)
         except (json.JSONDecodeError, ValueError):
+            idx = brace + 1
             continue
+        idx = end
         if not isinstance(obj, dict):
             continue
-        in_tok = obj.get("input_tokens")
-        out_tok = obj.get("output_tokens")
-        if in_tok is None and out_tok is None:
-            continue
-        in_tok = in_tok if isinstance(in_tok, int) else 0
-        out_tok = out_tok if isinstance(out_tok, int) else 0
-        if in_tok == 0 and out_tok == 0:
-            continue
-        return TokenUsage(
-            input_tokens=in_tok,
-            output_tokens=out_tok,
-        )
+        # Check top-level and nested "usage" key.
+        candidates: list[dict[str, Any]] = []
+        if "input_tokens" in obj or "output_tokens" in obj:
+            candidates.append(obj)
+        usage = obj.get("usage")
+        if isinstance(usage, dict):
+            candidates.append(usage)
+        for cand in candidates:
+            in_tok = cand.get("input_tokens")
+            out_tok = cand.get("output_tokens")
+            if in_tok is None and out_tok is None:
+                continue
+            in_tok = in_tok if isinstance(in_tok, int) else 0
+            out_tok = out_tok if isinstance(out_tok, int) else 0
+            if in_tok == 0 and out_tok == 0:
+                continue
+            return TokenUsage(
+                input_tokens=in_tok,
+                output_tokens=out_tok,
+            )
     return None
 
 

@@ -155,13 +155,15 @@ class TestCodexSelfReportedUsage:
         adapter = CodexAdapter(
             workdir=str(tmp_path), model=_openai_model()
         )
+        # Codex uses reasoning_output_tokens and cached_input_tokens.
         stdout = (
             '{"input_tokens": 100, "output_tokens": 50, '
-            '"reasoning_tokens": 75}'
+            '"reasoning_output_tokens": 75, "cached_input_tokens": 20}'
         )
         usage = adapter.parse_self_reported_usage(stdout, "")
         assert usage is not None
         assert usage.reasoning_tokens == 75
+        assert usage.cache_read_tokens == 20
 
     def test_returns_none_for_no_usage(self, tmp_path):
         adapter = CodexAdapter(
@@ -180,6 +182,50 @@ class TestCodexSelfReportedUsage:
             workdir=str(tmp_path), model=_openai_model()
         )
         stdout = '{"input_tokens": 0, "output_tokens": 0}'
+        assert adapter.parse_self_reported_usage(stdout, "") is None
+
+    def test_parse_jsonl_with_nested_usage(self, tmp_path):
+        """Codex exec --json emits JSONL with nested usage objects."""
+        adapter = CodexAdapter(
+            workdir=str(tmp_path), model=_openai_model()
+        )
+        stdout = (
+            '{"type":"turn.started","session_id":"abc"}\n'
+            '{"type":"turn.completed","usage":'
+            '{"input_tokens":26549,"cached_input_tokens":22272,'
+            '"output_tokens":1590,"reasoning_output_tokens":300}}\n'
+        )
+        usage = adapter.parse_self_reported_usage(stdout, "")
+        assert usage is not None
+        assert usage.input_tokens == 26549
+        assert usage.output_tokens == 1590
+        assert usage.cache_read_tokens == 22272
+        assert usage.reasoning_tokens == 300
+
+    def test_parse_ansi_wrapped_jsonl(self, tmp_path):
+        """Codex output may include ANSI escape sequences."""
+        adapter = CodexAdapter(
+            workdir=str(tmp_path), model=_openai_model()
+        )
+        stdout = (
+            "\x1b[32m{\"type\":\"turn.completed\","
+            "\"usage\":{\"input_tokens\":100,\"output_tokens\":50}}"
+            "\x1b[0m\n"
+        )
+        usage = adapter.parse_self_reported_usage(stdout, "")
+        assert usage is not None
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 50
+
+    def test_ignores_unrelated_json(self, tmp_path):
+        """JSON objects without token fields should not match."""
+        adapter = CodexAdapter(
+            workdir=str(tmp_path), model=_openai_model()
+        )
+        stdout = (
+            '{"type":"file.write","path":"foo.py","content":"x = 1"}\n'
+            '{"config":{"model":"gpt-4o"}}\n'
+        )
         assert adapter.parse_self_reported_usage(stdout, "") is None
 
 

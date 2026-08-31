@@ -339,12 +339,20 @@ class DockerRunner:
                     )
 
             # Reconcile gateway-captured usage against harness self-report.
-            # The adapter is recreated here (cheap) to access its
-            # parse_self_reported_usage() method with the same config used
-            # inside the container.
-            reconciliation_summary = self._reconcile_cell(
-                cell, harness_result, usage
-            )
+            # Only attempt reconciliation when the gateway actually captured
+            # calls — an all-zero proxy usage would produce spurious 100%
+            # discrepancies. Reconciliation is observability and must never
+            # abort a cell, so failures are logged and swallowed.
+            reconciliation_summary: dict[str, Any] | None = None
+            if num_api_calls > 0:
+                try:
+                    reconciliation_summary = self._reconcile_cell(
+                        cell, harness_result, usage
+                    )
+                except Exception:
+                    logger.exception(
+                        "Reconciliation failed for cell %s", cell.cell_id
+                    )
 
             latency_ms = (time.monotonic() - start_time) * 1000
 

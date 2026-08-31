@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from harness_evaluator.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
@@ -35,37 +36,96 @@ from harness_evaluator.adapters.registry import register_adapter
 from harness_evaluator.gateway.models import TokenUsage
 from harness_evaluator.orchestrator.config import AuthMode
 
-# Matches JSON objects in Codex output that contain token usage fields.
-_JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}", re.DOTALL)
+# ANSI escape sequence stripper.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def _extract_codex_usage(text: str) -> TokenUsage | None:
     """Scan text for a JSON object with token usage fields.
 
-    Codex output is not guaranteed to be pure JSON, so this searches for
-    embedded JSON objects containing ``input_tokens`` or ``output_tokens``.
+    Codex ``exec --json`` emits JSONL objects such as::
+
+        {"type":"turn.completed","usage":{"input_tokens":26549,...}}
+
+    This parser walks each line, attempts ``json.loads``, and looks for
+    token fields at the top level or nested under ``usage`` /
+    ``info.total_token_usage`` / ``message.usage``. Returns the first
+    non-zero usage found, or ``None``.
     """
-    for match in _JSON_OBJECT_RE.finditer(text):
+    clean = _strip_ansi(text)
+    decoder = json.JSONDecoder()
+    # Walk the text attempting to decode JSON objects at each position.
+    # This handles both JSONL (one object per line) and embedded JSON.
+    idx = 0
+    length = len(clean)
+    while idx < length:
+        # Skip to the next opening brace.
+        brace = clean.find("{", idx)
+        if brace == -1:
+            break
         try:
-            obj = json.loads(match.group())
+            obj, end = decoder.raw_decode(clean, brace)
         except (json.JSONDecodeError, ValueError):
+            idx = brace + 1
             continue
+        idx = end
         if not isinstance(obj, dict):
             continue
-        in_tok = obj.get("input_tokens")
-        out_tok = obj.get("output_tokens")
+        usage = _extract_usage_from_obj(obj)
+        if usage is not None and usage.total_tokens > 0:
+            return usage
+    return None
+
+
+def _extract_usage_from_obj(obj: dict[str, Any]) -> TokenUsage | None:
+    """Extract a TokenUsage from a parsed Codex event object.
+
+    Codex emits token fields at several nesting levels depending on the
+    event type. This checks the common paths.
+    """
+    candidates: list[dict[str, Any]] = []
+    # Top-level (rare but possible)
+    if "input_tokens" in obj or "output_tokens" in obj:
+        candidates.append(obj)
+    # Nested under "usage"
+    usage = obj.get("usage")
+    if isinstance(usage, dict):
+        candidates.append(usage)
+    # Nested under info.total_token_usage
+    info = obj.get("info")
+    if isinstance(info, dict):
+        total = info.get("total_token_usage")
+        if isinstance(total, dict):
+            candidates.append(total)
+    # Nested under message.usage
+    message = obj.get("message")
+    if isinstance(message, dict):
+        msg_usage = message.get("usage")
+        if isinstance(msg_usage, dict):
+            candidates.append(msg_usage)
+
+    for cand in candidates:
+        in_tok = cand.get("input_tokens")
+        out_tok = cand.get("output_tokens")
         if in_tok is None and out_tok is None:
             continue
         in_tok = in_tok if isinstance(in_tok, int) else 0
         out_tok = out_tok if isinstance(out_tok, int) else 0
         if in_tok == 0 and out_tok == 0:
             continue
+        # Codex uses cached_input_tokens for cache reads and
+        # reasoning_output_tokens for reasoning tokens.
+        cached = cand.get("cached_input_tokens", 0)
+        reasoning = cand.get("reasoning_output_tokens", 0)
         return TokenUsage(
             input_tokens=in_tok,
             output_tokens=out_tok,
-            reasoning_tokens=obj.get("reasoning_tokens", 0) or 0
-            if isinstance(obj.get("reasoning_tokens", 0), int)
-            else 0,
+            cache_read_tokens=cached if isinstance(cached, int) else 0,
+            reasoning_tokens=reasoning if isinstance(reasoning, int) else 0,
         )
     return None
 

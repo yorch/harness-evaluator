@@ -103,7 +103,6 @@ CREATE TABLE IF NOT EXISTS reconciliation_results (
     FOREIGN KEY (cell_id) REFERENCES run_results(cell_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_recon_cell ON reconciliation_results(cell_id);
 CREATE INDEX IF NOT EXISTS idx_recon_run ON reconciliation_results(run_name);
 """
 
