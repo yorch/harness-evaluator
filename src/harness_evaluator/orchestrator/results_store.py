@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS run_results (
     diff TEXT,
     test_output TEXT,
     harness_metadata TEXT,
+    harness_stdout TEXT,
+    harness_stderr TEXT,
     timestamp TEXT NOT NULL,
     retry_count INTEGER DEFAULT 0
 );
@@ -84,6 +86,8 @@ CREATE TABLE IF NOT EXISTS phase_results (
     total_cost REAL DEFAULT 0.0,
     num_api_calls INTEGER DEFAULT 0,
     error TEXT,
+    stdout TEXT,
+    stderr TEXT,
     timestamp TEXT NOT NULL,
     FOREIGN KEY (cell_id) REFERENCES run_results(cell_id)
 );
@@ -106,6 +110,14 @@ CREATE TABLE IF NOT EXISTS reconciliation_results (
 CREATE INDEX IF NOT EXISTS idx_recon_run ON reconciliation_results(run_name);
 """
 
+# Columns added after initial schema; added via ALTER TABLE for existing DBs.
+_MIGRATIONS = [
+    ("run_results", "harness_stdout", "TEXT"),
+    ("run_results", "harness_stderr", "TEXT"),
+    ("phase_results", "stdout", "TEXT"),
+    ("phase_results", "stderr", "TEXT"),
+]
+
 
 class ResultsStore:
     """SQLite-backed store for evaluation results."""
@@ -118,7 +130,26 @@ class ResultsStore:
     def _init_db(self) -> None:
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.executescript(SCHEMA)
+            self._apply_migrations(conn)
             conn.commit()
+
+    @staticmethod
+    def _apply_migrations(conn: sqlite3.Connection) -> None:
+        """Add columns that were introduced after the initial schema.
+
+        Uses ``PRAGMA table_info`` to check for column existence before
+        running ``ALTER TABLE``, so existing databases are upgraded in
+        place without data loss.
+        """
+        for table, column, col_type in _MIGRATIONS:
+            existing = {
+                row[1]
+                for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+            }
+            if column not in existing:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                )
 
     def list_runs(self) -> list[dict[str, Any]]:
         """List all run names with aggregate stats (cell counts, success rate).
@@ -161,6 +192,8 @@ class ResultsStore:
         diff: str | None = None,
         test_output: str | None = None,
         harness_metadata: dict[str, Any] | None = None,
+        harness_stdout: str | None = None,
+        harness_stderr: str | None = None,
         retry_count: int = 0,
     ) -> None:
         usage = usage or TokenUsage()
@@ -172,8 +205,9 @@ class ResultsStore:
                     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
                     reasoning_tokens, total_cost, latency_ms, time_to_first_attempt_ms,
                     num_api_calls, num_tool_calls, diff, test_output,
-                    harness_metadata, timestamp, retry_count)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    harness_metadata, harness_stdout, harness_stderr,
+                    timestamp, retry_count)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     cell.cell_id,
                     cell.run_name,
@@ -199,6 +233,8 @@ class ResultsStore:
                     diff,
                     test_output,
                     json.dumps(harness_metadata) if harness_metadata else None,
+                    harness_stdout,
+                    harness_stderr,
                     datetime.now(UTC).isoformat(),
                     retry_count,
                 ),
@@ -345,8 +381,8 @@ class ResultsStore:
                        (cell_id, run_name, phase_name, trace_id, model,
                         model_role, exit_code, duration_ms, timed_out,
                         input_tokens, output_tokens, total_cost,
-                        num_api_calls, error, timestamp)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        num_api_calls, error, stdout, stderr, timestamp)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         cell_id,
                         run_name,
@@ -362,6 +398,8 @@ class ResultsStore:
                         phase.get("total_cost", 0.0),
                         phase.get("num_api_calls", 0),
                         phase.get("error"),
+                        phase.get("stdout"),
+                        phase.get("stderr"),
                         now,
                     ),
                 )

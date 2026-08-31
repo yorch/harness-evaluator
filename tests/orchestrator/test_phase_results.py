@@ -157,3 +157,55 @@ class TestPhaseResults:
         retrieved = store.get_phase_results(multiphase_cell.cell_id)
         assert retrieved[0]["input_tokens"] == 0
         assert retrieved[0]["output_tokens"] == 0
+
+    def test_save_and_retrieve_phase_stdout_stderr(self, store, multiphase_cell) -> None:
+        """Phase stdout/stderr are stored and retrieved."""
+        phases = [
+            {
+                "name": "implement",
+                "trace_id": f"{multiphase_cell.cell_id}__phase-implement",
+                "model": "sonnet",
+                "model_role": "implementation",
+                "exit_code": 0,
+                "duration_ms": 5000.0,
+                "timed_out": False,
+                "stdout": "Working on the fix...\nDone.",
+                "stderr": "Warning: deprecated API",
+            },
+            {
+                "name": "review",
+                "trace_id": f"{multiphase_cell.cell_id}__phase-review",
+                "model": "opus",
+                "model_role": "review",
+                "exit_code": 1,
+                "duration_ms": 3000.0,
+                "timed_out": False,
+                "stdout": "",
+                "stderr": "Review failed: issues found",
+            },
+        ]
+        store.save_phase_results(multiphase_cell.cell_id, "mp-run", phases)
+        retrieved = store.get_phase_results(multiphase_cell.cell_id)
+        assert len(retrieved) == 2
+        assert retrieved[0]["stdout"] == "Working on the fix...\nDone."
+        assert retrieved[0]["stderr"] == "Warning: deprecated API"
+        assert retrieved[1]["stdout"] == ""
+        assert retrieved[1]["stderr"] == "Review failed: issues found"
+
+    def test_phase_stdout_stderr_defaults_to_none(self, store, multiphase_cell) -> None:
+        """Phases without stdout/stderr should store None."""
+        phases = [
+            {
+                "name": "implement",
+                "trace_id": "t1",
+                "model": "sonnet",
+                "model_role": "implementation",
+                "exit_code": 0,
+                "duration_ms": 1000.0,
+                "timed_out": False,
+            }
+        ]
+        store.save_phase_results(multiphase_cell.cell_id, "mp-run", phases)
+        retrieved = store.get_phase_results(multiphase_cell.cell_id)
+        assert retrieved[0]["stdout"] is None
+        assert retrieved[0]["stderr"] is None

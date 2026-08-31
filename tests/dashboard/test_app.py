@@ -9,6 +9,7 @@ from harness_evaluator.dashboard.app import create_app
 from harness_evaluator.orchestrator.config import (
     HarnessSpec,
     ModelSpec,
+    PhaseSpec,
     RunCell,
     TaskSpec,
     TaskTrack,
@@ -741,6 +742,157 @@ class TestDashboardCellDetail:
         resp = client.get(f"/run/test-run/cell/{cell.cell_id}")
         assert resp.status_code == 200
         assert "<script>alert" not in resp.text
+
+    def test_cell_detail_shows_harness_output(self, tmp_path):
+        """Cell detail page shows harness stdout and stderr when present."""
+        db_path = str(tmp_path / "harness_out.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="test-run",
+            harness=HarnessSpec(name="claude-code", adapter="claude_code"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t1", name="T1", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell,
+            exit_class="fail",
+            success=0.0,
+            error_class="no_change",
+            error_message="No changes were made to the repository",
+            harness_stdout="Starting claude-code...\nProcessing task...",
+            harness_stderr="Error: API authentication failed",
+        )
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get(f"/run/test-run/cell/{cell.cell_id}")
+        assert resp.status_code == 200
+        assert "Harness Output" in resp.text
+        assert "stderr" in resp.text
+        assert "stdout" in resp.text
+        assert "Error: API authentication failed" in resp.text
+        assert "Starting claude-code..." in resp.text
+
+    def test_cell_detail_shows_no_output_message(self, tmp_path):
+        """Cell detail shows 'No harness output' when stdout/stderr are empty."""
+        db_path = str(tmp_path / "no_output.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="test-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell,
+            exit_class="pass",
+            success=1.0,
+        )
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get(f"/run/test-run/cell/{cell.cell_id}")
+        assert resp.status_code == 200
+        assert "No harness output was captured" in resp.text
+
+    def test_cell_detail_harness_output_xss_safe(self, tmp_path):
+        """Harness stdout/stderr with HTML payloads must be escaped."""
+        db_path = str(tmp_path / "harness_xss.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="test-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        xss = '<script>alert("xss")</script>'
+        store.save_result(
+            cell=cell,
+            exit_class="fail",
+            success=0.0,
+            harness_stdout=xss,
+            harness_stderr=xss,
+        )
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get(f"/run/test-run/cell/{cell.cell_id}")
+        assert resp.status_code == 200
+        assert "<script>alert" not in resp.text
+
+    def test_cell_detail_shows_phase_output(self, tmp_path):
+        """Cell detail page shows per-phase stdout/stderr in collapsible details."""
+        db_path = str(tmp_path / "phase_out.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="mp-run",
+            harness=HarnessSpec(name="claude-code", adapter="claude_code"),
+            model=ModelSpec(name="sonnet", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(
+                id="mp-task",
+                name="MP",
+                track=TaskTrack.MULTI_PHASE,
+                task_prompt="p",
+                phases=[PhaseSpec(name="implement", task_prompt="p")],
+            ),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell,
+            exit_class="fail",
+            success=0.0,
+        )
+        store.save_phase_results(
+            cell.cell_id,
+            "mp-run",
+            [
+                {
+                    "name": "implement",
+                    "trace_id": f"{cell.cell_id}__phase-implement",
+                    "model": "sonnet",
+                    "model_role": "implementation",
+                    "exit_code": 0,
+                    "duration_ms": 5000.0,
+                    "timed_out": False,
+                    "stdout": "Implementing fix...",
+                    "stderr": "Warning: deprecated",
+                },
+            ],
+        )
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get(f"/run/mp-run/cell/{cell.cell_id}")
+        assert resp.status_code == 200
+        assert "implement" in resp.text
+        assert "Implementing fix..." in resp.text
+        assert "Warning: deprecated" in resp.text
+
+    def test_csv_export_includes_harness_output(self, tmp_path):
+        """CSV export includes harness_stdout and harness_stderr columns."""
+        db_path = str(tmp_path / "export_out.db")
+        store = ResultsStore(db_path)
+        cell = RunCell(
+            run_name="test-run",
+            harness=HarnessSpec(name="h", adapter="h"),
+            model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+            task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+            repeat=0,
+        )
+        store.save_result(
+            cell=cell,
+            exit_class="fail",
+            success=0.0,
+            harness_stdout="some stdout",
+            harness_stderr="some stderr",
+        )
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get("/run/test-run/export/csv")
+        assert resp.status_code == 200
+        assert "harness_stdout" in resp.text
+        assert "harness_stderr" in resp.text
+        assert "some stdout" in resp.text
+        assert "some stderr" in resp.text
 
 
 class TestDashboardSort:

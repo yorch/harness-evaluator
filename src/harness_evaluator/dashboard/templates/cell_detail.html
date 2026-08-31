@@ -91,6 +91,29 @@
     </section>
     {% endif %}
 
+    {% if cell.harness_stdout or cell.harness_stderr %}
+    <section class="section">
+        <h2>Harness Output</h2>
+        {% if cell.harness_stderr %}
+        <details class="metadata-panel" open>
+            <summary>stderr ({{ cell.harness_stderr|length }} chars)</summary>
+            <pre class="code-block" translate="no">{{ cell.harness_stderr }}</pre>
+        </details>
+        {% endif %}
+        {% if cell.harness_stdout %}
+        <details class="metadata-panel">
+            <summary>stdout ({{ cell.harness_stdout|length }} chars)</summary>
+            <pre class="code-block" translate="no">{{ cell.harness_stdout }}</pre>
+        </details>
+        {% endif %}
+    </section>
+    {% else %}
+    <section class="section">
+        <h2>Harness Output</h2>
+        <p style="color: var(--muted);">No harness output was captured for this cell.</p>
+    </section>
+    {% endif %}
+
     {% if cell.diff %}
     <section class="section">
         <h2>Diff</h2>
@@ -139,6 +162,15 @@
                 </tbody>
             </table>
         </div>
+        {% for p in phases %}
+        {% if p.stdout or p.stderr %}
+        <details class="metadata-panel">
+            <summary>{{ p.phase_name }} output</summary>
+            {% if p.stderr %}<p style="margin: 0.5rem 0 0.25rem; color: var(--muted); font-size: 0.85rem;">stderr:</p><pre class="code-block" translate="no">{{ p.stderr }}</pre>{% endif %}
+            {% if p.stdout %}<p style="margin: 0.5rem 0 0.25rem; color: var(--muted); font-size: 0.85rem;">stdout:</p><pre class="code-block" translate="no">{{ p.stdout }}</pre>{% endif %}
+        </details>
+        {% endif %}
+        {% endfor %}
     </section>
     {% endif %}
 

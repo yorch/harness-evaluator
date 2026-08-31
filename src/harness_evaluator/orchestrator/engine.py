@@ -335,6 +335,8 @@ class Orchestrator:
                         diff=result.get("diff"),
                         test_output=result.get("test_output"),
                         harness_metadata=result.get("harness_metadata"),
+                        harness_stdout=result.get("harness_stdout"),
+                        harness_stderr=result.get("harness_stderr"),
                         retry_count=retry_count,
                     )
                     self.store.set_cell_state(cell.cell_id, cell.run_name, "completed")
