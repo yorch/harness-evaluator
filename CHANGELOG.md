@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/yorch/harness-evaluator/compare/v0.3.1...v0.3.2) (2026-08-31)
+
+
+### Bug Fixes
+
+* **ci:** use raw tag from release-please output for Docker metadata ([e799ec3](https://github.com/yorch/harness-evaluator/commit/e799ec304c3abb015eac7960ec6e6a2bab7eef29))
+
 ## [0.3.1](https://github.com/yorch/harness-evaluator/compare/v0.3.0...v0.3.1) (2026-08-31)
 
 
