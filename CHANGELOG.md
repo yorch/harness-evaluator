@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/yorch/harness-evaluator/compare/v0.6.0...v0.6.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **config:** default docker_image to :latest instead of version-pinned ([0a262db](https://github.com/yorch/harness-evaluator/commit/0a262db4eddb0ac9904880b4fd4cb750938b82f5))
+
 ## [0.6.0](https://github.com/yorch/harness-evaluator/compare/v0.5.0...v0.6.0) (2026-08-31)
 
 
