@@ -39,6 +39,7 @@ class TestHelpCommands:
         result = runner.invoke(app, ["run", "--help"])
         assert result.exit_code == 0
         assert "config" in result.stdout.lower()
+        assert "--no-tui" in result.stdout
 
     def test_gateway_help(self) -> None:
         result = runner.invoke(app, ["gateway", "--help"])
