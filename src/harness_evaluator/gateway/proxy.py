@@ -23,6 +23,7 @@ import ssl as ssl_module
 import time
 import uuid
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -140,6 +141,9 @@ MAX_SSE_STORED_SIZE = 100_000
 
 # Request timeout in seconds
 REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=300)
+
+# Interval (seconds) between periodic aggregated stats summaries.
+STATS_SUMMARY_INTERVAL = 30.0
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -627,6 +631,55 @@ class GatewayProxy:
         return TokenUsage()
 
 
+async def _stats_summary_loop(
+    store: CallStore, start_time: float
+) -> None:
+    """Periodically log an aggregated stats summary.
+
+    Runs every ``STATS_SUMMARY_INTERVAL`` seconds while the gateway is up.
+    Only emits when logging is at INFO level or below (i.e. ``-v`` is
+    passed); otherwise it is a no-op that returns immediately so the
+    gateway does not waste cycles querying the DB when quiet.
+    """
+    if not logger.isEnabledFor(logging.INFO):
+        return
+
+    last_summary = datetime.now(UTC)
+    while True:
+        await asyncio.sleep(STATS_SUMMARY_INTERVAL)
+        if not logger.isEnabledFor(logging.INFO):
+            continue
+        now = datetime.now(UTC)
+        try:
+            stats = await asyncio.to_thread(store.get_stats_summary)
+            calls_in_interval = await asyncio.to_thread(
+                store.get_calls_since, last_summary.isoformat()
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Stats summary query failed: %s", e, exc_info=True)
+            continue
+        last_summary = now
+
+        uptime = time.monotonic() - start_time
+        logger.info(
+            "Gateway stats summary:\n"
+            "  Uptime: %.0fs\n"
+            "  Total calls captured: %d\n"
+            "  Calls in last interval: %d\n"
+            "  Total cost: $%.4f\n"
+            "  Total tokens: %d (input: %d, output: %d)\n"
+            "  Average latency: %.0fms",
+            uptime,
+            stats["total_calls"],
+            calls_in_interval,
+            stats["total_cost"],
+            stats["total_tokens"],
+            stats["total_input_tokens"],
+            stats["total_output_tokens"],
+            stats["avg_latency_ms"],
+        )
+
+
 def create_proxy_app(
     store: CallStore,
     upstream_overrides: dict[Provider, str] | None = None,
@@ -642,6 +695,28 @@ def create_proxy_app(
     # Store proxy on app for cleanup using AppKey
     proxy_key = web.AppKey("proxy", GatewayProxy)
     app[proxy_key] = proxy
+
+    start_time = time.monotonic()
+
+    # Periodic aggregated stats summary (only emits at INFO level or below).
+    stats_task: asyncio.Task[None] | None = None
+
+    async def start_stats_task(app: web.Application) -> None:
+        nonlocal stats_task
+        stats_task = asyncio.create_task(
+            _stats_summary_loop(store, start_time)
+        )
+
+    async def stop_stats_task(app: web.Application) -> None:
+        nonlocal stats_task
+        if stats_task is not None and not stats_task.done():
+            stats_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await stats_task
+            stats_task = None
+
+    app.on_startup.append(start_stats_task)
+    app.on_cleanup.append(stop_stats_task)
 
     async def cleanup(app: web.Application) -> None:
         await app[proxy_key].close()
