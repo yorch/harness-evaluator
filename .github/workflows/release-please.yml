@@ -132,8 +132,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/harness-evaluator-runner
           tags: |
             type=raw,value=latest
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ needs.release-please.outputs.tag_name }}
             type=sha,prefix=sha-
 
       - name: Build and push
