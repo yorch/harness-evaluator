@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/yorch/harness-evaluator/compare/v0.3.3...v0.4.0) (2026-08-31)
+
+
+### Features
+
+* **cli:** add live progress panel and configurable logging to run/gateway ([#13](https://github.com/yorch/harness-evaluator/issues/13)) ([e413c83](https://github.com/yorch/harness-evaluator/commit/e413c838e746a74b7b0562ad24dd03a910fad62a))
+* expand pricing table, persist calibration anchors, document TS shim decision ([#12](https://github.com/yorch/harness-evaluator/issues/12)) ([f8ebc2b](https://github.com/yorch/harness-evaluator/commit/f8ebc2be48cbe88fa81e23614334b98b5a85e37a))
+* wire gateway-vs-self-report reconciliation into eval loop ([#15](https://github.com/yorch/harness-evaluator/issues/15)) ([79dbc76](https://github.com/yorch/harness-evaluator/commit/79dbc76bac1c618d46e3d790facd7eb470b4cbb5))
+
+
+### Bug Fixes
+
+* **runner:** ignore dangling symlinks when copying credential dir ([#14](https://github.com/yorch/harness-evaluator/issues/14)) ([2cd78fc](https://github.com/yorch/harness-evaluator/commit/2cd78fcc28fd8ec09115455e6b381ae0a75e33eb))
+
+
+### Documentation
+
+* add subscription auth guide and fix doc inaccuracies ([#10](https://github.com/yorch/harness-evaluator/issues/10)) ([3190bca](https://github.com/yorch/harness-evaluator/commit/3190bca486a55f34c7222163ba81a913cfaaaae0))
+
 ## [0.3.3](https://github.com/yorch/harness-evaluator/compare/v0.3.2...v0.3.3) (2026-08-31)
 
 
