@@ -7,21 +7,40 @@ Features:
   - Detailed per-cell results with pagination
   - Cost analysis views
   - REST API with consistent JSON responses
+  - Optional bearer-token authentication (--token)
 
 Security: All HTML is rendered through Jinja2 with autoescaping enabled.
+When a token is configured, every request must include it via one of:
+  - ``Authorization: Bearer <token>`` header (preferred for API clients)
+  - ``?token=<token>`` query parameter (sets an HttpOnly cookie via /login)
+  - ``dashboard_token`` HttpOnly cookie (set by the /login endpoint)
+
+The recommended browser flow is to visit ``/login?token=<secret>``, which
+validates the token, sets an ``HttpOnly`` cookie, and redirects to ``/``.
+This avoids leaving the token in the URL for every subsequent request
+(browser history, Referer headers, server access logs). API clients should
+use the ``Authorization`` header instead.
+
+Token comparison uses ``hmac.compare_digest`` on SHA-256 hashes of both
+values to prevent timing attacks and avoid leaking the token length.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import hmac
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response
 
 from harness_evaluator.orchestrator.results_store import ResultsStore
 from harness_evaluator.reporting.static_report import ReportGenerator
@@ -90,17 +109,133 @@ ORDER BY {column}
 """
 
 
-def create_app(results_db: str = "harness_evaluator_results.db") -> FastAPI:
+class TokenAuthMiddleware(BaseHTTPMiddleware):
+    """Reject requests that do not carry the expected bearer token.
+
+    The token may be supplied via (checked in order):
+      1. ``Authorization: Bearer <token>`` header (preferred for API clients)
+      2. ``dashboard_token`` HttpOnly cookie (set by the /login endpoint)
+      3. ``?token=<token>`` query parameter (redirects to /login to set cookie)
+
+    Token comparison hashes both values with SHA-256 before
+    ``hmac.compare_digest`` to prevent timing attacks and avoid leaking
+    the expected token length. When ``expected_token`` is ``None``, the
+    middleware is a no-op.
+    """
+
+    COOKIE_NAME = "dashboard_token"
+    # Paths that bypass auth: /login (entry point) and /logout (cookie clear).
+    PUBLIC_PATHS = frozenset({"/login", "/logout"})
+
+    def __init__(self, app: Any, expected_token: str | None) -> None:
+        super().__init__(app)
+        self._expected_token = expected_token
+
+    async def dispatch(
+        self, request: StarletteRequest, call_next: RequestResponseEndpoint
+    ) -> Response:
+        if self._expected_token is None:
+            return await call_next(request)
+
+        # /login and /logout must be reachable without a token.
+        if request.url.path in self.PUBLIC_PATHS:
+            return await call_next(request)
+
+        provided = self._extract_token(request)
+        if not provided:
+            return self._unauthorized(request)
+
+        if not self._tokens_match(provided, self._expected_token):
+            return self._unauthorized(request)
+
+        return await call_next(request)
+
+    @staticmethod
+    def _tokens_match(provided: str, expected: str) -> bool:
+        """Constant-time comparison that does not leak token length.
+
+        Both values are SHA-256 hashed before ``hmac.compare_digest`` so
+        the comparison is always between 64-byte hex digests, eliminating
+        the length-based timing leak present in raw ``compare_digest``.
+        """
+        provided_hash = hashlib.sha256(provided.encode()).hexdigest()
+        expected_hash = hashlib.sha256(expected.encode()).hexdigest()
+        return hmac.compare_digest(provided_hash, expected_hash)
+
+    @staticmethod
+    def _extract_token(request: StarletteRequest) -> str | None:
+        """Extract the token from header, cookie, or query string."""
+        # 1. Authorization header (preferred for API clients)
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip()
+            return token or None
+        # 2. HttpOnly cookie (set by /login endpoint for browser sessions)
+        cookie_token = request.cookies.get(TokenAuthMiddleware.COOKIE_NAME)
+        if cookie_token:
+            return cookie_token
+        # 3. ?token= query param (for initial login / API convenience)
+        return request.query_params.get("token")
+
+    @staticmethod
+    def _unauthorized(request: StarletteRequest) -> Response:
+        """Return a 401 response with a unified message.
+
+        The same message is used for missing and invalid tokens to avoid
+        revealing whether a guess was considered (information disclosure).
+        For HTML requests (browser), return a simple HTML page with a
+        link to /login. For API requests, return JSON.
+        """
+        accept = request.headers.get("accept", "")
+        if "text/html" in accept:
+            return HTMLResponse(
+                status_code=401,
+                content=(
+                    "<!DOCTYPE html><html><head><title>401 Unauthorized"
+                    "</title></head><body><h1>401 Unauthorized</h1>"
+                    "<p>Authentication required.</p>"
+                    '<p><a href="/login">Login</a></p>'
+                    "</body></html>"
+                ),
+                headers={"WWW-Authenticate": 'Bearer realm="harness-evaluator"'},
+            )
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authentication required"},
+            headers={"WWW-Authenticate": 'Bearer realm="harness-evaluator"'},
+        )
+
+
+def create_app(
+    results_db: str = "harness_evaluator_results.db",
+    token: str | None = None,
+) -> FastAPI:
     """Create the FastAPI dashboard app.
 
     Args:
         results_db: Path to the results SQLite database.
+        token: If set, all requests must include this token via the
+            ``Authorization: Bearer <token>`` header, the
+            ``dashboard_token`` cookie (set by ``/login``), or the
+            ``?token=<token>`` query parameter. If ``None`` or empty
+            (default), no auth is required.
     """
+    # Normalize: strip whitespace; empty string means "no auth".
+    auth_token = (token or "").strip() or None
+
     app = FastAPI(
         title="harness-evaluator Dashboard",
         description="Interactive dashboard for harness evaluation results",
         version="0.1.0",
+        # Disable auto-docs endpoints when auth is on to reduce info leak.
+        docs_url="/docs" if auth_token is None else None,
+        redoc_url="/redoc" if auth_token is None else None,
+        openapi_url="/openapi.json" if auth_token is None else None,
     )
+
+    if auth_token is not None:
+        app.add_middleware(TokenAuthMiddleware, expected_token=auth_token)
+
     store = ResultsStore(results_db)
     report_gen = ReportGenerator(store)
     db_path = Path(results_db)
@@ -193,6 +328,58 @@ def create_app(results_db: str = "harness_evaluator_results.db") -> FastAPI:
                 ),
             ).fetchone()
             return row[0] if row else 0
+
+    # --- Login endpoint (only meaningful when auth is enabled) ---
+
+    @app.get("/login", response_class=HTMLResponse)
+    async def login(
+        token: str | None = Query(None, description="Bearer token to set as cookie"),
+    ) -> Response:
+        """Validate the token and set an HttpOnly cookie, then redirect to /.
+
+        This is the recommended browser entry point when auth is enabled:
+        visit ``/login?token=<secret>`` once. If the token is valid, a
+        ``dashboard_token`` HttpOnly cookie is set and the browser is
+        redirected to ``/``. Subsequent requests carry the cookie
+        automatically, so the token does not remain in the URL.
+
+        If no token is provided or it is invalid, a login form is shown.
+        If auth is not enabled, this endpoint redirects to ``/``.
+        """
+        if auth_token is None:
+            return RedirectResponse(url="/", status_code=302)
+
+        if token and TokenAuthMiddleware._tokens_match(token, auth_token):
+            resp = RedirectResponse(url="/", status_code=302)
+            resp.set_cookie(
+                key=TokenAuthMiddleware.COOKIE_NAME,
+                value=token,
+                httponly=True,
+                samesite="lax",
+                secure=False,  # dashboard is typically HTTP on LAN
+                max_age=86400,  # 24 hours
+            )
+            return resp
+
+        # Show a simple login form (token is missing or invalid)
+        return HTMLResponse(
+            content=(
+                "<!DOCTYPE html><html><head><title>Login</title></head>"
+                "<body><h1>Dashboard Login</h1>"
+                "<form method='get' action='/login'>"
+                "<label>Token: <input type='password' name='token' "
+                "autocomplete='off'></label>"
+                " <button type='submit'>Login</button>"
+                "</form></body></html>"
+            )
+        )
+
+    @app.get("/logout")
+    async def logout() -> Response:
+        """Clear the auth cookie and redirect to /login."""
+        resp = RedirectResponse(url="/login", status_code=302)
+        resp.delete_cookie(TokenAuthMiddleware.COOKIE_NAME)
+        return resp
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:

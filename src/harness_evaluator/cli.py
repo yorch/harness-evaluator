@@ -563,15 +563,50 @@ def dashboard(
     host: str = typer.Option("127.0.0.1", help="Host to bind to"),
     port: int = typer.Option(8080, help="Port to bind to"),
     db: str = typer.Option("harness_evaluator_results.db", help="Results DB path"),
+    token: str = typer.Option(
+        "",
+        "--token",
+        envvar="HARNESS_EVALUATOR_DASHBOARD_TOKEN",
+        help="Bearer token for authentication. When set, all requests must "
+        "include it via Authorization: Bearer <token>, the dashboard_token "
+        "cookie (set by /login), or ?token=<token>. Can also be set via the "
+        "HARNESS_EVALUATOR_DASHBOARD_TOKEN env var. Recommended when binding "
+        "to 0.0.0.0.",
+    ),
 ) -> None:
     """Start the interactive web dashboard."""
     import uvicorn
 
     from harness_evaluator.dashboard.app import create_app
 
-    app = create_app(results_db=db)
-    console.print(f"[bold green]Starting dashboard on http://{host}:{port}[/bold green]")
-    uvicorn.run(app, host=host, port=port)
+    # Warn (but don't block) when binding to all interfaces without a token.
+    if host in ("0.0.0.0", "::") and not token.strip():
+        console.print(
+            f"[bold yellow]Warning:[/bold yellow] Binding to {host} without --token. "
+            "The dashboard has no authentication and will be accessible to "
+            "anyone on the network. Consider using --token <secret>."
+        )
+
+    auth_token = token or None
+    app = create_app(results_db=db, token=auth_token)
+    url = f"http://{host}:{port}"
+    if auth_token:
+        console.print(
+            f"[bold green]Starting dashboard on {url}[/bold green] "
+            f"[dim](auth: token required)[/dim]"
+        )
+        console.print(
+            f"[dim]Browser: open {url}/login and enter the token[/dim]"
+        )
+        console.print(
+            f"[dim]API:    curl -H 'Authorization: Bearer <token>' {url}/api/runs[/dim]"
+        )
+        # Disable uvicorn access logs when auth is on to avoid leaking the
+        # token (the ?token= query param would appear in access log lines).
+        uvicorn.run(app, host=host, port=port, access_log=False)
+    else:
+        console.print(f"[bold green]Starting dashboard on {url}[/bold green]")
+        uvicorn.run(app, host=host, port=port)
 
 
 @app.command()

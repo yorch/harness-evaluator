@@ -120,7 +120,41 @@ harness-evaluator dashboard --port 8080
 
 Then open `http://127.0.0.1:8080` in your browser.
 
-> **Security**: The dashboard has no authentication. Keep it localhost-only by default. Do not expose it to external networks.
+### Network access with token authentication
+
+By default the dashboard binds to `127.0.0.1` (localhost only) and requires
+no authentication. To expose it to other devices on your network, use
+`--host 0.0.0.0` together with `--token`:
+
+```bash
+harness-evaluator dashboard --host 0.0.0.0 --port 8080 --token my-secret-token
+```
+
+Then open `http://<your-ip>:8080/login` from any device on the network and
+enter the token. This sets an `HttpOnly` session cookie and redirects to
+the dashboard. Subsequent navigation works without the token in the URL.
+
+API clients can use the `Authorization: Bearer` header instead:
+
+```bash
+curl -H "Authorization: Bearer my-secret-token" http://<your-ip>:8080/api/runs
+```
+
+To avoid exposing the token in the process list (`ps aux`), use the
+`HARNESS_EVALUATOR_DASHBOARD_TOKEN` environment variable instead of
+`--token`:
+
+```bash
+export HARNESS_EVALUATOR_DASHBOARD_TOKEN=my-secret-token
+harness-evaluator dashboard --host 0.0.0.0
+```
+
+> **Security**: Token comparison uses SHA-256 + `hmac.compare_digest` to
+> prevent timing attacks and avoid leaking the token length. When auth is
+> enabled, uvicorn access logs are disabled (the `?token=` query param
+> would otherwise leak the token to logs), and the `/docs`, `/redoc`, and
+> `/openapi.json` endpoints are disabled. Binding to `0.0.0.0` without
+> `--token` prints a warning and is not recommended.
 
 ### Features
 
