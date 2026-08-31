@@ -67,6 +67,42 @@ docker pull ghcr.io/yorch/harness-evaluator-runner:latest
 docker build -t harness-evaluator-runner:latest .
 ```
 
+## Running with a subscription (Claude Code OAuth / Codex ChatGPT)
+
+By default, harness-evaluator authenticates with pay-per-token API keys. Both
+Claude Code and Codex also support subscription-based access — Claude Code via
+OAuth (Claude Pro/Max) and Codex via a ChatGPT subscription. Token usage is
+still captured through the gateway proxy for analysis, but cost is recorded as
+`$0` and does not count against `budget_usd`.
+
+Set `auth_mode`, `credentials_path`, and `cost_mode: subscription` on the model:
+
+```yaml
+# Claude Code on a Claude Pro/Max subscription
+models:
+  - name: claude-sonnet-4-20250514
+    provider: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    auth_mode: claude_oauth
+    credentials_path: "~/.claude/.credentials.json"
+    cost_mode: subscription
+
+# Codex on a ChatGPT subscription
+models:
+  - name: gpt-5
+    provider: openai
+    api_key_env: OPENAI_API_KEY
+    auth_mode: codex_chatgpt
+    credentials_path: "~/.codex/auth.json"
+    cost_mode: subscription
+```
+
+The credential files are obtained by logging in to the harness CLI on the host
+(`claude` for Claude Code, `codex login` for Codex). The Docker runner copies the
+credential directory into the container (writable, so tokens can refresh) and
+excludes it from the eval diff. See the
+[Subscription auth guide](docs/guides/subscription.md) for the full walkthrough.
+
 ## M1: Gateway Proxy (completed)
 
 The gateway proxy is a custom HTTP/SSE server that sits between a harness and

@@ -63,6 +63,7 @@ export default defineConfig({
           label: 'Guides',
           items: [
             { label: 'Multi-phase Evaluation', slug: 'docs/guides/multi-phase' },
+            { label: 'Subscription Auth', slug: 'docs/guides/subscription' },
           ],
         },
         { label: 'Reporting', slug: 'docs/reporting' },

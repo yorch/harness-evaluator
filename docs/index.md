@@ -47,6 +47,7 @@ The comparison is **product-level**: which harness to *use* with a given model. 
 | [CLI Reference](cli-reference/) | All CLI commands, flags, and options with examples |
 | [Configuration](configuration/) | Run YAML config, task definitions, pricing tables, env vars |
 | [Guides](guides/multi-phase/) | Multi-phase evaluation with adversarial review |
+| [Subscription Auth](guides/subscription/) | Running with Claude Code OAuth / Codex ChatGPT subscriptions |
 | [Reporting](reporting/) | Static reports (HTML/JSON/CSV), interactive dashboard |
 | [Statistics](statistics/) | Mixed-effects models, variance decomposition, bootstrap CIs |
 | [Development](development/) | Contributing, quality gates, code style, testing, conventions |

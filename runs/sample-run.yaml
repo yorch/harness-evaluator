@@ -46,7 +46,31 @@ models:
       max_tokens: 16384
 
 tasks:
-  - "*"  # All tasks in the library
+  # All 20 single-phase tasks (SWE + open-ended). The multi-phase task
+  # (multi-phase-bugfix-001) is excluded — it requires review models and
+  # has its own sample config in sample-multi-phase.yaml.
+  # SWE (Python)
+  - swe-bugfix-001
+  - swe-bugfix-002
+  - swe-bugfix-003
+  - swe-bugfix-004
+  - swe-bugfix-005
+  - swe-feature-001
+  - swe-feature-002
+  - swe-feature-003
+  - swe-refactor-001
+  - swe-refactor-002
+  - swe-perf-001
+  - swe-perf-002
+  # Open-ended (Python + TypeScript)
+  - open-design-001
+  - open-design-002
+  - open-design-003
+  - open-design-004
+  - open-design-005
+  - open-design-006
+  - open-design-007
+  - open-design-008
 
 task_library_path: "./tasks"
 repeats: 5
