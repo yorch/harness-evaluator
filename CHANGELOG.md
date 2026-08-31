@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/yorch/harness-evaluator/compare/v0.4.0...v0.5.0) (2026-08-31)
+
+
+### Features
+
+* **dashboard:** add optional token authentication with cookie flow ([#16](https://github.com/yorch/harness-evaluator/issues/16)) ([38dd017](https://github.com/yorch/harness-evaluator/commit/38dd017df962e825f99bd855017157051fee381e))
+
 ## [0.4.0](https://github.com/yorch/harness-evaluator/compare/v0.3.3...v0.4.0) (2026-08-31)
 
 
