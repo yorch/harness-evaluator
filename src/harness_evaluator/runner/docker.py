@@ -535,7 +535,12 @@ class DockerRunner:
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="harness-eval-cred-"))
         tmp_cred_dir = tmp_dir / dest_name
-        shutil.copytree(cred_dir, tmp_cred_dir, dirs_exist_ok=True)
+        shutil.copytree(
+            cred_dir,
+            tmp_cred_dir,
+            dirs_exist_ok=True,
+            ignore_dangling_symlinks=True,
+        )
 
         env_key = (
             "CLAUDE_CONFIG_DIR"
