@@ -426,13 +426,15 @@ def run(
             console.print(f"  {err}")
 
     # Next steps: tell the user how to explore the results.
+    # Pass --db explicitly so the commands work regardless of which
+    # directory the user runs them from (results_db may be a custom path).
     console.print("\n[bold]Next steps[/bold]")
     console.print("  [dim]View per-cell results:[/dim]")
-    console.print(f"    harness-evaluator results {cfg.name}")
+    console.print(f"    harness-evaluator results {cfg.name} --db {cfg.results_db}")
     console.print("  [dim]Generate HTML/JSON/CSV reports:[/dim]")
-    console.print(f"    harness-evaluator report {cfg.name}")
+    console.print(f"    harness-evaluator report {cfg.name} --db {cfg.results_db}")
     console.print("  [dim]Statistical analysis:[/dim]")
-    console.print(f"    harness-evaluator stats {cfg.name}")
+    console.print(f"    harness-evaluator stats {cfg.name} --db {cfg.results_db}")
     console.print("  [dim]Interactive dashboard:[/dim]")
     console.print(f"    harness-evaluator dashboard --db {cfg.results_db}")
 
