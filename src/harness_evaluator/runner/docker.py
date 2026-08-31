@@ -631,6 +631,19 @@ class DockerRunner:
             ignore_dangling_symlinks=True,
         )
 
+        # The Docker container runs as a non-root user (uid=999,
+        # "harness-evaluator"). The temp dir created by mkdtemp is 0700
+        # owned by root, and copied credential files retain their source
+        # permissions (typically 0600). Without loosening permissions,
+        # the container user cannot read the credentials, causing
+        # harnesses like claude-code to fail with "Not logged in".
+        tmp_cred_dir.chmod(0o755)
+        for child in tmp_cred_dir.rglob("*"):
+            if child.is_dir():
+                child.chmod(0o755)
+            else:
+                child.chmod(0o644)
+
         env_key = (
             "CLAUDE_CONFIG_DIR"
             if auth_mode == AuthMode.CLAUDE_OAUTH
