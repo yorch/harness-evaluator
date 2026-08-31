@@ -141,7 +141,9 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 
 1. Merge PRs to `main` with conventional commit titles (`feat:`, `fix:`, etc.)
 2. release-please automatically opens a "Release Please" PR that bumps
-   `pyproject.toml` version and updates `CHANGELOG.md`
+   `pyproject.toml` version, updates `CHANGELOG.md`, and syncs `uv.lock` and
+   `site/src/pages/index.astro` (configured as `extra-files` in
+   `release-please-config.json`)
 3. Merge the Release Please PR → creates a `v*` tag + GitHub Release, then
    publishes to PyPI and pushes a version-tagged Docker image (all within
    `release-please.yml`)
