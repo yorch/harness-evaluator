@@ -1,13 +1,16 @@
 name: Publish to PyPI
 
-# Triggered by tags created by release-please (Release Please workflow).
-# release-please creates the tag + GitHub Release with the changelog;
-# this workflow builds the wheel/sdist, publishes to PyPI, and uploads
-# the artifacts to the existing GitHub Release.
+# Manual fallback for republishing a release.
+# Automatic publishing is now handled by release-please.yml, which runs
+# publish + docker in the same workflow (tags created by GITHUB_TOKEN
+# do not trigger downstream `on: push: tags` workflows).
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or branch to build and publish (e.g. v0.3.0)"
+        required: true
+        default: "main"
 
 permissions:
   contents: write
@@ -18,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - name: Set up uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Build sdist and wheel

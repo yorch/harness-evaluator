@@ -8,13 +8,159 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  packages: write
+  id-token: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release-please.outputs.releases_created }}
+      tag_name: ${{ steps.release-please.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4.2.0
+      - id: release-please
+        uses: googleapis/release-please-action@a02a34c4d625f9be7cb89156071d8567266a2445 # v4.2.0
         with:
           release-type: python
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # Publish to PyPI and upload artifacts to the GitHub Release.
+  # This job runs in the same workflow as release-please because tags
+  # created by GITHUB_TOKEN do not trigger downstream `on: push: tags`
+  # workflows (a well-known GitHub Actions limitation).
+  publish:
+    name: Publish to PyPI
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Verify the wheel bundles the task library
+        run: |
+          python -m zipfile -l dist/*.whl | grep -q "harness_evaluator/tasks/" \
+            || (echo "task library not bundled in wheel" && exit 1)
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Upload wheel and sdist to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ needs.release-please.outputs.tag_name }}"
+          version="${tag#v}"
+          gh release upload "$tag" dist/*.whl dist/*.tar.gz --clobber
+
+          # Append artifact footer to the release notes
+          gh release view "$tag" --json body --jq '.body' > /tmp/release_body.md
+          {
+            cat /tmp/release_body.md
+            echo ""
+            echo "## Artifacts"
+            echo ""
+            echo "- **PyPI**: [\`harness-evaluator==${version}\`](https://pypi.org/project/harness-evaluator/${version}/)"
+            echo "- **Docker**: \`ghcr.io/yorch/harness-evaluator-runner:${version}\` and \`:latest\`"
+            echo "- **Docs**: https://yorch.github.io/harness-evaluator/"
+            echo ""
+            echo "Install with \`uvx harness-evaluator\` or \`pip install harness-evaluator==${version}\`."
+          } > /tmp/release_final.md
+          gh release edit "$tag" --notes-file /tmp/release_final.md
+
+      - name: Verify PyPI publication
+        run: |
+          tag="${{ needs.release-please.outputs.tag_name }}"
+          version="${tag#v}"
+          attempts=8
+          delay=15
+          for attempt in $(seq "$attempts"); do
+            actual=$(curl -sf "https://pypi.org/pypi/harness-evaluator/${version}/json" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])" 2>/dev/null || true)
+            if [ "$actual" = "$version" ]; then
+              echo "harness-evaluator==${version} is live on PyPI"
+              exit 0
+            fi
+            echo "Attempt $attempt: PyPI shows ${actual:-<none>}, expected $version"
+            [ "$attempt" -eq "$attempts" ] || sleep "$delay"
+          done
+          echo "PyPI publication verification failed" >&2
+          exit 1
+
+  # Build and push a version-tagged Docker image.
+  # Same GITHUB_TOKEN limitation as publish — must run in this workflow.
+  docker:
+    name: Build and push Docker image
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/harness-evaluator-runner
+          tags: |
+            type=raw,value=latest
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify harnesses
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/harness-evaluator-runner:sha-$(git rev-parse --short HEAD)"
+          docker pull "$IMAGE"
+          docker run --rm "$IMAGE" bash -c '
+            echo "=== Harnesses ===" &&
+            claude --version &&
+            codex --version &&
+            opencode --version &&
+            pi --version &&
+            omp --version &&
+            echo "=== Python ===" &&
+            python --version &&
+            python -m pytest --version &&
+            echo "=== Git ===" &&
+            git --version &&
+            echo "=== All harnesses ready ==="
+          '
