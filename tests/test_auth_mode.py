@@ -481,6 +481,42 @@ class TestResolveCredentialMounts:
         assert env["CLAUDE_CONFIG_DIR"] == "/workspace/.claude"
         assert ".claude" in excludes
 
+    def test_credential_files_are_world_readable(
+        self, runner: DockerRunner, tmp_path: Path
+    ) -> None:
+        """Credential files must be readable by the non-root container user.
+
+        The Docker container runs as uid=999 (harness-evaluator), not root.
+        The temp dir from mkdtemp is 0700 and copied files retain source
+        permissions (typically 0600). Without chmod, the container user
+        gets "Permission denied" and the harness fails with "Not logged in".
+        """
+        cred_dir = tmp_path / ".claude"
+        cred_dir.mkdir(mode=0o700)
+        cred_file = cred_dir / ".credentials.json"
+        cred_file.write_text('{"token": "test"}')
+        cred_file.chmod(0o600)
+        # Add a subdirectory with a file to test recursive chmod.
+        sub = cred_dir / "cache"
+        sub.mkdir(mode=0o700)
+        (sub / "data.json").write_text("{}")
+        (sub / "data.json").chmod(0o600)
+
+        mounts, env, excludes = runner._resolve_credential_mounts(
+            AuthMode.CLAUDE_OAUTH, str(cred_file)
+        )
+        assert len(mounts) == 1
+        host_path = mounts[0][0]
+
+        # The credential directory must be traversable (0o755).
+        assert (Path(host_path).stat().st_mode & 0o777) == 0o755
+        # Files must be readable (0o644).
+        assert (Path(host_path) / ".credentials.json").stat().st_mode & 0o777 == 0o644
+        # Subdirectories must be traversable.
+        assert (Path(host_path) / "cache").stat().st_mode & 0o777 == 0o755
+        # Files in subdirectories must be readable.
+        assert (Path(host_path) / "cache" / "data.json").stat().st_mode & 0o777 == 0o644
+
 
 # ---------------------------------------------------------------------------
 # Docker runner _build_run_args with credential mounts
