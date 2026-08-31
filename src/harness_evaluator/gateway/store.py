@@ -54,6 +54,17 @@ class CallStore:
             conn.executescript(SCHEMA)
             conn.commit()
 
+    def _connect(self) -> sqlite3.Connection:
+        """Open a connection with a busy timeout for concurrent access.
+
+        The stats summary loop reads concurrently with request-handler
+        writes. Without a busy timeout, SQLite returns
+        ``OperationalError: database is locked`` immediately on contention.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=5.0)
+        conn.row_factory = sqlite3.Row
+        return conn
+
     def save(self, call: CapturedCall) -> None:
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.execute(
@@ -108,6 +119,74 @@ class CallStore:
                 (trace_id,),
             ).fetchall()
             return [self._row_to_call(row) for row in rows]
+
+    def get_stats_summary(self) -> dict[str, int | float]:
+        """Return aggregated stats over all captured calls.
+
+        Computes totals (call count, cost, tokens, latency) in a single
+        SQL pass so the periodic stats loop does not need to load every
+        row into Python. Each ``json_extract`` is wrapped in ``COALESCE``
+        and guarded by ``json_valid`` so that rows with missing fields or
+        malformed JSON are treated as zero rather than producing NULL
+        propagation (which would silently exclude the entire row from the
+        sum) or raising ``OperationalError``.
+        """
+        with contextlib.closing(self._connect()) as conn:
+            row = conn.execute(
+                """SELECT
+                       COUNT(*) AS total_calls,
+                       COALESCE(SUM(
+                           COALESCE(IIF(json_valid(cost_json),
+                               json_extract(cost_json, '$.input_cost'), 0), 0)
+                           + COALESCE(IIF(json_valid(cost_json),
+                               json_extract(cost_json, '$.output_cost'), 0), 0)
+                           + COALESCE(IIF(json_valid(cost_json),
+                               json_extract(cost_json, '$.cache_read_cost'), 0), 0)
+                           + COALESCE(IIF(json_valid(cost_json),
+                               json_extract(cost_json, '$.cache_write_cost'), 0), 0)
+                           + COALESCE(IIF(json_valid(cost_json),
+                               json_extract(cost_json, '$.reasoning_cost'), 0), 0)
+                       ), 0) AS total_cost,
+                       COALESCE(SUM(
+                           COALESCE(IIF(json_valid(usage_json),
+                               json_extract(usage_json, '$.input_tokens'), 0), 0)
+                       ), 0) AS total_input_tokens,
+                       COALESCE(SUM(
+                           COALESCE(IIF(json_valid(usage_json),
+                               json_extract(usage_json, '$.output_tokens'), 0), 0)
+                       ), 0) AS total_output_tokens,
+                       COALESCE(SUM(
+                           COALESCE(IIF(json_valid(usage_json),
+                               json_extract(usage_json, '$.input_tokens'), 0), 0)
+                           + COALESCE(IIF(json_valid(usage_json),
+                               json_extract(usage_json, '$.output_tokens'), 0), 0)
+                           + COALESCE(IIF(json_valid(usage_json),
+                               json_extract(usage_json, '$.cache_read_tokens'), 0), 0)
+                           + COALESCE(IIF(json_valid(usage_json),
+                               json_extract(usage_json, '$.cache_write_tokens'), 0), 0)
+                           + COALESCE(IIF(json_valid(usage_json),
+                               json_extract(usage_json, '$.reasoning_tokens'), 0), 0)
+                       ), 0) AS total_tokens,
+                       COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
+                   FROM captured_calls""",
+            ).fetchone()
+        return {
+            "total_calls": int(row[0] or 0),
+            "total_cost": float(row[1] or 0.0),
+            "total_input_tokens": int(row[2] or 0),
+            "total_output_tokens": int(row[3] or 0),
+            "total_tokens": int(row[4] or 0),
+            "avg_latency_ms": float(row[5] or 0.0),
+        }
+
+    def get_calls_since(self, since_iso: str) -> int:
+        """Return the number of calls captured since an ISO timestamp."""
+        with contextlib.closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM captured_calls WHERE timestamp > ?",
+                (since_iso,),
+            ).fetchone()
+        return int(row[0] or 0)
 
     def delete_by_trace(self, trace_id: str) -> None:
         """Delete all captured calls for a trace ID.

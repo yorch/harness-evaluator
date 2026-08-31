@@ -89,7 +89,9 @@ ci: bump actions/checkout to v7
   manual `pyproject.toml` edits).
 - The gateway proxy must never forward internal trace headers
   (`x-harness-evaluator-trace-id`, `x-trace-id`) or the `trace_id` query param upstream.
-- The dashboard has no auth — keep it localhost-only by default.
+- The dashboard supports optional token auth (`--token` / `HARNESS_EVALUATOR_DASHBOARD_TOKEN`
+  env var). Without a token it is open — keep it localhost-only (`127.0.0.1`) by default.
+  Binding to `0.0.0.0` without a token prints a warning and is not recommended.
 - Task YAMLs are trusted input: `test_command` runs on the host and
   `setup_script` runs in the container. Do not load untrusted task libraries.
 
