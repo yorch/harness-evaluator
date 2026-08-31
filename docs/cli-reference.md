@@ -409,21 +409,59 @@ harness-evaluator dashboard [options]
 | `--host` | string | `127.0.0.1` | Host to bind to |
 | `--port` | int | `8080` | Port to bind to |
 | `--db` | string | `harness_evaluator_results.db` | Results DB path |
+| `--token` | string | `""` | Bearer token for authentication. Can also be set via `HARNESS_EVALUATOR_DASHBOARD_TOKEN` env var. Recommended when binding to `0.0.0.0`. |
 
 ### Examples
 
 ```bash
-# Start on default port
+# Start on default port (localhost only, no auth)
 harness-evaluator dashboard
 
 # Custom port
 harness-evaluator dashboard --port 3000
 
-# Allow external connections (not recommended — no auth)
+# Expose to the network with token authentication
+harness-evaluator dashboard --host 0.0.0.0 --token my-secret-token
+
+# Use a token via env var (avoids process-list exposure)
+export HARNESS_EVALUATOR_DASHBOARD_TOKEN=my-secret-token
 harness-evaluator dashboard --host 0.0.0.0
 ```
 
-Then open `http://127.0.0.1:8080` in your browser.
+Then open `http://127.0.0.1:8080` in your browser. When a token is set,
+navigate to `http://<host>:<port>/login` and enter the token to set a
+session cookie.
+
+### Authentication
+
+When `--token` is provided, every request must include the token via one of:
+
+- **Authorization header** (preferred for API clients/curl):
+  ```bash
+  curl -H "Authorization: Bearer my-secret-token" http://0.0.0.0:8080/api/runs
+  ```
+- **HttpOnly cookie** (set by the `/login` endpoint for browser sessions):
+  ```
+  http://0.0.0.0:8080/login?token=my-secret-token
+  ```
+  This sets a `dashboard_token` HttpOnly cookie and redirects to `/`.
+  Subsequent requests carry the cookie automatically — the token does not
+  remain in the URL (browser history, Referer headers, server logs).
+- **Query parameter** (fallback, not recommended for browsing):
+  ```
+  http://0.0.0.0:8080/?token=my-secret-token
+  ```
+
+Use `/logout` to clear the cookie.
+
+Token comparison uses SHA-256 + `hmac.compare_digest` to prevent timing
+attacks and avoid leaking the token length. When auth is enabled, uvicorn
+access logs are disabled to prevent token leakage via the `?token=` query
+param, and the `/docs`, `/redoc`, `/openapi.json` endpoints are disabled.
+
+When no `--token` is set, the dashboard is open (no auth) — this is safe
+for localhost-only (`127.0.0.1`) bindings. Binding to `0.0.0.0` without
+a token prints a warning and is not recommended.
 
 ## harness-evaluator calibrate
 

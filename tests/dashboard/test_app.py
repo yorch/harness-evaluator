@@ -237,3 +237,220 @@ class TestDashboardEmpty:
         assert resp.status_code == 200
         data = resp.json()
         assert data["runs"] == []
+
+
+class TestDashboardTokenAuth:
+    """Tests for optional bearer-token authentication."""
+
+    TOKEN = "s3cret-token-abc123"
+
+    @pytest.fixture
+    def authed_client(self, store_with_results):
+        """Dashboard with token auth enabled."""
+        app = create_app(results_db=store_with_results, token=self.TOKEN)
+        return TestClient(app)
+
+    def test_no_token_returns_401(self, authed_client):
+        """Requests without a token are rejected."""
+        resp = authed_client.get("/api/runs")
+        assert resp.status_code == 401
+        assert "WWW-Authenticate" in resp.headers
+
+    def test_wrong_token_returns_401(self, authed_client):
+        """Requests with the wrong token are rejected."""
+        resp = authed_client.get(
+            "/api/runs", headers={"Authorization": "Bearer wrong-token"}
+        )
+        assert resp.status_code == 401
+
+    def test_valid_bearer_header(self, authed_client):
+        """Valid token in Authorization header grants access."""
+        resp = authed_client.get(
+            "/api/runs", headers={"Authorization": f"Bearer {self.TOKEN}"}
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["runs"]) == 1
+
+    def test_valid_token_query_param(self, authed_client):
+        """Valid token in ?token= query param grants access."""
+        resp = authed_client.get(f"/api/runs?token={self.TOKEN}")
+        assert resp.status_code == 200
+
+    def test_html_request_returns_html_401(self, authed_client):
+        """Browser requests get an HTML 401 page, not JSON."""
+        resp = authed_client.get("/", headers={"Accept": "text/html"})
+        assert resp.status_code == 401
+        assert "text/html" in resp.headers.get("content-type", "")
+        assert "Unauthorized" in resp.text
+
+    def test_no_token_means_no_auth(self, store_with_results):
+        """When token=None, all requests work as before (backward compat)."""
+        app = create_app(results_db=store_with_results)
+        client = TestClient(app)
+        resp = client.get("/api/runs")
+        assert resp.status_code == 200
+
+    def test_token_protected_all_routes(self, authed_client):
+        """Every route requires the token, not just /api/runs."""
+        routes = [
+            "/",
+            "/run/test-run",
+            "/api/runs",
+            "/api/run/test-run",
+            "/api/run/test-run/leaderboard",
+            "/api/run/test-run/status",
+        ]
+        for route in routes:
+            resp = authed_client.get(route)
+            assert resp.status_code == 401, f"Route {route} should require token"
+
+    def test_empty_token_means_no_auth(self, store_with_results):
+        """Empty string token is treated as None (no auth)."""
+        app = create_app(results_db=store_with_results, token="")
+        client = TestClient(app)
+        resp = client.get("/api/runs")
+        assert resp.status_code == 200
+
+    def test_whitespace_token_means_no_auth(self, store_with_results):
+        """Whitespace-only token is treated as None (no auth)."""
+        app = create_app(results_db=store_with_results, token="   ")
+        client = TestClient(app)
+        resp = client.get("/api/runs")
+        assert resp.status_code == 200
+
+    def test_bearer_header_takes_precedence(self, authed_client):
+        """Authorization header is checked before cookie/query param."""
+        resp = authed_client.get(
+            f"/api/runs?token={self.TOKEN}",
+            headers={"Authorization": "Bearer wrong"},
+        )
+        assert resp.status_code == 401
+
+    def test_token_not_in_response(self, authed_client):
+        """The token must not leak into response bodies or headers."""
+        resp = authed_client.get(
+            "/api/runs", headers={"Authorization": f"Bearer {self.TOKEN}"}
+        )
+        assert self.TOKEN not in resp.text
+
+    def test_unified_401_message(self, authed_client):
+        """Missing and wrong tokens return the same error message (no info leak)."""
+        resp_missing = authed_client.get("/api/runs")
+        resp_wrong = authed_client.get(
+            "/api/runs", headers={"Authorization": "Bearer wrong"}
+        )
+        # Both should have the same detail message
+        assert resp_missing.json()["detail"] == resp_wrong.json()["detail"]
+
+    def test_case_insensitive_bearer_prefix(self, authed_client):
+        """Bearer prefix matching is case-insensitive."""
+        for prefix in ("Bearer", "bearer", "BEARER", "BeArEr"):
+            resp = authed_client.get(
+                "/api/runs",
+                headers={"Authorization": f"{prefix} {self.TOKEN}"},
+            )
+            assert resp.status_code == 200, f"Prefix '{prefix}' should work"
+
+    def test_empty_bearer_token_rejected(self, authed_client):
+        """'Authorization: Bearer ' (empty after prefix) is rejected."""
+        resp = authed_client.get(
+            "/api/runs", headers={"Authorization": "Bearer "}
+        )
+        assert resp.status_code == 401
+
+    def test_docs_disabled_when_authed(self, store_with_results):
+        """OpenAPI/docs endpoints are disabled when auth is on."""
+        app = create_app(results_db=store_with_results, token=self.TOKEN)
+        # The docs routes should not be registered in the app's router.
+        route_paths = {route.path for route in app.routes}
+        assert "/docs" not in route_paths
+        assert "/redoc" not in route_paths
+        assert "/openapi.json" not in route_paths
+
+    def test_docs_available_when_no_auth(self, store_with_results):
+        """OpenAPI/docs endpoints are available when no auth is configured."""
+        app = create_app(results_db=store_with_results)
+        client = TestClient(app)
+        resp = client.get("/openapi.json")
+        assert resp.status_code == 200
+
+
+class TestDashboardCookieAuth:
+    """Tests for the cookie-based browser auth flow."""
+
+    TOKEN = "s3cret-cookie-token"
+
+    @pytest.fixture
+    def authed_client(self, store_with_results):
+        app = create_app(results_db=store_with_results, token=self.TOKEN)
+        return TestClient(app)
+
+    def test_login_with_valid_token_sets_cookie(self, authed_client):
+        """GET /login?token=valid sets a cookie and redirects to /."""
+        resp = authed_client.get(
+            f"/login?token={self.TOKEN}", follow_redirects=False
+        )
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/"
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "dashboard_token=" in set_cookie
+        assert "HttpOnly" in set_cookie
+
+    def test_login_with_wrong_token_shows_form(self, authed_client):
+        """GET /login?token=wrong shows the login form (no cookie set)."""
+        resp = authed_client.get("/login?token=wrong", follow_redirects=False)
+        assert resp.status_code == 200
+        assert "Login" in resp.text
+        assert "dashboard_token" not in resp.headers.get("set-cookie", "")
+
+    def test_login_without_token_shows_form(self, authed_client):
+        """GET /login with no token shows the login form."""
+        resp = authed_client.get("/login", follow_redirects=False)
+        assert resp.status_code == 200
+        assert "<form" in resp.text
+
+    def test_cookie_grants_access(self, authed_client):
+        """A valid dashboard_token cookie grants access to all routes."""
+        # First, get the cookie via /login
+        resp = authed_client.get(
+            f"/login?token={self.TOKEN}", follow_redirects=False
+        )
+        cookie_value = resp.cookies.get("dashboard_token")
+        assert cookie_value == self.TOKEN
+
+        # Use the cookie for subsequent requests
+        resp = authed_client.get(
+            "/api/runs", cookies={"dashboard_token": cookie_value}
+        )
+        assert resp.status_code == 200
+
+    def test_wrong_cookie_rejected(self, authed_client):
+        """An invalid cookie value is rejected."""
+        resp = authed_client.get(
+            "/api/runs", cookies={"dashboard_token": "wrong-value"}
+        )
+        assert resp.status_code == 401
+
+    def test_logout_clears_cookie(self, authed_client):
+        """GET /logout clears the auth cookie."""
+        resp = authed_client.get("/logout", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/login"
+        set_cookie = resp.headers.get("set-cookie", "")
+        assert "dashboard_token=" in set_cookie
+        # Cookie is being deleted (empty value or expired)
+        assert '""' in set_cookie or "Max-Age=0" in set_cookie or "expires=" in set_cookie.lower()
+
+    def test_login_redirects_when_no_auth(self, store_with_results):
+        """When auth is disabled, /login redirects to /."""
+        app = create_app(results_db=store_with_results)
+        client = TestClient(app)
+        resp = client.get("/login", follow_redirects=False)
+        assert resp.status_code == 302
+        assert resp.headers["location"] == "/"
+
+    def test_login_form_does_not_leak_token(self, authed_client):
+        """The login form page must not contain the expected token."""
+        resp = authed_client.get("/login")
+        assert self.TOKEN not in resp.text
