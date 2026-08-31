@@ -324,6 +324,39 @@ class TestCodexGetCommand:
         assert "/codex" in chatgpt_flag
         assert not any("openai_base_url=" in f for f in config_flags)
 
+    def test_codex_chatgpt_mode_preserves_trace_prefix(
+        self, tmp_path: Path
+    ) -> None:
+        """The /__trace__/<id>/ prefix must survive the /v1 -> /codex rewrite.
+
+        _codex_gateway_url() rewrites the path on an already-trace-prefixed
+        URL. If the trace prefix were dropped, per-cell cost attribution
+        would silently break even though runs still succeed.
+        """
+        model = ModelSpec(
+            name="gpt-4o",
+            provider="openai",
+            api_key_env="OPENAI_API_KEY",
+            auth_mode=AuthMode.CODEX_CHATGPT,
+        )
+        adapter = CodexAdapter(
+            workdir=str(tmp_path),
+            model=model,
+            gateway_url="http://host.docker.internal:8877",
+            trace_id="cell-42",
+        )
+        cmd = adapter.get_command("do thing")
+        config_flags = [
+            cmd[i + 1] for i, c in enumerate(cmd) if c == "-c"
+        ]
+        chatgpt_flag = next(
+            f for f in config_flags if "chatgpt_base_url=" in f
+        )
+        assert chatgpt_flag == (
+            "chatgpt_base_url=http://host.docker.internal:8877"
+            "/__trace__/cell-42/codex"
+        ), f"unexpected chatgpt_base_url flag: {chatgpt_flag}"
+
 
 # ---------------------------------------------------------------------------
 # Gateway proxy _detect_provider tests

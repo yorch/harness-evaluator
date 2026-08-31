@@ -515,3 +515,136 @@ class TestOpenEndedEvaluatorGateway:
         assert trace_id_val == cell.cell_id, (
             f"trace_id should be {cell.cell_id}, got {trace_id_val}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 8: Secrets are redacted from harness stdout/stderr in run_cell result
+# ---------------------------------------------------------------------------
+
+
+class TestRedactionApplied:
+    async def test_secrets_redacted_from_harness_stdout_and_stderr(
+        self,
+        runner: DockerRunner,
+        tmp_path: Any,
+    ):
+        """Secrets in raw harness output must be redacted in run_cell's result.
+
+        Verifies that the secret IS present in the raw CompletedProcess
+        (pre-sanitization) and is NOT present in the sanitized result dict.
+        A pathological sanitize_output that always returns "[REDACTED]"
+        would fail the exact-substring assertions below.
+        """
+        from harness_evaluator.evaluator.open_ended import OpenEndedResult
+
+        secret_value = "sk-secret-abcdef123456"
+
+        raw_stdout = f"Config: ANTHROPIC_API_KEY={secret_value}\n"
+        raw_stderr = f"Authorization: Bearer {secret_value}\n"
+
+        open_task = TaskSpec(
+            id="redact-1",
+            name="Redaction task",
+            track=TaskTrack.OPEN_ENDED,
+            task_prompt="Do something",
+            timeout_seconds=60,
+        )
+
+        harness = HarnessSpec(
+            name="claude-code",
+            adapter="claude-code",
+            config={},
+            observability_tier="partial",
+        )
+        model = ModelSpec(
+            name="claude-sonnet-4-20250514",
+            provider="anthropic",
+            api_key_env="ANTHROPIC_API_KEY",
+        )
+        cell = RunCell(
+            run_name="redact-test",
+            harness=harness,
+            model=model,
+            task=open_task,
+            repeat=0,
+        )
+
+        workdir = runner.workdir_base / cell.cell_id
+        workdir.mkdir(parents=True, exist_ok=True)
+
+        mock_eval_instance = MagicMock()
+        mock_eval_instance.evaluate = AsyncMock(
+            return_value=OpenEndedResult(
+                exit_class="fail",
+                success=0.0,
+                error_class="no_change",
+                diff="",
+            )
+        )
+
+        mock_adapter = MagicMock()
+        mock_adapter.get_env.return_value = {"PATH": "/usr/bin"}
+        mock_adapter.get_command.return_value = ["echo", "hello"]
+        mock_adapter.cleanup = AsyncMock()
+
+        docker_results = [
+            _make_completed(stdout="cid\n"),  # docker run
+            _make_completed(  # harness exec — contains secrets
+                stdout=raw_stdout,
+                stderr=raw_stderr,
+            ),
+            _make_completed(stdout=""),  # docker stop
+        ]
+
+        git_results = [
+            MagicMock(returncode=0, stdout="", stderr=""),  # git init
+            MagicMock(returncode=0, stdout="", stderr=""),  # git config email
+            MagicMock(returncode=0, stdout="", stderr=""),  # git config name
+            MagicMock(returncode=0, stdout="", stderr=""),  # git add
+            MagicMock(returncode=0, stdout="", stderr=""),  # git commit
+        ]
+
+        with (
+            patch(
+                "harness_evaluator.evaluator.open_ended.OpenEndedEvaluator",
+                return_value=mock_eval_instance,
+            ),
+            patch(
+                "harness_evaluator.runner.docker._run_subprocess",
+                new_callable=AsyncMock,
+                side_effect=docker_results,
+            ),
+            patch("harness_evaluator.runner.docker.subprocess.run") as mock_run,
+            patch(
+                "harness_evaluator.adapters.registry.create_adapter",
+                return_value=mock_adapter,
+            ),
+        ):
+            mock_run.side_effect = git_results
+            result = await runner.run_cell(cell)
+
+        # The secret must be present in the raw (pre-sanitization) output.
+        assert secret_value in raw_stdout, (
+            "secret should be in raw stdout before sanitization"
+        )
+        assert secret_value in raw_stderr, (
+            "secret should be in raw stderr before sanitization"
+        )
+
+        # The secret must NOT appear in the sanitized result.
+        assert secret_value not in result["harness_stdout"], (
+            f"secret leaked into harness_stdout: {result['harness_stdout']}"
+        )
+        assert "[REDACTED]" in result["harness_stdout"], (
+            f"expected [REDACTED] in harness_stdout: {result['harness_stdout']}"
+        )
+
+        # Exact redacted substring assertions.
+        assert "ANTHROPIC_API_KEY=[REDACTED]" in result["harness_stdout"], (
+            f"expected ANTHROPIC_API_KEY=[REDACTED] in "
+            f"harness_stdout: {result['harness_stdout']}"
+        )
+        assert "Bearer [REDACTED]" in result["harness_stderr"], (
+            f"expected Bearer [REDACTED] in "
+            f"harness_stderr: {result['harness_stderr']}"
+        )

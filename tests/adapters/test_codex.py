@@ -141,3 +141,50 @@ class TestCodexGetCommand:
         ]
         assert base_url_args
         assert "/__trace__/reg-cell/" in base_url_args[0]
+
+    def test_command_default_sandbox_is_workspace_write(
+        self, tmp_workdir, openai_model
+    ) -> None:
+        """The default sandbox mode is workspace-write."""
+        adapter = create_adapter(
+            "codex",
+            workdir=str(tmp_workdir),
+            model=openai_model,
+        )
+        assert adapter is not None
+        cmd = adapter.get_command("fix the bug")
+        assert "--sandbox" in cmd
+        assert cmd[cmd.index("--sandbox") + 1] == "workspace-write"
+
+    def test_command_honors_custom_sandbox(
+        self, tmp_workdir, openai_model
+    ) -> None:
+        """A custom sandbox value from config is forwarded to codex."""
+        adapter = create_adapter(
+            "codex",
+            workdir=str(tmp_workdir),
+            model=openai_model,
+            config={"sandbox": "read-only"},
+        )
+        assert adapter is not None
+        cmd = adapter.get_command("fix the bug")
+        assert cmd[cmd.index("--sandbox") + 1] == "read-only"
+
+    def test_command_honors_config_overrides(
+        self, tmp_workdir, openai_model
+    ) -> None:
+        """Extra -c key=value overrides from config are appended."""
+        adapter = create_adapter(
+            "codex",
+            workdir=str(tmp_workdir),
+            model=openai_model,
+            config={"config_overrides": {"model_reasoning_effort": "high"}},
+        )
+        assert adapter is not None
+        cmd = adapter.get_command("fix the bug")
+        config_flags = [
+            cmd[i + 1] for i, c in enumerate(cmd) if c == "-c"
+        ]
+        assert any(
+            "model_reasoning_effort=high" in f for f in config_flags
+        ), f"config_override missing: {config_flags}"
