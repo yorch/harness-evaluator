@@ -73,6 +73,8 @@ harness-evaluator run <config> [options]
 |--------|------|---------|-------------|
 | `--dry-run` | flag | `False` | Print the eval matrix without executing |
 | `--check-gateway` / `--no-check-gateway` | flag | `True` | Preflight: check that the gateway is reachable |
+| `--verbose` / `-v` | count | `0` | Increase logging verbosity (`-v`=INFO, `-vv`=DEBUG) |
+| `--progress` / `--no-progress` | flag | `True` | Show a live progress panel during the run (auto-off in non-TTY) |
 
 ### Examples
 
@@ -88,6 +90,15 @@ harness-evaluator run runs/sample-run.yaml
 
 # Skip gateway preflight check
 harness-evaluator run runs/sample-run.yaml --no-check-gateway
+
+# Disable the live progress panel (e.g. for CI logs)
+harness-evaluator run runs/sample-run.yaml --no-progress
+
+# Show per-cell INFO logs (retries, budget, gateway calls)
+harness-evaluator run runs/sample-run.yaml -v
+
+# Show DEBUG-level detail (adapter/docker internals)
+harness-evaluator run runs/sample-run.yaml -vv
 ```
 
 ### Output
@@ -99,7 +110,25 @@ Run: broad-first-pass
   Repeats: 5
   Total cells: 1000
 Gateway reachable on port 8877
+```
 
+During the run, a live progress panel is shown (auto-off in non-TTY/CI):
+
+```
+╭─────────────────────── Eval Progress ───────────────────────╮
+│ ████████████░░░░░░░░░░░░░░░░░░░  120/1000 (12.0%)          │
+│ ✓ 100  ✗ 15  ⊘ 5  ► 1                                       │
+│ Cost: $1.2340 / $100.00  |  Elapsed: 342s                   │
+│ Running: opencode__claude-sonnet-4-...__swe-bugfix-003__r0  │
+╰─────────────────────────────────────────────────────────────╯
+```
+
+The panel shows: a progress bar, completed/failed/skipped/running counts,
+cumulative cost (with budget cap if set), elapsed time, and the current
+cell ID (or running count for parallel runs). Use `--no-progress` to
+disable it, or `-v`/`-vv` to add per-cell log lines alongside it.
+
+```
 Run complete
   Passed: 600
   Failed: 400
@@ -154,6 +183,7 @@ harness-evaluator gateway [options]
 | `--host` | string | `127.0.0.1` | Host to bind to |
 | `--port` | int | `8877` | Port to bind to |
 | `--db` | string | `harness_evaluator_gateway.db` | SQLite DB path for captured calls |
+| `--verbose` / `-v` | count | `0` | Increase logging verbosity (`-v`=INFO, `-vv`=DEBUG) |
 
 ### Examples
 
@@ -166,6 +196,9 @@ harness-evaluator gateway --host 0.0.0.0 --port 8877
 
 # Custom database path
 harness-evaluator gateway --db /data/harness_evaluator_gateway.db
+
+# Show per-call INFO logs (model, tokens, cost per captured call)
+harness-evaluator gateway -v
 ```
 
 ## harness-evaluator canary
