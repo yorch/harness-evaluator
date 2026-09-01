@@ -61,33 +61,44 @@ The SWE evaluator (`src/harness_evaluator/evaluator/swe.py`) evaluates tasks wit
 | `partial` | Some tests pass (0 < success < 1.0) | `fail` |
 | `overfit` | 0 tests pass, diff looks overfit (short diff + hardcoded values) | `fail` |
 | `timeout` | Test command timed out | `fail` |
-| `refusal` | Diff contains refusal patterns ("I cannot help", `NotImplementedError`) | `fail` |
+| `refusal` | Diff contains natural-language refusal patterns ("I cannot help", "I'm unable to") | `fail` |
 | `wrong_approach` | 0 tests pass, doesn't look overfit | `fail` |
 | `crash` | Test runner crashed or collected 0 tests | `fail` |
 | `no_change` | No diff produced | `fail` |
 
 ### Overfit detection
 
-The `_looks_like_overfit` heuristic flags suspicious diffs:
+The `_looks_like_overfit` heuristic flags suspicious diffs. It is deliberately
+conservative to avoid false positives on ordinary correct code:
 
-- Diff is very short (< 10 lines)
-- Contains hardcoded expected values (`if.*==.*\d+`)
-- Returns a constant (`return\s+\d+`)
+- The diff is very short (fewer than 6 added lines).
+- An added line contains a literal constant matched by
+  `(?:==|return)\s*['\"]?([A-Za-z0-9_]{2,})['\"]?` (i.e. a value compared or
+  returned, not any `if x == 0` / `return 0` pattern).
+- That literal also appears verbatim in the visible test output — the strong
+  signal of hardcoding to a specific test case.
 
-This is a heuristic, not a definitive classification. It helps flag cases where a harness might be overfitting to visible test output rather than solving the underlying problem.
+All three conditions must hold. This is a heuristic, not a definitive
+classification. It helps flag cases where a harness might be overfitting to
+visible test output rather than solving the underlying problem.
 
 ### Refusal detection
 
-The evaluator checks the diff for refusal patterns:
+The evaluator checks only **added** diff lines (`+`, excluding `+++` headers)
+for natural-language refusal phrases:
 
 ```python
 refusal_patterns = [
-    r"I cannot (help|modify|change)",
+    r"I cannot (help|modify|change|assist)",
     r"I'm unable to",
+    r"I am unable to",
     r"This is not something I can",
-    r"raise NotImplementedError",
 ]
 ```
+
+`raise NotImplementedError` is **intentionally not** treated as a refusal — it
+is legitimate in abstract methods and stubs, so flagging it would misclassify
+correct boilerplate as a failure.
 
 If a refusal is detected, success is set to 0.0 and the error class is `refusal`.
 
@@ -103,13 +114,15 @@ This handles harnesses that commit, stage, or just modify files without staging.
 
 ### Test output parsing
 
-The parser supports two formats:
+The parser supports three formats, tried in order:
 
 **pytest**: Extracts `X passed`, `Y failed`, `Z errors` from the output via regex. Total = passed + failed + errors.
 
-**unittest**: Extracts `Ran X tests` and checks for `OK` or `FAILED`. Counts failures from `FAIL:`/`ERROR:` lines.
+**bun test**: Extracts `X pass` and `Y fail` (word-boundary matched, so it does not collide with pytest's `passed`/`failed`). Total = passed + failed.
 
-If no test output is parseable and the return code is 0, the evaluator returns `(0, 0)` — not `(1, 1)` — to prevent a test command like `true` from scoring 100%.
+**unittest**: Extracts `Ran X tests` and checks for `OK` or `FAILED`. Counts failures from the `failures=`/`errors=` summary, falling back to individual `FAIL:`/`ERROR:` lines.
+
+If no test output is parseable and the return code is 0, the evaluator returns `(0, 0)` — not `(1, 1)` — to prevent a test command like `true` from scoring 100%. A non-zero exit with no parseable output also returns `(0, 0)` so the caller can classify it as `crash` rather than `wrong_approach`.
 
 ## Open-ended track
 
