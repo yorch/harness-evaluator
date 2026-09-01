@@ -219,6 +219,53 @@ class TestFrozenJudge:
         # Without API key, returns placeholder
         assert result.error is None or "No API key" in (result.error or "")
 
+    async def test_call_anthropic_skips_thinking_block(self, open_ended_task):
+        """Models with adaptive thinking return a thinking block before the
+        text block. The judge must extract the text block, not the thinking
+        block (which has no "text" key and would yield empty scores)."""
+        judge = FrozenJudge(api_key="fake-key")
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                pass
+
+            def json(self) -> dict:
+                return {
+                    "content": [
+                        {"type": "thinking", "thinking": "Let me analyze..."},
+                        {
+                            "type": "text",
+                            "text": (
+                                '{"scores": {"correctness": 5}, '
+                                '"justifications": {"correctness": "Perfect"}, '
+                                '"overall_assessment": "Excellent"}'
+                            ),
+                        },
+                    ]
+                }
+
+        class FakeAsyncClient:
+            def __init__(self, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def post(self, url, headers=None, json=None):
+                return FakeResponse()
+
+        fake_httpx = type("FakeHttpx", (), {"AsyncClient": FakeAsyncClient})
+        result = await judge._call_anthropic(
+            "test prompt", trace_id=None, httpx=fake_httpx
+        )
+        assert "correctness" in result
+        assert "Excellent" in result
+        # Ensure the thinking content did not leak into the result
+        assert "Let me analyze" not in result
+
 
 class TestCalibrationSet:
     def test_add_anchor(self):
