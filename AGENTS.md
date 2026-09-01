@@ -141,9 +141,16 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
 
 1. Merge PRs to `main` with conventional commit titles (`feat:`, `fix:`, etc.)
 2. release-please automatically opens a "Release Please" PR that bumps
-   `pyproject.toml` version, updates `CHANGELOG.md`, and syncs `uv.lock` and
-   `site/src/pages/index.astro` (configured as `extra-files` in
-   `release-please-config.json`)
+   `pyproject.toml`, `src/harness_evaluator/__init__.py` and
+   `.release-please-manifest.json`, and updates `CHANGELOG.md`
+
+   > **Known gap**: `uv.lock` and `site/src/pages/index.astro` are listed as
+   > `extra-files` but are *not* updated — the generic updater only rewrites
+   > lines carrying an `x-release-please-version` annotation, and neither file
+   > has one. `index.astro` holds no version so this is harmless there, but
+   > `uv.lock` records the project version and goes stale every release, so the
+   > next `uv sync` leaves a dirty tree. Bump it by hand or run `uv lock` after
+   > a release until the workflow does it.
 3. Merge the Release Please PR → creates a `v*` tag + GitHub Release, then
    publishes to PyPI and pushes a version-tagged Docker image (all within
    `release-please.yml`)

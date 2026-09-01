@@ -131,6 +131,11 @@ class OpenCodeAdapter(BaseAdapter):
                 return usage
         return None
 
+    # OpenCode reaches every provider through the Vercel AI SDK, whose baseURL
+    # convention includes the version segment: it appends ``/messages`` or
+    # ``/chat/completions`` to whatever base it is given, not ``/v1/messages``.
+    base_url_includes_version = True
+
     def get_command(self, task_prompt: str) -> list[str]:
         """Return the opencode command list for execution inside a container."""
         # When running inside Docker, the binary is on the container PATH.

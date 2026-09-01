@@ -28,5 +28,7 @@ gateway_port: 8877
 gateway_db: "harness_evaluator_gateway.db"
 results_db: "harness_evaluator_results.db"
 workdir: "./harness_evaluator_workdir"
-docker_image: "harness-evaluator-runner:latest"
+# Uses the pre-built GHCR image (what the docs tell you to pull). To use a
+# locally built image, replace this with "harness-evaluator-runner:latest".
+docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"
 parallel_runs: 1

@@ -436,6 +436,30 @@ Output:
 6. Add the harness to the Dockerfile (`npm install -g ...`)
 7. Add tests in `tests/adapters/`
 
+### Base URL convention: `base_url_includes_version`
+
+HTTP clients disagree about where the `/v1` segment belongs. The Anthropic SDK
+(Claude Code) takes `https://api.anthropic.com` and requests `/v1/messages`; the
+Vercel AI SDK (OpenCode) takes `https://api.anthropic.com/v1` and requests
+`/messages`.
+
+The gateway routes on `/v1/...`, so a harness in the second group must be handed
+a base URL that already ends in `/v1`. Set the class attribute:
+
+```python
+class MyHarnessAdapter(BaseAdapter):
+    base_url_includes_version = True
+```
+
+Get this wrong and the failure is quiet rather than loud: every request 404s, so
+the cell finishes having made **no** API call, reporting zero tokens, zero cost
+and "no changes were made to the repo" — which reads like a model that did
+nothing rather than a misconfiguration. If a harness reports no captured API
+calls, check the gateway log for `Unknown API path` before looking anywhere else.
+
+OpenAI-compatible endpoints are always `/v1`-inclusive and are handled
+automatically, whatever this flag says.
+
 ### Example minimal adapter
 
 ```python

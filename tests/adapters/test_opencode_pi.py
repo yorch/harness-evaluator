@@ -96,6 +96,13 @@ class TestOpenCodeGatewayEnv:
     def test_anthropic_gateway_env_with_trace(
         self, tmp_workdir, anthropic_model
     ) -> None:
+        """OpenCode + anthropic provider + trace_id gets the /v1 suffix.
+
+        This previously asserted a base URL without ``/v1``, matching what the
+        code did rather than what OpenCode needs: its AI SDK client then
+        requested ``/messages``, the gateway answered 404, and the cell made no
+        API call at all. The openai case below has always expected ``/v1``.
+        """
         adapter = OpenCodeAdapter(
             workdir=str(tmp_workdir),
             model=anthropic_model,
@@ -104,7 +111,7 @@ class TestOpenCodeGatewayEnv:
         )
         env = adapter.get_env()
         assert env["ANTHROPIC_BASE_URL"] == (
-            "http://127.0.0.1:8877/__trace__/oc-cell-1"
+            "http://127.0.0.1:8877/__trace__/oc-cell-1/v1"
         )
         assert env["HARNESS_EVALUATOR_TRACE_ID"] == "oc-cell-1"
 
