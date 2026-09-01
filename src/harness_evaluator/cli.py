@@ -15,6 +15,7 @@ import yaml
 from pydantic import ValidationError
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -313,9 +314,9 @@ def run(
     # actionable — they just must not arrive wrapped in a traceback.
     try:
         cfg = RunConfig.from_yaml(config)
-    except (yaml.YAMLError, ValidationError, ValueError, OSError) as exc:
-        console.print(f"[bold red]Error: Invalid config {config}[/bold red]")
-        console.print(f"[red]{exc}[/red]")
+    except (yaml.YAMLError, ValidationError, ValueError, TypeError, OSError) as exc:
+        console.print(f"[bold red]Error: Invalid config {escape(config)}[/bold red]")
+        console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(1) from exc
 
     console.print(f"[bold]Run:[/bold] {cfg.name}")
@@ -325,9 +326,9 @@ def run(
 
     try:
         cells = cfg.build_matrix()
-    except (ValueError, FileNotFoundError) as exc:
+    except (ValueError, TypeError, OSError) as exc:
         console.print("\n[bold red]Error: Cannot build the eval matrix[/bold red]")
-        console.print(f"[red]{exc}[/red]")
+        console.print(f"[red]{escape(str(exc))}[/red]")
         raise typer.Exit(1) from exc
 
     console.print(f"  Total cells: {len(cells)}")
