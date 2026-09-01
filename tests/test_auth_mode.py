@@ -20,7 +20,7 @@ from harness_evaluator.gateway.models import Provider
 from harness_evaluator.gateway.proxy import GatewayProxy
 from harness_evaluator.gateway.store import CallStore
 from harness_evaluator.orchestrator.config import AuthMode, ModelSpec, RunConfig
-from harness_evaluator.runner.docker import DockerRunner
+from harness_evaluator.runner.docker import CONTAINER_HOME_DIRNAME, DockerRunner
 
 # ---------------------------------------------------------------------------
 # AuthMode enum
@@ -667,11 +667,16 @@ class TestCommitChangesExcludesCredentials:
         assert ":(exclude).codex" in add_args
 
     @patch("harness_evaluator.runner.docker.subprocess.run")
-    def test_no_exclude_paths_no_exclude_flags(
+    def test_container_home_excluded_without_credential_mounts(
         self,
         mock_subprocess: MagicMock,
         tmp_path: Path,
     ) -> None:
+        """The container HOME is excluded even with no credential mounts.
+
+        For tasks without a repo_url the repo dir is the workdir itself, so
+        harness state written to HOME would land in the evaluated diff.
+        """
         runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir()
@@ -681,7 +686,11 @@ class TestCommitChangesExcludesCredentials:
             if c[0][0][0] == "git" and "add" in c[0][0]
         ]
         add_args = add_calls[0][0][0]
-        assert not any("exclude" in str(a) for a in add_args)
+        assert f":(exclude){CONTAINER_HOME_DIRNAME}" in add_args
+        assert not any(
+            "exclude" in str(a) and CONTAINER_HOME_DIRNAME not in str(a)
+            for a in add_args
+        )
 
 
 # ---------------------------------------------------------------------------

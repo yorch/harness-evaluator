@@ -172,6 +172,114 @@ class TestCloneRepoRelativePath:
 
 
 # ---------------------------------------------------------------------------
+# Test 2b: _clone_repo resolves against the configured task library root
+# ---------------------------------------------------------------------------
+
+
+class TestCloneRepoTaskLibraryRoot:
+    @staticmethod
+    def _cell(task: TaskSpec) -> RunCell:
+        return RunCell(
+            run_name="test",
+            harness=HarnessSpec(
+                name="h", adapter="claude-code", config={}, observability_tier="partial"
+            ),
+            model=ModelSpec(
+                name="m", provider="anthropic", api_key_env="ANTHROPIC_API_KEY"
+            ),
+            task=task,
+            repeat=0,
+        )
+
+    @staticmethod
+    def _make_library(tmp_path: Any) -> Any:
+        """Build a task library outside any source checkout."""
+        lib_root = tmp_path / "lib"
+        repo_src = lib_root / "repos" / "custom-001"
+        repo_src.mkdir(parents=True)
+        (repo_src / "main.py").write_text("print('hello')\n")
+        return lib_root
+
+    async def test_clone_repo_uses_task_library_root(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ):
+        """A relative repo_url resolves under task_library_root, not under a
+        __file__-derived project root (which does not exist in a wheel).
+        """
+        lib_root = self._make_library(tmp_path)
+        runner = DockerRunner(
+            workdir_base=str(tmp_path / "workdir"),
+            task_library_root=str(lib_root),
+        )
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+
+        # cwd must not influence resolution.
+        monkeypatch.chdir("/tmp")
+
+        task = TaskSpec(
+            id="custom-001",
+            name="Custom task",
+            track=TaskTrack.SWE,
+            repo_url="tasks/repos/custom-001",
+            task_prompt="Fix it",
+            test_command="python -m pytest",
+        )
+
+        await runner._clone_repo(self._cell(task), workdir)
+
+        repo_dir = workdir / "repo"
+        assert (repo_dir / "main.py").exists()
+        assert (repo_dir / ".git").exists()
+
+    async def test_clone_repo_accepts_absolute_repo_url(self, tmp_path: Any):
+        """expand_tasks() absolutizes repo_url before the runner sees it."""
+        lib_root = self._make_library(tmp_path)
+        runner = DockerRunner(
+            workdir_base=str(tmp_path / "workdir"),
+            task_library_root=str(lib_root),
+        )
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+
+        task = TaskSpec(
+            id="custom-001",
+            name="Custom task",
+            track=TaskTrack.SWE,
+            repo_url=str(lib_root / "repos" / "custom-001"),
+            task_prompt="Fix it",
+            test_command="python -m pytest",
+        )
+
+        await runner._clone_repo(self._cell(task), workdir)
+
+        assert (workdir / "repo" / "main.py").exists()
+
+    async def test_clone_repo_rejects_traversal_repo_url(self, tmp_path: Any):
+        lib_root = self._make_library(tmp_path)
+        runner = DockerRunner(
+            workdir_base=str(tmp_path / "workdir"),
+            task_library_root=str(lib_root),
+        )
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+
+        task = TaskSpec(
+            id="evil-001",
+            name="Evil task",
+            track=TaskTrack.SWE,
+            repo_url="../../etc",
+            task_prompt="Fix it",
+            test_command="python -m pytest",
+        )
+
+        with pytest.raises(ValueError, match="escapes the task library root"):
+            await runner._clone_repo(self._cell(task), workdir)
+
+        assert not (workdir / "repo").exists()
+
+
+# ---------------------------------------------------------------------------
 # Test 3: setup.sh is written to workdir before container launch
 # ---------------------------------------------------------------------------
 

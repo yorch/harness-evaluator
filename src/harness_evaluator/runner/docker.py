@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -34,6 +35,8 @@ from harness_evaluator.orchestrator.config import (
     PhaseSpec,
     RunCell,
     TaskTrack,
+    default_task_library,
+    resolve_task_repo_path,
 )
 from harness_evaluator.orchestrator.engine import RetryableError
 from harness_evaluator.runner.redaction import sanitize_output
@@ -42,6 +45,15 @@ logger = logging.getLogger(__name__)
 
 # Workspace path inside the container (workdir is mounted here).
 CONTAINER_WORKSPACE = "/workspace"
+
+# HOME inside the container. The adapter env allowlist forwards the *host*
+# HOME, which either does not exist in the container or is not writable by
+# the run user -- opencode hard-fails there (EACCES creating its config dir)
+# and codex warns. Point HOME at a directory inside the mounted workspace so
+# it is writable, and keep it out of the repo subdirectory so harness state
+# never lands in the evaluated diff.
+CONTAINER_HOME_DIRNAME = ".home"
+CONTAINER_HOME = f"{CONTAINER_WORKSPACE}/{CONTAINER_HOME_DIRNAME}"
 
 # Repo subdirectory inside the container workspace.
 CONTAINER_REPO = "/workspace/repo"
@@ -124,6 +136,19 @@ class RunResult:
     duration_ms: float
 
 
+def _default_run_as_user() -> str | None:
+    """Return ``uid:gid`` of the invoking user, or None where unavailable.
+
+    ``os.getuid``/``os.getgid`` do not exist on Windows; there we omit
+    ``--user`` and leave Docker's default behaviour intact.
+    """
+    getuid = getattr(os, "getuid", None)
+    getgid = getattr(os, "getgid", None)
+    if getuid is None or getgid is None:
+        return None
+    return f"{getuid()}:{getgid()}"
+
+
 class DockerRunner:
     """Runs harnesses in Docker containers.
 
@@ -153,6 +178,8 @@ class DockerRunner:
         memory_limit: str | None = None,
         cpu_limit: str | None = None,
         use_host_network: bool = False,
+        task_library_root: str | None = None,
+        run_as_user: str | None = None,
     ) -> None:
         self.image = image
         self.workdir_base = Path(workdir_base)
@@ -165,6 +192,8 @@ class DockerRunner:
         self.memory_limit = memory_limit
         self.cpu_limit = cpu_limit
         self.use_host_network = use_host_network
+        self.task_library_root = task_library_root
+        self.run_as_user = run_as_user or _default_run_as_user()
         self.workdir_base.mkdir(parents=True, exist_ok=True)
 
     async def run_cell(self, cell: RunCell) -> dict[str, Any]:
@@ -507,19 +536,14 @@ class DockerRunner:
             await self._git_checkout(dest, cell.task.repo_commit)
             return
 
-        # Local path → resolve relative to project root
-        project_root = Path(__file__).resolve().parents[3]
-        local_path = Path(repo_url)
-        if not local_path.is_absolute():
-            local_path = (project_root / local_path).resolve()
-            # Relative repo paths must stay within the project root — reject
-            # traversal like ``../../sensitive`` before copying the tree.
-            if not local_path.is_relative_to(project_root):
-                raise ValueError(
-                    f"Task repo_url '{repo_url}' escapes the project root."
-                )
-        else:
-            local_path = local_path.resolve()
+        # Local path → resolve against the task library root. Config's
+        # expand_tasks() normally absolutizes repo_url before we get here;
+        # this keeps a RunCell built directly (SDK use, tests) working, and
+        # resolving against the library rather than a __file__-derived project
+        # root is what makes the bundled tasks inside an installed wheel work.
+        local_path = resolve_task_repo_path(
+            repo_url, self.task_library_root or default_task_library()
+        )
         if not local_path.exists():
             raise FileNotFoundError(
                 f"Task repo not found: {repo_url} (resolved to "
@@ -694,9 +718,17 @@ class DockerRunner:
             # only needs file I/O and network access, not privileged
             # kernel operations.
             "--cap-drop=ALL",
-            "-v",
-            f"{workdir.resolve()}:{CONTAINER_WORKSPACE}",
         ]
+
+        # Run as the invoking host user. The image's own USER (uid 999) cannot
+        # write to the host-owned bind mount below, which fails every task
+        # whose harness edits a file; and host-side evaluation runs as the
+        # invoking user afterwards, so files the harness creates must be
+        # owned by them.
+        if self.run_as_user:
+            args.extend(["--user", self.run_as_user])
+
+        args.extend(["-v", f"{workdir.resolve()}:{CONTAINER_WORKSPACE}"])
 
         # Mount OAuth credential directories writable so subscription-
         # authenticated harnesses can refresh expired access tokens.
@@ -707,8 +739,9 @@ class DockerRunner:
 
         args.extend(["-w", CONTAINER_WORKSPACE])
 
-        # Pass allowlisted env vars via --env (NOT the whole host env)
-        for key, value in env.items():
+        # Pass allowlisted env vars via --env (NOT the whole host env).
+        # HOME is forced to a container-local path -- see CONTAINER_HOME.
+        for key, value in {**env, "HOME": CONTAINER_HOME}.items():
             args.extend(["--env", f"{key}={value}"])
 
         # Gateway reachability: use host.docker.internal with --add-host,
@@ -734,6 +767,39 @@ class DockerRunner:
         args.extend(["sleep", str(timeout + 30)])
         return args
 
+    def _prepare_container_home(self, workdir: Path) -> Path:
+        """Create the container's HOME inside the workdir, writable by the run user.
+
+        ``mkdir`` creates the directory as the *process* user, which is already
+        correct in the default case (the container runs as that same user). When
+        ``run_as_user`` is overridden the two differ, so realign ownership --
+        falling back to a permissive mode when this process cannot chown. The
+        directory holds per-cell harness scratch state and is recreated for
+        every cell, so a permissive mode here is preferable to a run in which
+        every harness fails to start.
+        """
+        home_dir = workdir / CONTAINER_HOME_DIRNAME
+        home_dir.mkdir(parents=True, exist_ok=True)
+        if not self.run_as_user:
+            return home_dir
+        uid_str, _, gid_str = self.run_as_user.partition(":")
+        try:
+            uid = int(uid_str)
+            gid = int(gid_str) if gid_str else uid
+        except ValueError:
+            # A username rather than a numeric id: we cannot resolve it to a
+            # host uid, so leave the directory as created.
+            return home_dir
+        getuid = getattr(os, "getuid", None)
+        getgid = getattr(os, "getgid", None)
+        if getuid is not None and getgid is not None and (uid, gid) == (getuid(), getgid()):
+            return home_dir
+        try:
+            os.chown(home_dir, uid, gid)
+        except (OSError, AttributeError):
+            home_dir.chmod(0o777)
+        return home_dir
+
     async def _start_container(
         self,
         workdir: Path,
@@ -747,6 +813,7 @@ class DockerRunner:
 
         Raises ``RuntimeError`` if the container fails to start.
         """
+        self._prepare_container_home(workdir)
         args = self._build_run_args(
             workdir, env, timeout, name, image, credential_mounts
         )
@@ -791,7 +858,10 @@ class DockerRunner:
             workdir_flag,
         ]
         if env:
-            for key, val in env.items():
+            # docker exec --env wins over the values set at docker run, so
+            # re-force HOME here too -- the per-phase env is rebuilt from the
+            # adapter and would otherwise reintroduce the host's HOME.
+            for key, val in {**env, "HOME": CONTAINER_HOME}.items():
                 exec_args.extend(["--env", f"{key}={val}"])
         exec_args.append(container_id)
         exec_args.extend(command)
@@ -1312,7 +1382,11 @@ class DockerRunner:
             capture_output=True,
         )
         # Exclude OAuth credential mount points from the commit so
-        # tokens are never captured in the diff (defense in depth).
+        # tokens are never captured in the diff (defense in depth), plus the
+        # container HOME: for tasks without a repo_url the repo dir *is* the
+        # workdir, so harness state written to HOME would otherwise be staged
+        # as part of the evaluated diff.
+        exclude_paths = [*(exclude_paths or []), CONTAINER_HOME_DIRNAME]
         add_args: list[str] = ["git", "add", "-A"]
         if exclude_paths:
             add_args.append("--")

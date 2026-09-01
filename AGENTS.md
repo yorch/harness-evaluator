@@ -12,7 +12,7 @@ uv run ruff check src/ tests/
 # Type check (fast, ~3s)
 uv run mypy src/harness_evaluator/
 
-# Tests (full suite ~60s, 638 tests)
+# Tests (full suite ~60s, 848 tests)
 uv run pytest tests/ -q
 
 # All gates at once — must pass before completing any change

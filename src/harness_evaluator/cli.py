@@ -401,6 +401,8 @@ def run(
         gateway_port=cfg.gateway_port,
         gateway_db=cfg.gateway_db,
         results_db=cfg.results_db,
+        task_library_root=cfg.task_library_path,
+        run_as_user=cfg.run_as_user,
     )
 
     # Check for already-completed cells (resumability) before starting the
