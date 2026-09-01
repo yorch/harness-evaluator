@@ -57,6 +57,22 @@ class AdapterInfo:
 class BaseAdapter(ABC):
     """Base class for harness adapters."""
 
+    base_url_includes_version: bool = False
+    """Whether this harness's HTTP client expects a ``/v1``-inclusive base URL.
+
+    Clients disagree on where the version segment belongs. The Anthropic SDK
+    (Claude Code) takes ``https://api.anthropic.com`` and requests
+    ``/v1/messages``; the Vercel AI SDK (OpenCode) takes
+    ``https://api.anthropic.com/v1`` and requests ``/messages``. The gateway
+    routes on ``/v1/...``, so a harness in the second group must be handed a
+    base URL that already ends in ``/v1`` -- otherwise every request 404s and
+    the cell finishes having made no API call, which reads as a model that did
+    nothing rather than as a misconfiguration.
+
+    OpenAI-compatible endpoints are always ``/v1``-inclusive and are handled
+    regardless of this flag.
+    """
+
     def __init__(
         self,
         workdir: str | Path,
@@ -126,20 +142,23 @@ class BaseAdapter(ABC):
         The gateway proxy strips the ``/__trace__/<id>`` prefix before
         forwarding upstream.
 
-        If no trace_id is set, returns the gateway URL unchanged.
-        Preserves any existing query parameters.
+        ``/v1`` is appended to the path when the harness's HTTP client expects a
+        base URL that already carries the version segment -- see
+        ``base_url_includes_version``. That happens independently of the trace
+        ID, so with no trace_id set the return value is the gateway URL plus any
+        such suffix, not necessarily the URL unchanged.
 
-        For the OpenAI provider, ``/v1`` is appended to the path so the
-        base URL ends with ``/v1`` (the gateway proxy routes
-        ``/v1/chat/completions`` and ``/v1/responses``).
+        Returns an empty string when no gateway is configured. Preserves any
+        existing query parameters.
         """
         if not self.gateway_url:
             return ""
         parsed = urlparse(self.gateway_url)
-        # Append /v1 to the path for OpenAI provider if not already present.
-        if self.model.provider == "openai" and not parsed.path.rstrip("/").endswith(
-            "/v1"
-        ):
+        # Every OpenAI-compatible client we drive takes a /v1-inclusive base
+        # (the gateway routes /v1/chat/completions and /v1/responses), and some
+        # harnesses use that convention for Anthropic too.
+        needs_v1 = self.model.provider == "openai" or self.base_url_includes_version
+        if needs_v1 and not parsed.path.rstrip("/").endswith("/v1"):
             parsed = parsed._replace(path=parsed.path.rstrip("/") + "/v1")
         if not self.trace_id:
             return urlunparse(parsed)

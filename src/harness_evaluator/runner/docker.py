@@ -361,10 +361,18 @@ class DockerRunner:
                         phase["num_api_calls"] = phase_api_calls
 
                 if num_api_calls == 0:
+                    # Do not name a single cause here. The obvious reading is
+                    # that the trace prefix did not survive, but a harness whose
+                    # client appends a different path than the gateway routes on
+                    # produces exactly the same symptom -- the requests arrive
+                    # and are refused, so nothing is attributed to the cell.
                     logger.warning(
-                        "No API calls found for cell %s; "
-                        "cost attribution will be zero. This may indicate "
-                        "trace ID propagation is not working.",
+                        "No API calls were captured for cell %s, so cost and "
+                        "token attribution will be zero. Check the gateway log: "
+                        "requests answered 4xx (e.g. 'Unknown API path') mean the "
+                        "harness reached the gateway but asked for a path it does "
+                        "not serve, while no requests at all mean the harness "
+                        "never reached it or the trace prefix was lost.",
                         cell.cell_id,
                     )
 

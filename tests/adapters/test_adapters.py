@@ -303,6 +303,61 @@ class TestAdapterEnvAllowlist:
         assert "PATH" in env
 
 
+class TestOpenCodeGatewayBaseUrl:
+    """OpenCode drives providers through the AI SDK, whose baseURL includes /v1.
+
+    Without the suffix it requests ``/messages``; the gateway routes on
+    ``/v1/...`` and answers 404, so the cell completes having made no API call.
+    """
+
+    def test_gateway_base_url_gets_v1_suffix(self, tmp_workdir, anthropic_model):
+        adapter = create_adapter(
+            "opencode",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+            gateway_url="http://host.docker.internal:8877",
+            trace_id="cell-1",
+        )
+        assert adapter is not None
+        url = adapter.get_env()["ANTHROPIC_BASE_URL"]
+        assert url.endswith("/v1")
+        # The trace prefix must survive: the gateway strips it to recover the
+        # real path, so the upstream request is /v1/messages.
+        assert "/__trace__/cell-1/" in url
+
+    def test_claude_code_base_url_left_alone(self, tmp_workdir, anthropic_model):
+        """Claude Code appends /v1/messages itself -- it must not get a second /v1."""
+        adapter = create_adapter(
+            "claude-code",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+            gateway_url="http://host.docker.internal:8877",
+            trace_id="cell-1",
+        )
+        assert adapter is not None
+        assert not adapter.get_env()["ANTHROPIC_BASE_URL"].endswith("/v1")
+
+    def test_suffix_not_doubled(self, tmp_workdir, anthropic_model):
+        adapter = create_adapter(
+            "opencode",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+            gateway_url="http://host.docker.internal:8877/v1",
+        )
+        assert adapter is not None
+        assert not adapter.get_env()["ANTHROPIC_BASE_URL"].endswith("/v1/v1")
+
+    def test_no_base_url_without_a_gateway(self, tmp_workdir, anthropic_model):
+        """Without a gateway, OpenCode keeps its own provider defaults."""
+        adapter = create_adapter(
+            "opencode",
+            workdir=str(tmp_workdir),
+            model=anthropic_model,
+        )
+        assert adapter is not None
+        assert "ANTHROPIC_BASE_URL" not in adapter.get_env()
+
+
 class TestAdapterPrepare:
     """Tests that adapter prepare() verifies harness installation."""
 
