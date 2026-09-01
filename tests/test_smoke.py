@@ -458,6 +458,7 @@ class TestCalibrateCommand:
             with (
                 patch.object(CalibrationSet, "calibrate", return_value=fake_result),
                 patch.object(asyncio, "run", return_value=fake_result),
+                patch("harness_evaluator.cli._validate_api_key", return_value=(True, "OK")),
             ):
                 result = runner.invoke(
                     app,
@@ -467,3 +468,67 @@ class TestCalibrateCommand:
         assert result.exit_code == 0
         assert "judge error" in result.stdout
         assert "HTTP 401" in result.stdout
+
+    def test_calibrate_aborts_on_invalid_key(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """`calibrate` should exit before calibration if the API key is invalid."""
+        cal_file = tmp_path / "cal.json"
+        cal_file.write_text('{"anchors": []}')
+
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "bad-key"}),
+            patch(
+                "harness_evaluator.cli._validate_api_key",
+                return_value=(False, "HTTP 401: API key is invalid."),
+            ),
+        ):
+            result = runner.invoke(
+                app,
+                ["calibrate", "--calibration-file", str(cal_file)],
+            )
+
+        assert result.exit_code == 1
+        assert "INVALID" in result.stdout
+        assert "Calibration aborted" in result.stdout
+
+
+class TestCheckKeysCommand:
+    def test_check_keys_no_keys_set(self) -> None:  # type: ignore[no-untyped-def]
+        """`check-keys` should report when no API keys are configured."""
+        import os
+
+        env = {
+            k: v for k, v in os.environ.items()
+            if k not in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY")
+        }
+        with patch.dict("os.environ", env, clear=True):
+            result = runner.invoke(app, ["check-keys"])
+        assert result.exit_code == 1
+        assert "No API keys found" in result.stdout
+
+    def test_check_keys_reports_valid(self) -> None:  # type: ignore[no-untyped-def]
+        """`check-keys` should report valid keys as valid."""
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-fake1234567890"}),
+            patch(
+                "harness_evaluator.cli._validate_api_key",
+                return_value=(True, "OK"),
+            ),
+        ):
+            result = runner.invoke(app, ["check-keys"])
+        assert result.exit_code == 0
+        assert "valid" in result.stdout
+        assert "All configured keys are valid" in result.stdout
+
+    def test_check_keys_reports_invalid(self) -> None:  # type: ignore[no-untyped-def]
+        """`check-keys` should exit 1 when a key is invalid."""
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "sk-fake1234567890"}),
+            patch(
+                "harness_evaluator.cli._validate_api_key",
+                return_value=(False, "HTTP 401: Incorrect API key provided"),
+            ),
+        ):
+            result = runner.invoke(app, ["check-keys"])
+        assert result.exit_code == 1
+        assert "INVALID" in result.stdout
+        assert "Incorrect API key" in result.stdout

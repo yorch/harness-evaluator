@@ -955,6 +955,98 @@ def dashboard(
     uvicorn.run(app, host=host, port=port, access_log=auth_token is None)
 
 
+def _validate_api_key(provider: str, api_key: str, model: str) -> tuple[bool, str]:
+    """Make a minimal API call to verify the key is valid.
+
+    Returns (ok, message). Uses a 1-token request to minimize cost.
+    """
+    import httpx
+
+    if provider == "anthropic":
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        body = {
+            "model": model,
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "Hi"}],
+        }
+        url = "https://api.anthropic.com/v1/messages"
+    elif provider == "openai":
+        headers = {
+            "authorization": f"Bearer {api_key}",
+            "content-type": "application/json",
+        }
+        body = {
+            "model": model,
+            "max_tokens": 1,
+            "messages": [{"role": "user", "content": "Hi"}],
+        }
+        url = "https://api.openai.com/v1/chat/completions"
+    else:
+        return False, f"Unknown provider: {provider}"
+
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(url, headers=headers, json=body)
+            if resp.status_code == 200:
+                return True, "OK"
+            data = resp.json()
+            err_msg = data.get("error", {}).get("message", resp.text[:200])
+            return False, f"HTTP {resp.status_code}: {err_msg}"
+    except httpx.HTTPError as e:
+        return False, f"Request failed: {e}"
+
+
+@app.command()
+def check_keys() -> None:
+    """Validate that ANTHROPIC_API_KEY and/or OPENAI_API_KEY are valid.
+
+    Makes a minimal (1-token) API call to each provider whose key is set.
+    Exits with code 1 if any configured key is invalid.
+    """
+    import os
+
+    providers: list[tuple[str, str, str]] = []
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        providers.append(("anthropic", anthropic_key, "claude-sonnet-5"))
+    else:
+        console.print("[dim]ANTHROPIC_API_KEY not set — skipping.[/dim]")
+
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    if openai_key:
+        providers.append(("openai", openai_key, "gpt-5.6-terra"))
+    else:
+        console.print("[dim]OPENAI_API_KEY not set — skipping.[/dim]")
+
+    if not providers:
+        console.print(
+            "[red]No API keys found in environment.[/red] "
+            "Set ANTHROPIC_API_KEY and/or OPENAI_API_KEY and re-run."
+        )
+        raise typer.Exit(1)
+
+    all_ok = True
+    for provider, key, model in providers:
+        masked = key[:8] + "…" + key[-4:] if len(key) > 12 else "***"
+        console.print(f"Checking {provider} ({masked})… ", end="")
+        ok, msg = _validate_api_key(provider, key, model)
+        if ok:
+            console.print("[green]valid[/green]")
+        else:
+            console.print(f"[red]INVALID[/red] — {msg}")
+            all_ok = False
+
+    if all_ok:
+        console.print("\n[green]All configured keys are valid.[/green]")
+    else:
+        console.print("\n[red]One or more keys are invalid.[/red]")
+        raise typer.Exit(1)
+
+
 @app.command()
 def calibrate(
     model: str = typer.Option("claude-sonnet-5", help="Judge model"),
@@ -980,6 +1072,20 @@ def calibrate(
         console.print(
             "[red]ANTHROPIC_API_KEY is not set.[/red] Calibration calls the judge "
             "model and requires an API key. Export it and re-run."
+        )
+        raise typer.Exit(1)
+
+    # Pre-flight: verify the key is valid before running the full
+    # calibration, so an auth failure is reported immediately instead
+    # of producing silent all-zero scores.
+    console.print("[dim]Validating API key…[/dim] ", end="")
+    ok, msg = _validate_api_key("anthropic", api_key, model)
+    if ok:
+        console.print("[green]valid[/green]")
+    else:
+        console.print(f"[red]INVALID[/red] — {msg}")
+        console.print(
+            "[red]Calibration aborted.[/red] Fix the API key and re-run."
         )
         raise typer.Exit(1)
 
