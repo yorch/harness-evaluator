@@ -460,9 +460,20 @@ class RunConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> RunConfig:
-        """Load run config from a YAML file."""
+        """Load run config from a YAML file.
+
+        Raises ``ValueError`` if the file is empty or does not parse to a
+        mapping -- ``cls(**data)`` would otherwise raise a ``TypeError`` about
+        arguments after ``**``, which says nothing useful to someone who just
+        mistyped a config.
+        """
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            found = "an empty file" if data is None else f"a {type(data).__name__}"
+            raise ValueError(
+                f"Run config must be a YAML mapping of settings; {path} is {found}."
+            )
         return cls(**data)
 
     def expand_tasks(self) -> list[TaskSpec]:

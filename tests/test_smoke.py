@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from harness_evaluator.cli import app
@@ -421,6 +422,99 @@ class TestInitCommand:
         result = runner.invoke(app, ["init", "--filename", str(cfg_path)])
         assert result.exit_code == 1
         assert cfg_path.read_text() == "existing"
+
+    def test_init_warns_that_wildcard_needs_a_review_model(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """The generated config must not recommend a selection it cannot run.
+
+        ``["*"]`` includes the multi-phase task, which needs a ``role: review``
+        model the starter config does not have.
+        """
+        cfg_path = tmp_path / "harness-evaluator.yaml"
+        runner.invoke(app, ["init", "--filename", str(cfg_path)])
+        text = cfg_path.read_text()
+        assert "role: review" in text
+        assert "multi-phase" in text
+
+
+class TestRunConfigErrors:
+    """Config problems must read as errors, not tracebacks."""
+
+    def test_malformed_config_reports_cleanly(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        cfg_path = tmp_path / "bad.yaml"
+        cfg_path.write_text('name: "bad"\nharnesses: "not-a-list"\n')
+        result = runner.invoke(app, ["run", str(cfg_path), "--dry-run"])
+        assert result.exit_code == 1
+        assert "Invalid config" in result.stdout
+        assert isinstance(result.exception, SystemExit)
+
+    def test_unknown_task_id_reports_cleanly(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        cfg_path = tmp_path / "harness-evaluator.yaml"
+        runner.invoke(app, ["init", "--filename", str(cfg_path)])
+        cfg_path.write_text(
+            cfg_path.read_text().replace("  - swe-bugfix-001", "  - does-not-exist")
+        )
+        result = runner.invoke(app, ["run", str(cfg_path), "--dry-run"])
+        assert result.exit_code == 1
+        assert "Cannot build the eval matrix" in result.stdout
+        assert "does-not-exist" in result.stdout
+        assert isinstance(result.exception, SystemExit)
+
+    def test_wildcard_without_review_model_reports_cleanly(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """The starter config plus ``["*"]`` -- the exact path a new user takes."""
+        cfg_path = tmp_path / "harness-evaluator.yaml"
+        runner.invoke(app, ["init", "--filename", str(cfg_path)])
+        cfg_path.write_text(
+            cfg_path.read_text().replace('tasks:\n  - swe-bugfix-001', 'tasks: ["*"]')
+        )
+        result = runner.invoke(app, ["run", str(cfg_path), "--dry-run"])
+        assert result.exit_code == 1
+        assert "role: review" in result.stdout
+        assert isinstance(result.exception, SystemExit)
+
+    def test_missing_config_file_still_reports_cleanly(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        result = runner.invoke(app, ["run", str(tmp_path / "nope.yaml"), "--dry-run"])
+        assert result.exit_code == 1
+        assert "Config file not found" in result.stdout
+        assert isinstance(result.exception, SystemExit)
+
+    @pytest.mark.parametrize(
+        ("body", "described_as"),
+        [("", "an empty file"), ("- a\n- b\n", "a list"), ("just a string\n", "a str")],
+    )
+    def test_non_mapping_config_reports_cleanly(
+        self, tmp_path, body: str, described_as: str
+    ) -> None:  # type: ignore[no-untyped-def]
+        """A config that is not a YAML mapping must not reach ``cls(**data)``.
+
+        That raised a TypeError about "arguments after **", which tells someone
+        who mistyped a config nothing at all.
+        """
+        cfg_path = tmp_path / "weird.yaml"
+        cfg_path.write_text(body)
+        result = runner.invoke(app, ["run", str(cfg_path), "--dry-run"])
+        assert result.exit_code == 1
+        # Rich hard-wraps to the terminal width, so compare on collapsed
+        # whitespace rather than against wherever the line happened to break.
+        flat = " ".join(result.stdout.split())
+        assert "Invalid config" in flat
+        assert described_as in flat
+        assert isinstance(result.exception, SystemExit)
+
+    def test_error_text_with_markup_does_not_crash_reporting(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """Exception text is escaped before going through Rich markup.
+
+        An unbalanced closing tag in the message would otherwise raise
+        MarkupError while reporting the original error.
+        """
+        cfg_path = tmp_path / "harness-evaluator.yaml"
+        runner.invoke(app, ["init", "--filename", str(cfg_path)])
+        cfg_path.write_text(
+            cfg_path.read_text().replace("  - swe-bugfix-001", "  - 'no[/red]such'")
+        )
+        result = runner.invoke(app, ["run", str(cfg_path), "--dry-run"])
+        assert result.exit_code == 1
+        assert isinstance(result.exception, SystemExit)
+        assert "Cannot build the eval matrix" in result.stdout
 
 
 class TestCalibrateCommand:
