@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.2](https://github.com/yorch/harness-evaluator/compare/v0.14.1...v0.14.2) (2026-09-01)
+
+
+### Bug Fixes
+
+* **adapters:** give OpenCode a /v1 gateway base URL so its calls are not 404s ([#57](https://github.com/yorch/harness-evaluator/issues/57)) ([309068f](https://github.com/yorch/harness-evaluator/commit/309068f31a242f5e8c2fc8596e0b53d716244bab))
+
 ## [0.14.1](https://github.com/yorch/harness-evaluator/compare/v0.14.0...v0.14.1) (2026-09-01)
 
 
