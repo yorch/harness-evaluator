@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/yorch/harness-evaluator/compare/v0.14.0...v0.14.1) (2026-09-01)
+
+
+### Bug Fixes
+
+* **cli:** report config errors cleanly and stop init recommending a broken run ([#55](https://github.com/yorch/harness-evaluator/issues/55)) ([9fc2d4c](https://github.com/yorch/harness-evaluator/commit/9fc2d4ca5cff339f1a2b6278393b9c2c4b866bb2))
+
 ## [0.14.0](https://github.com/yorch/harness-evaluator/compare/v0.13.0...v0.14.0) (2026-09-01)
 
 
