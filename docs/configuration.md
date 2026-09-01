@@ -115,7 +115,7 @@ Number of repeats per cell (harness × model × task). Default: 5. Each repeat i
 
 #### `budget_usd`
 
-Maximum total spend in USD. When set, the orchestrator uses a reserve-and-reconcile pattern to prevent overspending. Cells are skipped when the remaining budget is insufficient. Set to `null` or omit for no cap.
+Maximum total spend in USD. When set, the orchestrator uses a reserve-and-reconcile pattern to prevent overspending. Cells are skipped when the remaining budget is insufficient — except cells that are budget-exempt (see [`cost_mode`](#cost_mode) below), which are never skipped for lack of budget. Set to `null` or omit for no cap. See [Orchestrator → Budget management](orchestrator/#budget-management) for the exact admission-gate predicate and exemption rules.
 
 #### `parallel_runs`
 
@@ -622,7 +622,7 @@ instead of pay-per-token API billing.
 |-------|------|----------|-------------|
 | `auth_mode` | string | No | `api_key` (default), `claude_oauth`, or `codex_chatgpt` |
 | `credentials_path` | string | No | Path to an OAuth credential file on the host (for subscription auth) |
-| `cost_mode` | string | No | `platform` (default, pay-per-token) or `subscription` (zero-dollar token-only accounting) |
+| `cost_mode` | string | No | `platform` (default, pay-per-token) or `subscription` (budget-exempt; real cost still recorded) |
 
 ### `credentials_path`
 
@@ -644,10 +644,15 @@ harness will likely fail to authenticate).
 
 - `platform` (default): Standard pay-per-token cost accounting. Token usage is
   priced against the `DEFAULT_PRICING` table and counts against `budget_usd`.
-- `subscription`: The harness runs on a flat-rate subscription. Token usage is
-  still captured for analysis, but cost is recorded as $0 and does not count
-  against `budget_usd`. Use this when running on a ChatGPT or Claude Pro
-  subscription where you are not billed per token.
+- `subscription`: The harness runs on a flat-rate subscription. The real cost
+  is still computed and recorded in full — in `run_results.total_cost` and in
+  `progress.total_cost` — but the cell is exempt from the *dollar budget*:
+  its reservation is `$0.00`, it is never skipped for lack of budget, and its
+  cost is excluded from `get_billable_cost` (the figure checked against
+  `budget_usd`). Use this when running on a ChatGPT or Claude Pro
+  subscription where you are not billed per token. See
+  [Orchestrator → Budget exemption](orchestrator/#budget-exemption) for the
+  exact rules.
 
 ### Security considerations
 

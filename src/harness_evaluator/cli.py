@@ -8,13 +8,20 @@ import sys
 import time
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.table import Table
+
+if TYPE_CHECKING:
+    # tui.py is imported lazily at call time (see `run`, below) so that
+    # commands which never touch the TUI don't pay textual's import cost;
+    # this TYPE_CHECKING-only import lets `tui_app` still be annotated
+    # precisely instead of `Any`.
+    from harness_evaluator.tui import EvalApp
 
 app = typer.Typer(
     name="harness-evaluator",
@@ -230,11 +237,17 @@ def _render_progress_panel(
         f"[blue]► {progress.running}[/blue]"
     )
 
-    # Cost line
+    # Cost line. `progress.total_cost` is the informational "true cost of
+    # every cell" figure — it is NOT the figure charged against `budget`
+    # (budget-exempt cells, e.g. subscription-mode, are excluded from the
+    # budget arithmetic but still counted here), so the two are shown
+    # separately rather than as a "spent / cap" pair.
     if budget is not None:
-        cost_line = f"Cost: ${progress.total_cost:.4f} / ${budget:.2f}"
+        cost_line = (
+            f"Cost (informational): ${progress.total_cost:.4f}  |  Budget cap: ${budget:.2f}"
+        )
     else:
-        cost_line = f"Cost: ${progress.total_cost:.4f}"
+        cost_line = f"Cost (informational): ${progress.total_cost:.4f}"
 
     # Current cell line
     if progress.running > 0 and progress.current_cell:
@@ -400,56 +413,191 @@ def run(
             f"Use a different run name or delete {cfg.results_db} to start fresh.[/yellow]"
         )
 
-    # Decide whether to show the live TUI.
-    # Auto-off in non-TTY (CI, pipes) even if --progress was passed.
-    # --no-tui forces the Rich Live fallback (sequential, no Textual app).
+    # Decide the progress-display mode. Exactly one of these paths runs the
+    # orchestrator:
+    #   TTY + --progress (default) -> Textual TUI (EvalApp)
+    #   TUI panicked, no result    -> Rich `Live` panel (the genuine fallback)
+    #   TTY + --no-tui             -> Rich `Live` panel directly (Textual
+    #                                 skipped entirely, not attempted at all)
+    #   non-TTY or --no-progress   -> no live UI, run the orchestrator plainly
+    #
+    # The fallback is keyed on "did the TUI produce a result", NOT "did the
+    # TUI raise": Textual panics on a real startup failure internally and
+    # `App.run()` RETURNS None rather than raising, so branching on the
+    # exception alone leaves that case unreachable (a silent zero-cell
+    # "success"). Conversely, `App.run()` CAN raise after the eval worker
+    # has already completed and set a result (an error escaping Textual's
+    # shutdown phase) — discarding that result and falling back would
+    # re-run the whole matrix. Salvaging `tui_app.result` in both the
+    # success and exception paths handles that half.
+    #
+    # A `None` result alone is not enough, though: the app can also exit
+    # cleanly (return_code 0) without the worker ever reaching its
+    # `self._result = ...` assignment (e.g. it is cancelled in the same
+    # tick the worker was scheduled, or the worker raises before its own
+    # try/finally) — a real, if rare, shape. Re-running the whole matrix in
+    # that case would spend real money the user never asked for. Textual
+    # sets `return_code = 1` only on an internal panic and 0 on a normal
+    # `exit()`, so gating the fallback on `tui_app.return_code != 0` (or
+    # `tui_app is None`, when EvalApp itself never got constructed) tells
+    # "the TUI genuinely failed to run" apart from "the TUI exited without
+    # an answer" — the latter surfaces as the same honest "outcome unknown"
+    # exit as a fallback that itself produces nothing, rather than a
+    # silent, uncontrolled re-run.
     use_tui = show_progress and not no_tui and sys.stdout.isatty()
+    # --no-tui explicitly skips Textual but, unlike --no-progress, still
+    # wants a live display when the terminal can show one -- route straight
+    # to the same Rich Live panel the TUI falls back to on failure, rather
+    # than attempting (and never using) the TUI first.
+    want_live_panel = show_progress and no_tui and sys.stdout.isatty()
 
-    progress_result: Any = None
+    # Non-TTY runs default to WARNING (silent) at verbose=0. When the user
+    # asked for progress but no live UI is possible, floor the level at
+    # INFO so the run reports *something* between the matrix banner and the
+    # final summary instead of going dark end to end.
+    effective_verbose = verbose
+    if show_progress and not sys.stdout.isatty() and effective_verbose < 1:
+        effective_verbose = 1
+    _configure_logging(effective_verbose)
+
+    progress_result: OrchestratorProgress | None = None
+    tui_app: EvalApp | None = None
+    tui_panicked = False
 
     if use_tui:
         try:
             from harness_evaluator.tui import EvalApp
 
-            app = EvalApp(cfg, store, runner.run_cell, cells)
-            app.run()
-            progress_result = app.result
-        except ImportError:
-            # Textual not installed — fall back to Rich Live panel.
-            use_tui = False
+            tui_app = EvalApp(cfg, store, runner.run_cell, cells, verbose=verbose)
+            tui_app.run()
+        except Exception:
+            # textual is a hard dependency, so ImportError should not happen
+            # in practice, but Textual itself can still raise here — e.g. an
+            # error escaping the shutdown phase after the worker already
+            # completed. Log loudly (this is the only place a startup
+            # failure that DOES raise would otherwise go unreported) and
+            # fall through to salvage whatever result the app object holds.
+            logging.getLogger(__name__).exception(
+                "Textual TUI raised; salvaging any result it had already produced"
+            )
+        progress_result = tui_app.result if tui_app is not None else None
+        # tui_app.return_code: 0 on a normal exit() (worker finished, was
+        # cancelled cleanly, or never got far enough to run at all but the
+        # app itself still exited normally); 1 if Textual's own panic
+        # handler ran, for either a startup failure or a mid-run crash.
+        # `tui_app is None` means EvalApp's constructor itself raised.
+        tui_panicked = tui_app is None or tui_app.return_code != 0
+        # Restore logging: Textual's on_mount/on_unmount machinery replaces
+        # root handlers for the duration of the TUI, and a startup failure
+        # (which panics before on_mount ever runs) leaves on_unmount with
+        # nothing captured to restore, so it installs a bare stderr
+        # StreamHandler at WARNING (tui/app.py's on_unmount). Reconfigure
+        # so whatever runs next — the fallback's matrix run, or just the
+        # summary — honours -v/-vv through the same RichHandler again.
+        _configure_logging(effective_verbose)
 
-    if not use_tui and progress_result is None:
-        # Rich Live fallback (non-TTY or textual not installed).
-        _configure_logging(verbose)
+    if not show_progress or not sys.stdout.isatty():
+        # --no-progress, or non-TTY (CI, pipes): no live UI, run plainly.
+        # Deliberately NOT keyed on `use_tui` -- that would also be False
+        # for a TTY + --no-tui run, which wants the Live panel below, not
+        # this plain path.
+        orchestrator = Orchestrator(cfg, store, run_cell_fn=runner.run_cell)
+        progress_result = asyncio.run(orchestrator.run())
+    elif want_live_panel or (use_tui and progress_result is None and tui_panicked):
+        # Two ways in here: `want_live_panel` (--no-tui on a TTY, Textual
+        # never attempted at all) or the TUI genuinely failed to run (a
+        # real Textual startup failure, which panics internally and
+        # returns None without raising — the common case; a mid-run panic
+        # with nothing salvageable; or the constructor itself raising). In
+        # both cases the orchestrator has not run yet, so it is safe to
+        # start it now under the Rich Live panel.
+        if not want_live_panel:
+            logging.getLogger(__name__).warning(
+                "Textual TUI produced no result (startup may have failed); "
+                "falling back to the Rich Live panel"
+            )
         start_time = time.monotonic()
-        latest: list[OrchestratorProgress | None] = [None]
 
-        def on_progress(snapshot: OrchestratorProgress) -> None:
-            latest[0] = snapshot
-
-        def render() -> Panel:
-            snap = latest[0]
-            if snap is None:
-                snap = OrchestratorProgress(total_cells=len(cells))
+        def render(snapshot: OrchestratorProgress | None) -> Panel:
+            snap = (
+                snapshot if snapshot is not None else OrchestratorProgress(total_cells=len(cells))
+            )
             return _render_progress_panel(snap, start_time, cfg.budget_usd)
 
-        if show_progress and sys.stdout.isatty():
-            with Live(render(), console=console, refresh_per_second=4, transient=True):
-                orchestrator = Orchestrator(
-                    cfg, store, run_cell_fn=runner.run_cell, on_progress=on_progress
-                )
-                progress_result = asyncio.run(orchestrator.run())
-        else:
-            orchestrator = Orchestrator(cfg, store, run_cell_fn=runner.run_cell)
+        with Live(render(None), console=console, refresh_per_second=4, transient=True) as live:
+
+            def on_progress(snapshot: OrchestratorProgress) -> None:
+                live.update(render(snapshot))
+
+            orchestrator = Orchestrator(
+                cfg, store, run_cell_fn=runner.run_cell, on_progress=on_progress
+            )
             progress_result = asyncio.run(orchestrator.run())
+        # The fallback ran a fresh, complete cycle of its own; whatever the
+        # TUI did before is no longer relevant to how the summary reads.
+        tui_panicked = False
+    # else: either the TUI (or its except handler, salvaging a result set
+    # before a later failure) already ran the orchestrator, or it exited
+    # cleanly (return_code 0) without ever setting a result — a real but
+    # rare shape (e.g. quit in the same tick the worker was scheduled).
+    # Re-running the whole matrix there would spend money the user never
+    # asked for, so it is left to the "outcome unknown" guard below rather
+    # than treated as a startup failure worth retrying.
+
+    if progress_result is None:
+        # Still None: not "zero cells failed" but a genuinely unknown
+        # outcome (the TUI exited cleanly with nothing to report, or — in
+        # principle — the fallback's own orchestrator.run() itself
+        # returned nothing). Do not print a normal-looking summary for
+        # this — exit non-zero so `$?` and CI cannot mistake it for a
+        # clean run.
+        console.print(
+            "\n[bold red]Run outcome UNKNOWN[/bold red]: no final progress snapshot "
+            "was reported. This is NOT the same as zero cells failing — check\n"
+            f"  harness-evaluator results {cfg.name} --db {cfg.results_db}\n"
+            "for whatever was actually persisted before exiting."
+        )
+        raise typer.Exit(1)
 
     progress = progress_result
 
-    console.print("\n[bold green]Run complete[/bold green]")
+    if tui_panicked:
+        # A partial-but-non-None result reaching here means the TUI
+        # panicked mid-run (return_code 1) after the worker had already
+        # salvaged a partial snapshot — e.g. `self._result =
+        # orchestrator.progress` on a cancellation triggered by Textual's
+        # own crash. These numbers are real but incomplete; say so and
+        # exit non-zero rather than reading as a clean, complete run.
+        console.print(
+            "\n[bold red]Run interrupted[/bold red]: the TUI crashed before the run "
+            "finished. The numbers below are PARTIAL, not a completed run."
+        )
+    else:
+        console.print("\n[bold green]Run complete[/bold green]")
     console.print(f"  Passed: {progress.completed}")
     console.print(f"  Failed: {progress.failed}")
     console.print(f"  Skipped: {progress.skipped}")
-    console.print(f"  Cost: ${progress.total_cost:.4f}")
+    console.print(
+        f"  Total cost (informational, includes budget-exempt cells): "
+        f"${progress.total_cost:.4f}"
+    )
+    if cfg.budget_usd is not None:
+        # By this point the run is over and results are already persisted,
+        # so a transient failure of this read alone (e.g. `database is
+        # locked` under parallel_runs > 1 — engine.py guards the identical
+        # call for the same reason) must not abort the summary and exit 1
+        # on an otherwise-successful run; skip only this line.
+        try:
+            billable_cost: float | None = store.get_billable_cost(cfg.name)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to compute billable cost for run '%s' summary", cfg.name
+            )
+            billable_cost = None
+        if billable_cost is not None:
+            console.print(
+                f"  Billable cost: ${billable_cost:.4f} / ${cfg.budget_usd:.2f} budget cap"
+            )
 
     # Show skip reasons if any cells were skipped
     if progress.skip_reasons:
@@ -483,6 +631,11 @@ def run(
     console.print(f"    harness-evaluator stats {cfg.name} --db {cfg.results_db}")
     console.print("  [dim]Interactive dashboard:[/dim]")
     console.print(f"    harness-evaluator dashboard --db {cfg.results_db}")
+
+    if tui_panicked:
+        # Partial results from a mid-run TUI crash (see above): everything
+        # useful has now been printed, but this is not a clean run.
+        raise typer.Exit(1)
 
 
 @app.command()

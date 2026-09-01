@@ -75,6 +75,7 @@ harness-evaluator run <config> [options]
 | `--check-gateway` / `--no-check-gateway` | flag | `True` | Preflight: check that the gateway is reachable |
 | `--verbose` / `-v` | count | `0` | Increase logging verbosity (`-v`=INFO, `-vv`=DEBUG) |
 | `--progress` / `--no-progress` | flag | `True` | Show a live progress panel during the run (auto-off in non-TTY) |
+| `--no-tui` | flag | `False` | Skip the Textual TUI and use the Rich live panel instead (stays live on a TTY; the TUI's own fallback if it cannot start) |
 
 ### Examples
 
@@ -125,7 +126,7 @@ During the run, a Textual TUI is shown (auto-off in non-TTY/CI):
 ├─ Eval Progress ──────────────────────────────────────────┤
 │ ████████████░░░░░░░░  120/1000 (12.0%)                   │
 │ ✓ 100  ✗ 15  ⊘ 5  ► 1                                   │
-│ Cost: $1.2340 / $100.00  |  Elapsed: 342s                │
+│ Cost: $1.2340 (info) | Cap: $100.00  |  Elapsed: 5:42    │
 │ Running: opencode__claude-sonnet-5__swe-bugfix-003__r0  │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -135,8 +136,10 @@ The TUI has two regions:
   color-coded by level (INFO, WARN, ERROR). Auto-follows the tail; scroll
   up to pause, press `f` to resume.
 - **Progress footer** (bottom, fixed) — shows a progress bar,
-  completed/failed/skipped/running counts, cumulative cost (with budget
-  cap if set), elapsed time, and the current cell ID.
+  completed/failed/skipped/running counts, cumulative cost (labelled
+  `(info)`, distinct from the `Cap:` budget figure — see
+  [Budget exemption](orchestrator/#budget-exemption)), elapsed time, and
+  the current cell ID.
 
 Keyboard shortcuts:
 
@@ -148,8 +151,9 @@ Keyboard shortcuts:
 | `f` | Toggle auto-follow (tail mode) |
 
 The TUI defaults to INFO log level (more useful than the WARNING default
-of non-TUI mode, since the log area makes output readable). Use `-v` /
-`-vv` flags for the non-TUI fallback path.
+of non-TUI mode, since the log area makes output readable). `-v` / `-vv`
+are honoured on every path — the TUI, the non-TTY plain path, and the
+Rich `Live` fallback all reconfigure logging to the requested verbosity.
 
 When not a TTY (CI, pipes) or `--no-progress` is passed, the TUI is
 skipped and logs go to stderr via a Rich handler.
@@ -159,7 +163,8 @@ Run complete
   Passed: 600
   Failed: 400
   Skipped: 0
-  Cost: $12.3456
+  Total cost (informational, includes budget-exempt cells): $12.3456
+  Billable cost: $12.3456 / $100.00 budget cap
 
 Next steps
   View per-cell results:
@@ -171,6 +176,25 @@ Next steps
   Interactive dashboard:
     harness-evaluator dashboard --db harness_evaluator_results.db
 ```
+
+### Exit codes
+
+`harness-evaluator run` exits non-zero in two cases beyond an ordinary
+uncaught error:
+
+- **`Run outcome UNKNOWN`** (exit 1): no final progress snapshot could be
+  obtained at all — the TUI exited cleanly with nothing to report and,
+  where applicable, the fallback run also produced nothing. Not the same
+  as "zero cells failed"; check
+  `harness-evaluator results <run_name> --db <results_db>` for whatever
+  was actually persisted.
+- **`Run interrupted`** (exit 1): the TUI panicked mid-run after already
+  salvaging a partial (non-`None`) result. The printed counts are real
+  but incomplete — a partial run is reported honestly rather than as a
+  clean "Run complete".
+
+A normal completed run (all cells ran, whether they individually passed
+or failed) exits 0.
 
 ### Dry run output
 

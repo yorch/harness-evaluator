@@ -347,6 +347,65 @@ class TestDashboardAPI:
         assert "implement" in resp.text
         assert "Phase timed out" in resp.text
 
+    def test_run_detail_does_not_show_another_runs_phase_results(self, tmp_path):
+        """Two runs sharing a cell_id must not leak phase results across runs.
+
+        Regression test: ``_get_phase_results_for_cells`` had no ``run_name``
+        filter, so ``/run/{run_name}`` rendered phase rows belonging to any
+        other run that happened to share a ``cell_id`` (identical
+        harness/model/task/repeat). run-a here has a multi-phase result;
+        run-b shares the same cell_id but is single-phase (never calls
+        ``save_phase_results``) — its page must not show run-a's phase.
+        """
+        db_path = str(tmp_path / "phase_cross_run.db")
+        store = ResultsStore(db_path)
+
+        def _make_cell(run_name: str) -> RunCell:
+            return RunCell(
+                run_name=run_name,
+                harness=HarnessSpec(name="h", adapter="h"),
+                model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+                task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+                repeat=0,
+            )
+
+        cell_a = _make_cell("run-a")
+        cell_b = _make_cell("run-b")
+        assert cell_a.cell_id == cell_b.cell_id
+
+        store.save_result(cell=cell_a, exit_class="pass", success=1.0)
+        store.save_phase_results(
+            cell_id=cell_a.cell_id,
+            run_name="run-a",
+            phases=[
+                {
+                    "name": "run-a-only-phase",
+                    "trace_id": "tr-a",
+                    "model": "m",
+                    "model_role": "implementation",
+                    "exit_code": 0,
+                    "error": "run-a-only-error-marker",
+                }
+            ],
+        )
+        store.save_result(cell=cell_b, exit_class="pass", success=1.0)
+
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+        resp = client.get("/run/run-b")
+        assert resp.status_code == 200
+        assert "run-a-only-phase" not in resp.text
+        assert "run-a-only-error-marker" not in resp.text
+        # run-b never called save_phase_results, so its phase_results dict
+        # must be empty and the whole section must not render.
+        assert "Phase Details" not in resp.text
+
+        # And run-a's own page must still show it.
+        resp_a = client.get("/run/run-a")
+        assert resp_a.status_code == 200
+        assert "run-a-only-phase" in resp_a.text
+        assert "Phase Details" in resp_a.text
+
     def test_run_detail_error_message_xss_safe(self, tmp_path):
         """error_message with HTML payloads must be escaped in the dashboard."""
         db_path = str(tmp_path / "xss_err.db")
@@ -685,6 +744,99 @@ class TestDashboardCellDetail:
         """Cell detail returns 404 when the run doesn't exist."""
         resp = client.get("/run/nonexistent/cell/some-cell")
         assert resp.status_code == 404
+
+    def test_cell_detail_resolves_to_the_right_run_when_cell_id_is_shared(self, tmp_path):
+        """A cell_id shared by two runs must resolve to the right run's data.
+
+        Regression test for brief 1d: ``cell_detail`` has ``run_name`` in its
+        URL path but must actually pass it through to ``store.get_result``,
+        ``store.get_phase_results``, and ``store.get_reconciliation_result``
+        rather than falling back to whichever row happens to be first for a
+        bare ``cell_id`` lookup. Existing ``cell_detail`` tests all use
+        single-run DBs, where an unfiltered lookup would coincidentally
+        return the right answer anyway — this test uses two runs that share
+        the exact same ``cell_id`` (same harness/model/task/repeat) with
+        different results, phases, and reconciliation data for each, so an
+        unscoped lookup would return the wrong run's data for at least one
+        of them.
+        """
+        db_path = str(tmp_path / "cell_detail_cross_run.db")
+        store = ResultsStore(db_path)
+
+        def _make_cell(run_name: str) -> RunCell:
+            return RunCell(
+                run_name=run_name,
+                harness=HarnessSpec(name="h", adapter="h"),
+                model=ModelSpec(name="m", provider="anthropic", api_key_env="X"),
+                task=TaskSpec(id="t", name="T", track=TaskTrack.SWE, task_prompt="p"),
+                repeat=0,
+            )
+
+        cell_a = _make_cell("run-a")
+        cell_b = _make_cell("run-b")
+        assert cell_a.cell_id == cell_b.cell_id
+        cell_id = cell_a.cell_id
+
+        store.save_result(
+            cell=cell_a, exit_class="pass", success=1.0,
+            total_cost=1.0, error_message="run-a-error-marker",
+        )
+        store.save_phase_results(
+            cell_id=cell_id,
+            run_name="run-a",
+            phases=[
+                {
+                    "name": "run-a-phase-marker",
+                    "trace_id": "tr-a",
+                    "model": "m",
+                    "model_role": "implementation",
+                    "exit_code": 0,
+                    "error": None,
+                }
+            ],
+        )
+        store.save_reconciliation_result(
+            cell_id=cell_id, run_name="run-a", matched=True, max_discrepancy_pct=1.0,
+        )
+
+        store.save_result(
+            cell=cell_b, exit_class="fail", success=0.0,
+            total_cost=2.0, error_message="run-b-error-marker",
+        )
+        store.save_phase_results(
+            cell_id=cell_id,
+            run_name="run-b",
+            phases=[
+                {
+                    "name": "run-b-phase-marker",
+                    "trace_id": "tr-b",
+                    "model": "m",
+                    "model_role": "implementation",
+                    "exit_code": 1,
+                    "error": None,
+                }
+            ],
+        )
+        store.save_reconciliation_result(
+            cell_id=cell_id, run_name="run-b", matched=False, max_discrepancy_pct=42.0,
+        )
+
+        app = create_app(results_db=db_path)
+        client = TestClient(app)
+
+        resp_a = client.get(f"/run/run-a/cell/{cell_id}")
+        assert resp_a.status_code == 200
+        assert "run-a-error-marker" in resp_a.text
+        assert "run-b-error-marker" not in resp_a.text
+        assert "run-a-phase-marker" in resp_a.text
+        assert "run-b-phase-marker" not in resp_a.text
+
+        resp_b = client.get(f"/run/run-b/cell/{cell_id}")
+        assert resp_b.status_code == 200
+        assert "run-b-error-marker" in resp_b.text
+        assert "run-a-error-marker" not in resp_b.text
+        assert "run-b-phase-marker" in resp_b.text
+        assert "run-a-phase-marker" not in resp_b.text
 
     def test_cell_detail_shows_diff_and_test_output(self, tmp_path):
         """Cell detail page shows diff and test_output when present."""

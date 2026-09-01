@@ -177,7 +177,8 @@ Run complete
   Passed: 1
   Failed: 0
   Skipped: 0
-  Cost: $0.0037
+  Total cost (informational, includes budget-exempt cells): $0.0037
+  Billable cost: $0.0037 / $5.00 budget cap
 
 Next steps
   View per-cell results:

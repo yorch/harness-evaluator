@@ -426,6 +426,7 @@ def create_app(
         return cells
 
     def _get_phase_results_for_cells(
+        run_name: str,
         cell_ids: list[str],
     ) -> dict[str, list[dict[str, Any]]]:
         if not cell_ids:
@@ -433,9 +434,9 @@ def create_app(
         placeholders = ",".join("?" * len(cell_ids))
         with _get_db_conn() as conn:
             rows = conn.execute(
-                f"SELECT * FROM phase_results WHERE cell_id IN ({placeholders})"
+                f"SELECT * FROM phase_results WHERE run_name = ? AND cell_id IN ({placeholders})"
                 " ORDER BY cell_id, id ASC",
-                cell_ids,
+                [run_name, *cell_ids],
             ).fetchall()
         result: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
@@ -562,7 +563,9 @@ def create_app(
         )
 
         cell_ids = [r["cell_id"] for r in results]
-        phase_results = await asyncio.to_thread(_get_phase_results_for_cells, cell_ids)
+        phase_results = await asyncio.to_thread(
+            _get_phase_results_for_cells, run_name, cell_ids
+        )
         failed_cells = await asyncio.to_thread(_get_failed_cells, run_name)
 
         # Get live state (if run is in progress)
@@ -712,16 +715,16 @@ def create_app(
         if not await asyncio.to_thread(_run_exists, run_name):
             raise HTTPException(status_code=404, detail=f"Run '{run_name}' not found")
 
-        cell = await asyncio.to_thread(store.get_result, cell_id)
+        cell = await asyncio.to_thread(store.get_result, cell_id, run_name)
         if not cell or cell.get("run_name") != run_name:
             raise HTTPException(
                 status_code=404,
                 detail=f"Cell '{cell_id}' not found in run '{run_name}'",
             )
 
-        phases = await asyncio.to_thread(store.get_phase_results, cell_id)
+        phases = await asyncio.to_thread(store.get_phase_results, cell_id, run_name)
         reconciliation = await asyncio.to_thread(
-            store.get_reconciliation_result, cell_id
+            store.get_reconciliation_result, cell_id, run_name
         )
         theme = _get_theme(request)
         template = _env.get_template("cell_detail.html")
