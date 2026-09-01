@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/yorch/harness-evaluator/compare/v0.12.0...v0.13.0) (2026-09-01)
+
+
+### Features
+
+* **cli:** add --no-tui flag to run command ([#46](https://github.com/yorch/harness-evaluator/issues/46)) ([721973a](https://github.com/yorch/harness-evaluator/commit/721973a95f6eb06c62ebb128263036f87cae5120))
+
+
+### Bug Fixes
+
+* **evaluator:** extract text block from thinking-capable model responses ([#48](https://github.com/yorch/harness-evaluator/issues/48)) ([7e4c3f7](https://github.com/yorch/harness-evaluator/commit/7e4c3f75bdd3f96f4e04394974e0699750ab79f8))
+
 ## [0.12.0](https://github.com/yorch/harness-evaluator/compare/v0.11.1...v0.12.0) (2026-08-31)
 
 
