@@ -142,12 +142,14 @@ class BaseAdapter(ABC):
         The gateway proxy strips the ``/__trace__/<id>`` prefix before
         forwarding upstream.
 
-        If no trace_id is set, returns the gateway URL unchanged.
-        Preserves any existing query parameters.
+        ``/v1`` is appended to the path when the harness's HTTP client expects a
+        base URL that already carries the version segment -- see
+        ``base_url_includes_version``. That happens independently of the trace
+        ID, so with no trace_id set the return value is the gateway URL plus any
+        such suffix, not necessarily the URL unchanged.
 
-        ``/v1`` is appended to the path when the harness's HTTP client expects
-        a base URL that already carries the version segment -- see
-        ``base_url_includes_version``.
+        Returns an empty string when no gateway is configured. Preserves any
+        existing query parameters.
         """
         if not self.gateway_url:
             return ""
