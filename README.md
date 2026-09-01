@@ -42,6 +42,9 @@ docker pull ghcr.io/yorch/harness-evaluator-runner:latest
 export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 
+# 3a. Confirm the keys work before spending anything on a run
+harness-evaluator check-keys
+
 # 4. Start the gateway proxy (in a separate terminal)
 harness-evaluator gateway --port 8877
 

@@ -146,7 +146,7 @@ models:
     config:
       max_tokens: 16384
 
-# Task IDs from the bundled library (see `harness-evaluator` docs). Use ["*"] for all 20.
+# Task IDs from the bundled library (see `harness-evaluator` docs). Use ["*"] for every task.
 tasks:
   - swe-bugfix-001
 
