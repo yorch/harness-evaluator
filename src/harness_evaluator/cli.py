@@ -1058,6 +1058,8 @@ def calibrate(
             f"  {r['name']}: expected={r['expected_success']:.2f} "
             f"actual={r['actual_success']:.2f} {status}"
         )
+        if r.get("judge_error"):
+            console.print(f"    [red]judge error: {r['judge_error']}[/red]")
 
 
 if __name__ == "__main__":
