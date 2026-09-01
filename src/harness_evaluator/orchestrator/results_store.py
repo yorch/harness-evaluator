@@ -17,7 +17,7 @@ from harness_evaluator.orchestrator.config import RunCell
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS run_results (
-    cell_id TEXT PRIMARY KEY,
+    cell_id TEXT NOT NULL,
     run_name TEXT NOT NULL,
     harness TEXT NOT NULL,
     model TEXT NOT NULL,
@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS run_results (
     harness_stdout TEXT,
     harness_stderr TEXT,
     timestamp TEXT NOT NULL,
-    retry_count INTEGER DEFAULT 0
+    retry_count INTEGER DEFAULT 0,
+    cost_mode TEXT DEFAULT 'platform',
+    PRIMARY KEY (run_name, cell_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_run_name ON run_results(run_name);
@@ -52,12 +54,13 @@ CREATE INDEX IF NOT EXISTS idx_harness_model ON run_results(harness, model);
 CREATE INDEX IF NOT EXISTS idx_task ON run_results(task_id);
 
 CREATE TABLE IF NOT EXISTS run_state (
-    cell_id TEXT PRIMARY KEY,
+    cell_id TEXT NOT NULL,
     run_name TEXT NOT NULL,
     status TEXT NOT NULL,
     started_at TEXT,
     completed_at TEXT,
-    error TEXT
+    error TEXT,
+    PRIMARY KEY (run_name, cell_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_run_state_name ON run_state(run_name);
@@ -89,14 +92,15 @@ CREATE TABLE IF NOT EXISTS phase_results (
     stdout TEXT,
     stderr TEXT,
     timestamp TEXT NOT NULL,
-    FOREIGN KEY (cell_id) REFERENCES run_results(cell_id)
+    FOREIGN KEY (run_name, cell_id) REFERENCES run_results(run_name, cell_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_phase_cell ON phase_results(cell_id);
 CREATE INDEX IF NOT EXISTS idx_phase_run ON phase_results(run_name);
+CREATE INDEX IF NOT EXISTS idx_phase_run_cell ON phase_results(run_name, cell_id);
 
 CREATE TABLE IF NOT EXISTS reconciliation_results (
-    cell_id TEXT NOT NULL PRIMARY KEY,
+    cell_id TEXT NOT NULL,
     run_name TEXT NOT NULL,
     proxy_usage_json TEXT,
     self_reported_usage_json TEXT,
@@ -104,19 +108,133 @@ CREATE TABLE IF NOT EXISTS reconciliation_results (
     max_discrepancy_pct REAL NOT NULL,
     details_json TEXT,
     timestamp TEXT NOT NULL,
-    FOREIGN KEY (cell_id) REFERENCES run_results(cell_id)
+    PRIMARY KEY (run_name, cell_id),
+    FOREIGN KEY (run_name, cell_id) REFERENCES run_results(run_name, cell_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_recon_run ON reconciliation_results(run_name);
 """
 
 # Columns added after initial schema; added via ALTER TABLE for existing DBs.
+# ``_apply_migrations`` guards every entry with a ``PRAGMA table_info``
+# existence check, so re-running this list against a DB that already has a
+# column (e.g. one created fresh from ``SCHEMA``) is a no-op, not an error.
 _MIGRATIONS = [
     ("run_results", "harness_stdout", "TEXT"),
     ("run_results", "harness_stderr", "TEXT"),
     ("phase_results", "stdout", "TEXT"),
     ("phase_results", "stderr", "TEXT"),
+    ("run_results", "cost_mode", "TEXT DEFAULT 'platform'"),
 ]
+
+# Tables whose primary key changed from a bare ``cell_id`` to a composite
+# ``(run_name, cell_id)``. Maps table name to (new-table CREATE TABLE SQL,
+# index-recreation statements to run once the rebuilt table has been renamed
+# back into place).
+_LEGACY_PK_REBUILD: dict[str, tuple[str, list[str]]] = {
+    "run_results": (
+        """
+        CREATE TABLE run_results_new (
+            cell_id TEXT NOT NULL,
+            run_name TEXT NOT NULL,
+            harness TEXT NOT NULL,
+            model TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            track TEXT NOT NULL,
+            repeat INTEGER NOT NULL,
+            exit_class TEXT NOT NULL,
+            success REAL NOT NULL,
+            error_class TEXT,
+            error_message TEXT,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            cache_read_tokens INTEGER DEFAULT 0,
+            cache_write_tokens INTEGER DEFAULT 0,
+            reasoning_tokens INTEGER DEFAULT 0,
+            total_cost REAL DEFAULT 0.0,
+            latency_ms REAL DEFAULT 0.0,
+            time_to_first_attempt_ms REAL DEFAULT 0.0,
+            num_api_calls INTEGER DEFAULT 0,
+            num_tool_calls INTEGER DEFAULT 0,
+            diff TEXT,
+            test_output TEXT,
+            harness_metadata TEXT,
+            harness_stdout TEXT,
+            harness_stderr TEXT,
+            timestamp TEXT NOT NULL,
+            retry_count INTEGER DEFAULT 0,
+            cost_mode TEXT DEFAULT 'platform',
+            PRIMARY KEY (run_name, cell_id)
+        )
+        """,
+        [
+            "CREATE INDEX IF NOT EXISTS idx_run_name ON run_results(run_name)",
+            "CREATE INDEX IF NOT EXISTS idx_harness_model ON run_results(harness, model)",
+            "CREATE INDEX IF NOT EXISTS idx_task ON run_results(task_id)",
+        ],
+    ),
+    "run_state": (
+        """
+        CREATE TABLE run_state_new (
+            cell_id TEXT NOT NULL,
+            run_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            error TEXT,
+            PRIMARY KEY (run_name, cell_id)
+        )
+        """,
+        ["CREATE INDEX IF NOT EXISTS idx_run_state_name ON run_state(run_name)"],
+    ),
+    "reconciliation_results": (
+        """
+        CREATE TABLE reconciliation_results_new (
+            cell_id TEXT NOT NULL,
+            run_name TEXT NOT NULL,
+            proxy_usage_json TEXT,
+            self_reported_usage_json TEXT,
+            matched INTEGER NOT NULL,
+            max_discrepancy_pct REAL NOT NULL,
+            details_json TEXT,
+            timestamp TEXT NOT NULL,
+            PRIMARY KEY (run_name, cell_id),
+            FOREIGN KEY (run_name, cell_id) REFERENCES run_results(run_name, cell_id)
+        )
+        """,
+        ["CREATE INDEX IF NOT EXISTS idx_recon_run ON reconciliation_results(run_name)"],
+    ),
+    "phase_results": (
+        """
+        CREATE TABLE phase_results_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cell_id TEXT NOT NULL,
+            run_name TEXT NOT NULL,
+            phase_name TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            model TEXT NOT NULL,
+            model_role TEXT NOT NULL,
+            exit_code INTEGER NOT NULL,
+            duration_ms REAL DEFAULT 0.0,
+            timed_out INTEGER DEFAULT 0,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            total_cost REAL DEFAULT 0.0,
+            num_api_calls INTEGER DEFAULT 0,
+            error TEXT,
+            stdout TEXT,
+            stderr TEXT,
+            timestamp TEXT NOT NULL,
+            FOREIGN KEY (run_name, cell_id) REFERENCES run_results(run_name, cell_id)
+        )
+        """,
+        [
+            "CREATE INDEX IF NOT EXISTS idx_phase_cell ON phase_results(cell_id)",
+            "CREATE INDEX IF NOT EXISTS idx_phase_run ON phase_results(run_name)",
+            "CREATE INDEX IF NOT EXISTS idx_phase_run_cell ON phase_results(run_name, cell_id)",
+        ],
+    ),
+}
 
 
 class ResultsStore:
@@ -130,8 +248,158 @@ class ResultsStore:
     def _init_db(self) -> None:
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.executescript(SCHEMA)
+            self._rebuild_legacy_pk_tables(conn)
             self._apply_migrations(conn)
             conn.commit()
+
+    @staticmethod
+    def _default_literal_for(col_type: str) -> str:
+        """A SQL literal to satisfy a ``NOT NULL`` column the legacy row can't supply.
+
+        Used both when a legacy table predates a column the new schema
+        requires, and when a legacy row holds NULL in a column the new
+        schema marks ``NOT NULL``. No schema this project has ever shipped
+        actually lacks or nulls these columns (the initial schema already
+        declared e.g. ``timestamp`` and ``run_name`` as ``NOT NULL``); this
+        exists to tolerate hand-rolled or third-party partial schemas, such
+        as the fixtures in ``tests/test_smoke.py``, rather than bricking the
+        store on them. Picks a literal by SQLite type affinity: ``0`` for
+        integer/real/numeric columns, ``''`` for everything else (text and
+        otherwise untyped).
+        """
+        affinity = col_type.upper()
+        if any(token in affinity for token in ("INT", "REAL", "FLOA", "DOUB", "NUM")):
+            return "0"
+        return "''"
+
+    @staticmethod
+    def _phase_results_needs_rebuild(conn: sqlite3.Connection) -> bool:
+        """Detect a ``phase_results`` table still on the legacy single-column FK.
+
+        Unlike ``run_results``/``run_state``/``reconciliation_results``,
+        ``phase_results`` keys off its own ``id`` (``INTEGER PRIMARY KEY
+        AUTOINCREMENT``), not ``cell_id`` — so the "exactly one pk column
+        named cell_id" check the other three tables use does not apply here.
+        Instead this inspects ``PRAGMA foreign_key_list``: a legacy table has
+        a single-column FK to ``run_results(cell_id)`` (one row); an
+        already-migrated or freshly created table has the composite FK to
+        ``run_results(run_name, cell_id)`` (two rows, one per referencing
+        column).
+        """
+        fk_rows = conn.execute("PRAGMA foreign_key_list(phase_results)").fetchall()
+        return len(fk_rows) == 1
+
+    @staticmethod
+    def _rebuild_legacy_pk_tables(conn: sqlite3.Connection) -> None:
+        """Rebuild tables still using the legacy single-column ``cell_id`` key.
+
+        Older databases (created before runs were made first-class) have
+        ``run_results``, ``run_state``, and ``reconciliation_results`` keyed
+        on ``cell_id`` alone, so two runs sharing a matrix cell overwrite
+        each other's rows; and ``phase_results`` referencing ``run_results``
+        by ``cell_id`` alone, which becomes an unsatisfiable FK once
+        ``run_results`` no longer has a unique index on ``cell_id`` by
+        itself. This detects the first three via ``PRAGMA table_info``
+        (exactly one ``pk`` column, named ``cell_id``) and ``phase_results``
+        via ``_phase_results_needs_rebuild`` (its PK is ``id``, not
+        ``cell_id``, so the same check doesn't apply), then rebuilds each
+        with the composite ``(run_name, cell_id)`` key, preserving every
+        existing row (and, for ``phase_results``, its existing ``id``s).
+
+        A table already on the composite key is left untouched, so calling
+        this on every ``_init_db`` (including against a freshly created DB,
+        whose tables come out of ``SCHEMA`` already on the new key) is a
+        no-op. A legacy DB that already had two runs collide on the same
+        ``cell_id`` cannot be un-collided here — whichever row is on disk is
+        the one that survives the rebuild.
+
+        ``PRAGMA foreign_keys`` is a no-op inside a transaction, so it is
+        toggled off before ``BEGIN`` and restored to whatever it was
+        beforehand (not unconditionally back on) once the transaction has
+        committed or rolled back.
+        """
+        legacy_tables = []
+        for table in _LEGACY_PK_REBUILD:
+            if table == "phase_results":
+                if ResultsStore._phase_results_needs_rebuild(conn):
+                    legacy_tables.append(table)
+                continue
+            pk_columns = [
+                row[1]
+                for row in sorted(
+                    conn.execute(f"PRAGMA table_info({table})").fetchall(),
+                    key=lambda row: row[5],
+                )
+                if row[5] > 0
+            ]
+            if pk_columns == ["cell_id"]:
+                legacy_tables.append(table)
+
+        if not legacy_tables:
+            return
+
+        prior_foreign_keys = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+        conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            conn.execute("BEGIN")
+            try:
+                for table in legacy_tables:
+                    new_table_sql, index_statements = _LEGACY_PK_REBUILD[table]
+                    new_table = f"{table}_new"
+                    conn.execute(new_table_sql)
+
+                    old_columns = {
+                        row[1]
+                        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+                    }
+                    new_table_info = conn.execute(
+                        f"PRAGMA table_info({new_table})"
+                    ).fetchall()
+
+                    # Columns present in both tables are copied verbatim,
+                    # unless the new schema marks the column NOT NULL, in
+                    # which case a COALESCE substitutes a literal placeholder
+                    # for any NULL the legacy row might hold (a legacy DB can
+                    # have the column but a NULL value in it — copying it
+                    # verbatim would fail the NOT NULL constraint on INSERT).
+                    # A column missing from the legacy table entirely is left
+                    # out of the INSERT so it takes its declared default,
+                    # unless the new schema marks it NOT NULL, in which case
+                    # the same literal placeholder fills the gap outright.
+                    insert_columns = []
+                    select_exprs = []
+                    for row in new_table_info:
+                        name, col_type, notnull = row[1], row[2], row[3]
+                        if name in old_columns:
+                            insert_columns.append(name)
+                            if notnull:
+                                default_literal = ResultsStore._default_literal_for(col_type)
+                                select_exprs.append(f"COALESCE({name}, {default_literal})")
+                            else:
+                                select_exprs.append(name)
+                        elif notnull:
+                            insert_columns.append(name)
+                            select_exprs.append(
+                                ResultsStore._default_literal_for(col_type)
+                            )
+
+                    insert_cols_sql = ", ".join(insert_columns)
+                    select_exprs_sql = ", ".join(select_exprs)
+                    conn.execute(
+                        f"INSERT INTO {new_table} ({insert_cols_sql}) "
+                        f"SELECT {select_exprs_sql} FROM {table}"
+                    )
+                    conn.execute(f"DROP TABLE {table}")
+                    conn.execute(f"ALTER TABLE {new_table} RENAME TO {table}")
+                    for statement in index_statements:
+                        conn.execute(statement)
+            except BaseException:
+                conn.rollback()
+                raise
+            else:
+                conn.commit()
+        finally:
+            conn.execute(f"PRAGMA foreign_keys = {prior_foreign_keys}")
 
     @staticmethod
     def _apply_migrations(conn: sqlite3.Connection) -> None:
@@ -206,8 +474,8 @@ class ResultsStore:
                     reasoning_tokens, total_cost, latency_ms, time_to_first_attempt_ms,
                     num_api_calls, num_tool_calls, diff, test_output,
                     harness_metadata, harness_stdout, harness_stderr,
-                    timestamp, retry_count)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    timestamp, retry_count, cost_mode)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     cell.cell_id,
                     cell.run_name,
@@ -237,16 +505,23 @@ class ResultsStore:
                     harness_stderr,
                     datetime.now(UTC).isoformat(),
                     retry_count,
+                    cell.model.cost_mode.value,
                 ),
             )
             conn.commit()
 
-    def get_result(self, cell_id: str) -> dict[str, Any] | None:
+    def get_result(self, cell_id: str, run_name: str | None = None) -> dict[str, Any] | None:
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM run_results WHERE cell_id = ?", (cell_id,)
-            ).fetchone()
+            if run_name is not None:
+                row = conn.execute(
+                    "SELECT * FROM run_results WHERE cell_id = ? AND run_name = ?",
+                    (cell_id, run_name),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM run_results WHERE cell_id = ?", (cell_id,)
+                ).fetchone()
             return dict(row) if row else None
 
     def get_all_results(self, run_name: str | None = None) -> list[dict[str, Any]]:
@@ -285,17 +560,26 @@ class ResultsStore:
                     """INSERT OR REPLACE INTO run_state
                        (cell_id, run_name, status, started_at, completed_at, error)
                        VALUES (?, ?, ?,
-                        COALESCE((SELECT started_at FROM run_state WHERE cell_id = ?), ?),
+                        COALESCE(
+                            (SELECT started_at FROM run_state
+                             WHERE cell_id = ? AND run_name = ?),
+                            ?),
                         ?, ?)""",
-                    (cell_id, run_name, status, cell_id, now, now, error),
+                    (cell_id, run_name, status, cell_id, run_name, now, now, error),
                 )
             conn.commit()
 
-    def get_cell_state(self, cell_id: str) -> str | None:
+    def get_cell_state(self, cell_id: str, run_name: str | None = None) -> str | None:
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
-            row = conn.execute(
-                "SELECT status FROM run_state WHERE cell_id = ?", (cell_id,)
-            ).fetchone()
+            if run_name is not None:
+                row = conn.execute(
+                    "SELECT status FROM run_state WHERE cell_id = ? AND run_name = ?",
+                    (cell_id, run_name),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT status FROM run_state WHERE cell_id = ?", (cell_id,)
+                ).fetchone()
             return row[0] if row else None
 
     def get_completed_cells(self, run_name: str) -> set[str]:
@@ -311,6 +595,23 @@ class ResultsStore:
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             row = conn.execute(
                 "SELECT COALESCE(SUM(total_cost), 0) FROM run_results WHERE run_name = ?",
+                (run_name,),
+            ).fetchone()
+            return float(row[0]) if row[0] else 0.0
+
+    def get_billable_cost(self, run_name: str) -> float:
+        """Sum billable cost for a run, excluding subscription-mode cells.
+
+        Unlike ``get_total_cost`` (the "what this would have cost" figure),
+        this excludes rows whose ``cost_mode`` is ``'subscription'`` — those
+        ran under a zero-dollar, token-only accounting mode. A NULL
+        ``cost_mode`` (legacy rows) is treated as billable.
+        """
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            row = conn.execute(
+                """SELECT COALESCE(SUM(total_cost), 0) FROM run_results
+                   WHERE run_name = ?
+                     AND (cost_mode IS NULL OR cost_mode != 'subscription')""",
                 (run_name,),
             ).fetchone()
             return float(row[0]) if row[0] else 0.0
@@ -361,9 +662,10 @@ class ResultsStore:
         """
         now = datetime.now(UTC).isoformat()
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
-            # Clear prior phase results for this cell (resumability).
+            # Clear prior phase results for this (run_name, cell_id) (resumability).
             conn.execute(
-                "DELETE FROM phase_results WHERE cell_id = ?", (cell_id,)
+                "DELETE FROM phase_results WHERE cell_id = ? AND run_name = ?",
+                (cell_id, run_name),
             )
             for phase in phases:
                 usage = phase.get("usage")
@@ -405,15 +707,24 @@ class ResultsStore:
                 )
             conn.commit()
 
-    def get_phase_results(self, cell_id: str) -> list[dict[str, Any]]:
+    def get_phase_results(
+        self, cell_id: str, run_name: str | None = None
+    ) -> list[dict[str, Any]]:
         """Get per-phase results for a cell."""
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT * FROM phase_results WHERE cell_id = ?"
-                " ORDER BY id ASC",
-                (cell_id,),
-            ).fetchall()
+            if run_name is not None:
+                rows = conn.execute(
+                    "SELECT * FROM phase_results WHERE cell_id = ? AND run_name = ?"
+                    " ORDER BY id ASC",
+                    (cell_id, run_name),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM phase_results WHERE cell_id = ?"
+                    " ORDER BY id ASC",
+                    (cell_id,),
+                ).fetchall()
             return [dict(row) for row in rows]
 
     def save_reconciliation_result(
@@ -463,13 +774,19 @@ class ResultsStore:
             conn.commit()
 
     def get_reconciliation_result(
-        self, cell_id: str
+        self, cell_id: str, run_name: str | None = None
     ) -> dict[str, Any] | None:
         """Get the reconciliation result for a cell."""
         with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM reconciliation_results WHERE cell_id = ?",
-                (cell_id,),
-            ).fetchone()
+            if run_name is not None:
+                row = conn.execute(
+                    "SELECT * FROM reconciliation_results WHERE cell_id = ? AND run_name = ?",
+                    (cell_id, run_name),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT * FROM reconciliation_results WHERE cell_id = ?",
+                    (cell_id,),
+                ).fetchone()
             return dict(row) if row else None

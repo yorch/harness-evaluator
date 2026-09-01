@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from harness_evaluator.orchestrator.config import CostMode, RunCell, RunConfig
+from harness_evaluator.orchestrator.config import CostMode, RunCell, RunConfig, TaskTrack
 from harness_evaluator.orchestrator.results_store import ResultsStore
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,18 @@ class OrchestratorProgress:
 
     ``running_cells`` is the full list of currently in-flight cell IDs,
     suitable for showing all active cells in the TUI footer.
+
+    ``total_cost`` is the informational "what this would have cost" figure:
+    it accumulates the true cost of every cell, including budget-exempt
+    cells whose spend is covered by the harness's own subscription. This is
+    what the CLI prints as "Cost:". It is distinct from the *budget*
+    (``Orchestrator._remaining_budget`` and the reservation/reconciliation
+    arithmetic that guards it), which excludes budget-exempt cells — a
+    broader set than "subscription-mode", since a mixed cell with a
+    platform ``review_model`` or an open-ended judge is NOT exempt even
+    when ``model.cost_mode`` is subscription — see
+    ``Orchestrator._is_budget_exempt``, ``_reconcile_reservation`` and
+    ``_estimate_cell_cost``.
     """
 
     total_cells: int = 0
@@ -139,7 +151,34 @@ class Orchestrator:
         self._total_cells: int | None = None
 
     async def run(self) -> OrchestratorProgress:
-        """Execute the full eval matrix."""
+        """Execute the full eval matrix.
+
+        Resume asymmetry (F12, documentation only — not a bug): a cell can
+        finish a run in one of three states, and only one of them is skipped
+        on resume:
+
+        - ``completed`` — the harness ran to completion, whether it passed
+          or failed the task (``exit_class`` is ``"pass"`` *or* ``"fail"``;
+          see ``_run_cell_with_budget_check``). Filtered out of
+          ``pending_cells`` by ``get_completed_cells`` and reported as
+          "already completed (resumability)". This is the *only* state
+          skipped on resume.
+        - ``failed`` — an infrastructural failure (retries exhausted, or an
+          unexpected exception from ``run_cell_fn``; see ``_save_failure``).
+          Not filtered by ``get_completed_cells``, so it *is* re-run on
+          resume, with no skip reason recorded (it simply runs again).
+        - ``skipped`` — the budget cap was reached before the cell ran (see
+          the reservation check below). Also not filtered by
+          ``get_completed_cells``, so it too *is* re-run on resume (and may
+          succeed if more budget or a higher cap is available this time).
+
+        This is deliberate — an infra failure may be transient and worth
+        retrying, a budget skip may become affordable on a later resume, and
+        a harness that genuinely attempted and failed the task already
+        produced a real result that resuming would only duplicate — but only
+        ``completed`` is filtered by ``get_completed_cells``, so it is worth
+        calling out explicitly here.
+        """
         cells = self.config.build_matrix()
         self._total_cells = len(cells)
         self.progress.total_cells = len(cells)
@@ -158,15 +197,28 @@ class Orchestrator:
             docker_image=self.config.docker_image,
         )
 
-        # Initialize the remaining budget from the cap minus any cost already
-        # recorded for this run. Without this, a resumed run would let pending
-        # cells spend the full budget again on top of prior spend.
+        # Seed progress.total_cost from the store on resume regardless of
+        # whether a budget is configured (F8) — this is the informational
+        # "what this would have cost" figure (get_total_cost), so it always
+        # includes subscription-mode spend even though that spend never
+        # counted against the dollar budget.
+        self.progress.total_cost = self.store.get_total_cost(self.config.name)
+
+        # Initialize the remaining budget from the cap minus any *billable*
+        # cost already recorded for this run (get_billable_cost excludes
+        # budget-exempt cells — see docstring on _reconcile_reservation).
+        # Without this, a resumed run would let pending cells spend the full
+        # budget again on top of prior spend. Deliberately NOT floored at
+        # 0.0: overspend debt from a prior run/process must survive a
+        # restart exactly as it survives within a run (see
+        # _reconcile_reservation) — flooring here would re-open a cap that
+        # was already blown on every resume, which is unbounded leakage for
+        # budget_usd == 0.0 (one more non-exempt cell billed per resume).
         if self.config.budget_usd is not None:
-            already_spent = self.store.get_total_cost(self.config.name)
-            self._remaining_budget = max(self.config.budget_usd - already_spent, 0.0)
-            self.progress.total_cost = already_spent
+            already_spent = self.store.get_billable_cost(self.config.name)
+            self._remaining_budget = self.config.budget_usd - already_spent
             logger.info(
-                "Run '%s': budget $%.4f, already spent $%.4f, $%.4f remaining",
+                "Run '%s': budget $%.4f, already spent (billable) $%.4f, $%.4f remaining",
                 self.config.name,
                 self.config.budget_usd,
                 already_spent,
@@ -234,6 +286,14 @@ class Orchestrator:
 
         On failure or cancellation, the reservation is released back to
         the remaining budget.
+
+        On success, the cell's state is set to ``completed`` regardless of
+        whether ``exit_class`` is ``"pass"`` or ``"fail"`` — the harness ran
+        and produced a real result, so the cell is skipped on resume. This
+        differs from an infrastructural failure (see ``_save_failure``),
+        which is recorded as ``failed`` and so is re-run on resume, and from
+        a budget skip (below), which is also re-run on resume (F12; see the
+        full state breakdown in ``run()``'s docstring).
         """
         # RESERVE: atomically subtract estimated cost from remaining budget
         if self.config.budget_usd is not None:
@@ -241,7 +301,23 @@ class Orchestrator:
                 if self._remaining_budget is None:
                     self._remaining_budget = self.config.budget_usd
                 estimate = self._estimate_cell_cost(cell)
-                if self._remaining_budget < estimate:
+                # Gate on exemption, not on the numeric estimate: a
+                # budget-exempt cell (see _is_budget_exempt) can never be
+                # unaffordable, regardless of what _remaining_budget
+                # currently holds. Testing `estimate > 0` instead would
+                # make a valid `budget_usd: 0.0` config (no `gt`/`ge`
+                # constraint on RunConfig.budget_usd) an inert cap, since
+                # EVERY cell's per-cell estimate is then 0.0 too — and with
+                # a zero estimate, `_remaining_budget -= estimate` reserves
+                # nothing, so under parallel_runs > 1 every in-flight cell
+                # would be admitted before any of them reconciles. The
+                # explicit `remaining <= 0` half denies a non-exempt cell
+                # outright once there is no budget left at all (including
+                # exactly $0.00), independent of what its own zero estimate
+                # would otherwise suggest.
+                if not self._is_budget_exempt(cell) and (
+                    self._remaining_budget <= 0 or self._remaining_budget < estimate
+                ):
                     logger.warning(
                         "Budget cap reached ($%.4f remaining < $%.4f "
                         "estimated), skipping cell %s",
@@ -323,9 +399,9 @@ class Orchestrator:
             cell_cost = result.get("total_cost", 0.0)
             try:
                 async with self._budget_lock:
-                    self._reconcile_reservation(cell.cell_id, cell_cost)
+                    self._reconcile_reservation(cell, cell_cost)
                     self.store.save_result(
-                        cell=cell,
+                        cell=self._billing_cell(cell),
                         exit_class=exit_class,
                         success=success,
                         error_class=result.get("error_class"),
@@ -347,16 +423,65 @@ class Orchestrator:
                     )
                     self.store.set_cell_state(cell.cell_id, cell.run_name, "completed")
                     if self.config.budget_usd is not None:
-                        total = self.store.get_total_cost(self.config.name)
-                        if total > self.config.budget_usd:
+                        # By this point the result and "completed" state
+                        # are already durably persisted, so a failure of
+                        # this read alone (e.g. `database is locked` under
+                        # parallel_runs > 1 — exactly the scenario that
+                        # motivates budgeted runs) must not cause the run
+                        # to under-report a cell it actually finished; skip
+                        # only the warning, not the counter update below.
+                        try:
+                            billable_total: float | None = self.store.get_billable_cost(
+                                self.config.name
+                            )
+                        except Exception as billable_err:
+                            logger.error(
+                                "Failed to re-derive billable cost for run "
+                                "'%s' after cell %s (result already "
+                                "persisted): %s",
+                                self.config.name,
+                                cell.cell_id,
+                                billable_err,
+                            )
+                            billable_total = None
+                        if billable_total is not None and billable_total > self.config.budget_usd:
                             logger.warning(
                                 "Budget exceeded after cell %s ($%.4f > $%.4f)",
                                 cell.cell_id,
-                                total,
+                                billable_total,
                                 self.config.budget_usd,
                             )
+                    # Re-derive from the store (rather than `+= cell_cost`)
+                    # so progress.total_cost can never drift from what was
+                    # actually persisted — e.g. if save_result committed but
+                    # set_cell_state then raised on a prior attempt, leaving
+                    # a completed row whose cost an incremental `+=` would
+                    # double-count on the resume that re-runs this cell.
+                    # By this point the result and "completed" state are
+                    # already durably persisted, so a failure of this read
+                    # alone (e.g. `database is locked` under
+                    # parallel_runs > 1) must not cause the run to
+                    # under-report a cell it actually finished — fall back
+                    # to the old incremental update instead of losing the
+                    # completion signal below.
+                    try:
+                        total_cost_now: float | None = self.store.get_total_cost(
+                            self.config.name
+                        )
+                    except Exception as total_cost_err:
+                        logger.error(
+                            "Failed to re-derive total_cost for run '%s' after "
+                            "cell %s (result already persisted): %s",
+                            self.config.name,
+                            cell.cell_id,
+                            total_cost_err,
+                        )
+                        total_cost_now = None
                 async with self._progress_lock:
-                    self.progress.total_cost += cell_cost
+                    if total_cost_now is not None:
+                        self.progress.total_cost = total_cost_now
+                    else:
+                        self.progress.total_cost += cell_cost
                     if exit_class == ExitClass.PASS.value:
                         self.progress.completed += 1
                     else:
@@ -413,7 +538,7 @@ class Orchestrator:
         """
         try:
             self.store.save_result(
-                cell=cell,
+                cell=self._billing_cell(cell),
                 exit_class=exit_class,
                 success=0.0,
                 error_class=error_class,
@@ -426,6 +551,65 @@ class Orchestrator:
                 "Failed to persist failure for cell %s: %s", cell.cell_id, persist_err
             )
 
+    def _is_budget_exempt(self, cell: RunCell) -> bool:
+        """Return whether NO part of this cell's trace can bill real dollars.
+
+        A cell's ``total_cost`` is not necessarily the implementation
+        model's spend alone: a multi-phase review phase runs under
+        ``cell.review_model`` (a separate ``ModelSpec``) and is folded into
+        the same trace's total, and the open-ended track's LLM judge routes
+        through the gateway under the cell's own trace id with no
+        ``cost_mode`` of its own. So a cell is budget-exempt only if ALL of
+        the following hold:
+
+        - ``cell.model.cost_mode`` is ``CostMode.SUBSCRIPTION``,
+        - ``cell.review_model`` is ``None``, or its ``cost_mode`` is also
+          ``CostMode.SUBSCRIPTION``,
+        - ``cell.task.track`` is not ``TaskTrack.OPEN_ENDED`` (the judge's
+          calls are real, platform-billed API spend with no subscription
+          coverage of its own).
+
+        A cost cap that over-charges is safe; one that under-charges leaks
+        real money. So this is deliberately all-or-nothing at the cell
+        level: a cell that mixes subscription and platform spend (e.g. a
+        subscription implementation model with a platform review model) is
+        billed in full rather than split proportionally. True per-trace
+        attribution — crediting only the subscription-covered portion —
+        would need per-phase/per-component cost breakdown that is not
+        available here; it is a deferred follow-up, not implemented by this
+        fix.
+        """
+        review_ok = (
+            cell.review_model is None or cell.review_model.cost_mode == CostMode.SUBSCRIPTION
+        )
+        return (
+            cell.model.cost_mode == CostMode.SUBSCRIPTION
+            and review_ok
+            and cell.task.track != TaskTrack.OPEN_ENDED
+        )
+
+    def _billing_cell(self, cell: RunCell) -> RunCell:
+        """Return the ``RunCell`` view to persist via ``save_result``.
+
+        ``ResultsStore.save_result`` stamps the row's ``cost_mode`` from
+        ``cell.model.cost_mode`` alone (it has no way to know about
+        ``review_model`` or judge spend, and its signature is owned by
+        another task). To keep the persisted ``cost_mode`` — and therefore
+        ``get_billable_cost`` — in agreement with the budget arithmetic in
+        ``_estimate_cell_cost``/``_reconcile_reservation`` (both driven by
+        ``_is_budget_exempt``), this returns a shallow copy with
+        ``model.cost_mode`` forced to ``CostMode.PLATFORM`` whenever the
+        cell is not fully exempt but its own model claims
+        ``CostMode.SUBSCRIPTION``. ``model.name`` — and therefore
+        ``cell.cell_id`` — is untouched, so callers can use the returned
+        cell purely for persistence without affecting identity.
+        """
+        if self._is_budget_exempt(cell) or cell.model.cost_mode != CostMode.SUBSCRIPTION:
+            return cell
+        return cell.model_copy(
+            update={"model": cell.model.model_copy(update={"cost_mode": CostMode.PLATFORM})}
+        )
+
     def _estimate_cell_cost(self, cell: RunCell) -> float:
         """Estimate the cost of a cell for budget reservation.
 
@@ -435,11 +619,11 @@ class Orchestrator:
         ``build_matrix()``, not ``len(config.tasks)`` which is wrong
         when tasks is ``["*"]``).
 
-        Subscription-mode cells (``cost_mode == "subscription"``) are
-        zero-dollar: token usage is still tracked but does not count
-        against the dollar budget.
+        Budget-exempt cells (see ``_is_budget_exempt``) are zero-dollar:
+        token usage is still tracked but does not count against the dollar
+        budget.
         """
-        if cell.model.cost_mode == CostMode.SUBSCRIPTION:
+        if self._is_budget_exempt(cell):
             return 0.0
         if cell.budget is not None:
             return cell.budget
@@ -452,21 +636,37 @@ class Orchestrator:
         return 0.0
 
     def _reconcile_reservation(
-        self, cell_id: str, actual_cost: float
+        self, cell: RunCell, actual_cost: float
     ) -> None:
         """Reconcile a cell's reservation against its actual cost.
 
-        If actual cost < reserved, refund the difference back to the
-        remaining budget. If actual cost > reserved, deduct the
-        shortfall. Clears the reservation entry afterwards.
+        Adjusts the remaining *budget* by ``reserved - actual_cost``:
+        refunds the difference back if actual cost was less than reserved,
+        deducts the shortfall if it was more. Clears the reservation entry
+        afterwards. The result is deliberately NOT floored at ``0.0``: a
+        negative ``_remaining_budget`` records real overspend debt that
+        must keep suppressing later cells. Under ``parallel_runs > 1``,
+        several cells can hold outstanding reservations at once; flooring
+        here would let one platform cell's overspend be silently erased by
+        a *sibling's* unrelated refund, re-opening a cap that was already
+        blown and admitting further real spend (this was tried and proven
+        harmful — see the reservation check, which guards the zero-estimate
+        case a different way instead).
+
+        Budget-exempt cells (``_is_budget_exempt(cell)``) have their
+        ``actual_cost`` zeroed here (F5), mirroring ``_estimate_cell_cost``,
+        which already reserves $0 for them. Note this only affects the
+        *budget* figure (``_remaining_budget``); it does not touch
+        ``progress.total_cost``, which the caller re-derives from the store
+        separately from the cell's true ``actual_cost`` and which stays the
+        informational "what this would have cost" figure for every cell,
+        exempt or not.
         """
-        reserved = self._reservations.pop(cell_id, 0.0)
+        reserved = self._reservations.pop(cell.cell_id, 0.0)
+        if self._is_budget_exempt(cell):
+            actual_cost = 0.0
         if self._remaining_budget is not None:
-            difference = reserved - actual_cost
-            if difference > 0:
-                self._remaining_budget += difference
-            elif difference < 0:
-                self._remaining_budget += difference  # subtract shortfall
+            self._remaining_budget += reserved - actual_cost
 
     def _release_reservation(self, cell_id: str) -> None:
         """Release a cell's reservation back to the remaining budget.
