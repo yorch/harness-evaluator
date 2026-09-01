@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.14.0](https://github.com/yorch/harness-evaluator/compare/v0.13.0...v0.14.0) (2026-09-01)
+
+
+### Features
+
+* **cli:** add check-keys command and surface judge errors in calibrate ([#49](https://github.com/yorch/harness-evaluator/issues/49)) ([f438043](https://github.com/yorch/harness-evaluator/commit/f438043b751a7a4aeb137fe8fc18a52696dd42ea))
+* **run:** isolate runs per results DB, correct budget accounting, fix TUI and CLI progress ([#50](https://github.com/yorch/harness-evaluator/issues/50)) ([ca15e64](https://github.com/yorch/harness-evaluator/commit/ca15e640738cf5fd70d2461d18918f8734e1ad1d))
+
+
+### Bug Fixes
+
+* **runner:** run containers as the invoking user and resolve task repos via the library root ([#52](https://github.com/yorch/harness-evaluator/issues/52)) ([33d1601](https://github.com/yorch/harness-evaluator/commit/33d16019ee004a8e0124666a68d3f0787069ac36))
+
+
+### Documentation
+
+* close CLI reference gaps, correct the docker_image default, drop decaying counts ([#53](https://github.com/yorch/harness-evaluator/issues/53)) ([6c443ff](https://github.com/yorch/harness-evaluator/commit/6c443fff059fbf1b154c641670da833e8a886792))
+* correct SWE evaluator heuristics and dashboard auth in docs ([#54](https://github.com/yorch/harness-evaluator/issues/54)) ([b510252](https://github.com/yorch/harness-evaluator/commit/b510252a04ed2ae72efb75fd3d4c836d16ef5778))
+
 ## [0.13.0](https://github.com/yorch/harness-evaluator/compare/v0.12.0...v0.13.0) (2026-09-01)
 
 
