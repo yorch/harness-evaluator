@@ -190,7 +190,7 @@ Generates static HTML, JSON, and CSV reports with within-model leaderboards. HTM
 
 ### Dashboard (`dashboard/`)
 
-FastAPI web app with Jinja2 templates. Shows run overviews, leaderboards, filtered/paginated results tables, and live progress from `run_state`. Exposes REST API endpoints. No auth — localhost only. See [Reporting](reporting/).
+FastAPI web app with Jinja2 templates. Shows run overviews, leaderboards, filtered/paginated results tables, and live progress from `run_state`. Exposes REST API endpoints. Optional token auth (`--token` / `HARNESS_EVALUATOR_DASHBOARD_TOKEN`); without a token it is open and should stay localhost-only. See [Reporting](reporting/).
 
 ### Statistics (`stats/`)
 
@@ -240,4 +240,4 @@ All exit classes enter the effectiveness significance tests. Kills are recorded 
 - **Header redaction**: the proxy redacts sensitive headers (auth, API keys, cookies, tokens) before storing to SQLite, using both an explicit list and a substring heuristic.
 - **Trace header stripping**: internal trace headers (`x-harness-evaluator-trace-id`, `x-trace-id`) and the `trace_id` query param are never forwarded to the real provider API.
 - **Path traversal prevention**: identifiers (run names, harness names, model names) are validated against `[A-Za-z0-9._-]+` and sanitized before use in file paths and container names.
-- **No dashboard auth**: the dashboard has no authentication — keep it localhost-only.
+- **Optional dashboard auth**: the dashboard supports token auth via `--token` / `HARNESS_EVALUATOR_DASHBOARD_TOKEN`. Without a token it is open — keep it localhost-only (`127.0.0.1`) by default; binding to `0.0.0.0` without a token prints a warning and is not recommended.
