@@ -39,8 +39,8 @@ gateway_port: 8877                 # Optional. Gateway port. Default: 8877.
 gateway_db: "harness_evaluator_gateway.db"     # Optional. Gateway SQLite DB path.
 results_db: "harness_evaluator_results.db"     # Optional. Results SQLite DB path.
 workdir: "./harness_evaluator_workdir"         # Optional. Host workdir for cell repos.
-docker_image: "..."                # Optional. Defaults to the version-pinned
-                                   #   ghcr.io/yorch/harness-evaluator-runner:<harness-evaluator version>.
+docker_image: "..."                # Optional. Defaults to
+                                   #   ghcr.io/yorch/harness-evaluator-runner:latest.
 parallel_runs: 1                   # Optional. Parallel container runs. Default: 1.
 run_as_user: "1000:1000"           # Optional. UID:GID the container runs as.
                                    #   Defaults to the invoking user.
@@ -761,9 +761,20 @@ docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"
 Available tags: `latest`, `sha-<short-hash>` (pinned to a commit), semver tags
 like `1.2.3` and `1.2` (published from `v*` release tags), and `main`.
 
-The default `docker_image` is version-pinned to the installed harness-evaluator version
-(`ghcr.io/yorch/harness-evaluator-runner:<harness-evaluator version>`) so a given harness-evaluator release pairs
-with a matching runner image for reproducibility.
+The default `docker_image` is `ghcr.io/yorch/harness-evaluator-runner:latest`, not
+a version-pinned tag. It is deliberately unpinned: the installed harness-evaluator
+version may be ahead of the newest published image (dev installs, or the window
+between a release-please bump and the image build), version tags only exist for
+released versions on GHCR, and `latest` is always available once the first image
+is published.
+
+> **Reproducibility**: because the default floats, a run is *not* reproducible
+> across time by default — the same config can pull a different image next month.
+> Pin the image explicitly when results need to be comparable:
+>
+> ```yaml
+> docker_image: "ghcr.io/yorch/harness-evaluator-runner:0.13.0"
+> ```
 
 ### Build locally
 

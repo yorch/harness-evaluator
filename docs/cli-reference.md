@@ -15,18 +15,20 @@ harness-evaluator uses [Typer](https://typer.tiangolo.com/) for its CLI. The ent
 | [`harness-evaluator run`](#harness-evaluator-run) | Execute an evaluation run from a config file |
 | [`harness-evaluator gateway`](#harness-evaluator-gateway) | Start the gateway proxy server |
 | [`harness-evaluator canary`](#harness-evaluator-canary) | Verify proxy token capture accuracy |
+| [`harness-evaluator check-keys`](#harness-evaluator-check-keys) | Validate the provider API keys in your environment |
 | [`harness-evaluator report`](#harness-evaluator-report) | Generate static reports (HTML/JSON/CSV) |
 | [`harness-evaluator results`](#harness-evaluator-results) | Show results summary in the console |
 | [`harness-evaluator adapters`](#harness-evaluator-adapters) | List available harness adapters |
 | [`harness-evaluator stats`](#harness-evaluator-stats) | Generate statistical analysis for a run |
 | [`harness-evaluator dashboard`](#harness-evaluator-dashboard) | Start the interactive web dashboard |
 | [`harness-evaluator calibrate`](#harness-evaluator-calibrate) | Run judge calibration against anchor set |
+| [`harness-evaluator version`](#harness-evaluator-version) | Print the installed version |
 
 ## harness-evaluator init
 
 Scaffold a starter run config in the current directory so you can run harness-evaluator
 without cloning the repository. The generated config uses the bundled task
-library and the version-pinned published runner image by default.
+library and the published runner image (`:latest`) by default.
 
 ### Usage
 
@@ -71,7 +73,7 @@ harness-evaluator run <config> [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--dry-run` | flag | `False` | Print the eval matrix without executing |
+| `--dry-run` / `--no-dry-run` | flag | `False` | Print the eval matrix without executing |
 | `--check-gateway` / `--no-check-gateway` | flag | `True` | Preflight: check that the gateway is reachable |
 | `--verbose` / `-v` | count | `0` | Increase logging verbosity (`-v`=INFO, `-vv`=DEBUG) |
 | `--progress` / `--no-progress` | flag | `True` | Show a live progress panel during the run (auto-off in non-TTY) |
@@ -432,6 +434,48 @@ The `Error Class` and `Error Message` columns show the failure classification
 and details for non-passing cells. Long error messages are truncated to 60
 characters with an ellipsis (`…`) in the terminal.
 
+## harness-evaluator check-keys
+
+Validate the provider API keys present in your environment, before committing a
+run to them.
+
+Makes a minimal (1-token) API call to each provider whose key is set, so an
+expired or revoked key surfaces here rather than part-way through a paid run.
+
+### Usage
+
+```bash
+harness-evaluator check-keys
+```
+
+No arguments or options.
+
+### Behaviour
+
+| Environment | Result |
+|-------------|--------|
+| `ANTHROPIC_API_KEY` set | Validated against `claude-sonnet-5` |
+| `OPENAI_API_KEY` set | Validated against `gpt-5.6-terra` |
+| Either key unset | Skipped, with a note on stderr |
+| Neither key set | Error, exit code 1 |
+
+Keys are echoed masked (first 8 and last 4 characters only). Exits with code 1
+if any configured key is invalid, so it can gate a run in a script:
+
+```bash
+harness-evaluator check-keys && harness-evaluator run runs/sample-run.yaml
+```
+
+### Example
+
+```
+$ harness-evaluator check-keys
+OPENAI_API_KEY not set — skipping.
+Checking anthropic (sk-ant-a…f4c2)… valid
+
+All configured keys are valid.
+```
+
 ## harness-evaluator adapters
 
 List available harness adapters and their observability tiers.
@@ -605,6 +649,10 @@ harness-evaluator calibrate [options]
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `--model` | string | `claude-sonnet-5` | Judge model |
+| `--calibration-file` | string | bundled `config/calibration.json` | Path to an alternative anchor set |
+
+The bundled anchor set ships inside the wheel, so `calibrate` works without a
+repository checkout. Pass `--calibration-file` to score against your own anchors.
 
 ### Prerequisites
 
@@ -635,3 +683,17 @@ Reliable: Yes
 ```
 
 If drift is detected (MAE > 0.15), the open-ended track should be flagged as unreliable for that run.
+
+## harness-evaluator version
+
+Print the installed harness-evaluator version and exit.
+
+### Usage
+
+```bash
+harness-evaluator version
+```
+
+No arguments or options. `harness-evaluator --version` (or `-V`) is equivalent.
+
+Worth quoting in bug reports, alongside the `docker_image` a run resolved to.

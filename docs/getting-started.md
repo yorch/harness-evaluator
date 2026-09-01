@@ -87,6 +87,15 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 The key is passed into Docker containers via an allowlisted environment variable — the full host environment is never exposed.
 
+Confirm the keys actually work before starting a run that spends money on them:
+
+```bash
+uvx harness-evaluator check-keys
+```
+
+This makes a 1-token call per configured provider and exits non-zero if any key
+is invalid. See [CLI Reference → check-keys](cli-reference/#harness-evaluator-check-keys).
+
 ### Step 5: Start the gateway proxy
 
 The gateway proxy captures token usage, cost, and latency for every provider API call. Start it in a separate terminal:
