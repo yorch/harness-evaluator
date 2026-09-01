@@ -42,6 +42,8 @@ workdir: "./harness_evaluator_workdir"         # Optional. Host workdir for cell
 docker_image: "..."                # Optional. Defaults to the version-pinned
                                    #   ghcr.io/yorch/harness-evaluator-runner:<harness-evaluator version>.
 parallel_runs: 1                   # Optional. Parallel container runs. Default: 1.
+run_as_user: "1000:1000"           # Optional. UID:GID the container runs as.
+                                   #   Defaults to the invoking user.
 ```
 
 ### Field reference
@@ -122,6 +124,25 @@ Maximum total spend in USD. When set, the orchestrator uses a reserve-and-reconc
 Number of parallel container runs. Default: 1 (sequential). With `parallel_runs > 1`, an `asyncio.Semaphore` limits concurrent executions.
 
 > **Warning**: Budget reservation is async-safe (single-process `asyncio.Lock`), not thread-safe. Do not run the orchestrator across multiple processes.
+
+#### `run_as_user`
+
+The `UID:GID` the runner container executes as, e.g. `"1000:1000"`. Defaults to
+the user invoking harness-evaluator.
+
+The cell workdir is bind-mounted into the container, so the container user must
+be able to write to it — that is why the default follows the invoking user
+rather than the image's built-in user. It also means files the harness creates
+are owned by you, which the host-side evaluation step (git diff, hidden tests)
+depends on.
+
+Override this only for rootless Docker or userns-remap setups, where the host
+UID is not the effective UID inside the container. If you do, make sure the
+`workdir` is writable by that UID.
+
+`HOME` inside the container is always set to `/workspace/.home` (a directory in
+the mounted workdir). The harnesses need a writable `HOME`, and it is kept out
+of the repo directory so harness state never lands in the evaluated diff.
 
 ### Minimal example
 

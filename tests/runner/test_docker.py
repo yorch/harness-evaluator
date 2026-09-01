@@ -6,6 +6,7 @@ tests do NOT require a real Docker daemon.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,10 +21,13 @@ from harness_evaluator.orchestrator.config import (
     TaskTrack,
 )
 from harness_evaluator.runner.docker import (
+    CONTAINER_HOME,
+    CONTAINER_HOME_DIRNAME,
     CONTAINER_REPO,
     CONTAINER_WORKSPACE,
     CompletedProcess,
     DockerRunner,
+    _default_run_as_user,
 )
 
 # ---------------------------------------------------------------------------
@@ -195,6 +199,153 @@ class TestBuildRunArgs:
         sleep_val = int(args[sleep_idx + 1])
         assert sleep_val > 60
 
+    def test_user_defaults_to_invoking_uid_gid(self, runner: DockerRunner, tmp_path: Any):
+        """Without --user the container runs as the image's uid and cannot
+        write to the host-owned bind mount.
+        """
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        args = runner._build_run_args(workdir, {}, timeout=60, container_name="c1")
+        assert "--user" in args
+        assert args[args.index("--user") + 1] == f"{os.getuid()}:{os.getgid()}"
+
+    def test_explicit_run_as_user_honoured(self, tmp_path: Any):
+        r = DockerRunner(workdir_base=str(tmp_path), run_as_user="1234:5678")
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        args = r._build_run_args(workdir, {}, timeout=60, container_name="c1")
+        assert "--user" in args
+        assert args[args.index("--user") + 1] == "1234:5678"
+
+    def test_no_user_flag_when_default_unavailable(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ):
+        """On platforms without os.getuid/os.getgid, --user is omitted."""
+        monkeypatch.setattr(
+            "harness_evaluator.runner.docker._default_run_as_user", lambda: None
+        )
+        r = DockerRunner(workdir_base=str(tmp_path))
+        assert r.run_as_user is None
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        args = r._build_run_args(workdir, {}, timeout=60, container_name="c1")
+        assert "--user" not in args
+
+    def test_home_forced_to_container_home(self, runner: DockerRunner, tmp_path: Any):
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        args = runner._build_run_args(
+            workdir, {"FOO": "bar"}, timeout=60, container_name="c1"
+        )
+        assert f"HOME={CONTAINER_HOME}" in args
+        assert "FOO=bar" in args
+
+    def test_home_overrides_adapter_env_home(self, runner: DockerRunner, tmp_path: Any):
+        """The adapter env allowlist forwards the *host* HOME, which is not
+        writable inside the container — it must not reach docker run.
+        """
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        args = runner._build_run_args(
+            workdir, {"HOME": "/root"}, timeout=60, container_name="c1"
+        )
+        assert "HOME=/root" not in args
+        assert f"HOME={CONTAINER_HOME}" in args
+
+
+# ---------------------------------------------------------------------------
+# _default_run_as_user
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultRunAsUser:
+    def test_returns_current_uid_gid(self):
+        assert _default_run_as_user() == f"{os.getuid()}:{os.getgid()}"
+
+    def test_returns_none_without_getuid(self, monkeypatch: pytest.MonkeyPatch):
+        """os.getuid/os.getgid do not exist on Windows."""
+        monkeypatch.delattr(os, "getuid", raising=False)
+        assert _default_run_as_user() is None
+
+    def test_returns_none_without_getgid(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delattr(os, "getgid", raising=False)
+        assert _default_run_as_user() is None
+
+
+# ---------------------------------------------------------------------------
+# _prepare_container_home
+# ---------------------------------------------------------------------------
+
+
+class TestPrepareContainerHome:
+    def test_creates_home_dir(self, runner: DockerRunner, tmp_path: Any):
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        home_dir = runner._prepare_container_home(workdir)
+        assert home_dir == workdir / CONTAINER_HOME_DIRNAME
+        assert home_dir.is_dir()
+
+    def test_idempotent(self, runner: DockerRunner, tmp_path: Any):
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        runner._prepare_container_home(workdir)
+        # A second cell reusing the workdir must not raise.
+        runner._prepare_container_home(workdir)
+        assert (workdir / CONTAINER_HOME_DIRNAME).is_dir()
+
+    def test_no_chown_without_run_as_user(
+        self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setattr(
+            "harness_evaluator.runner.docker._default_run_as_user", lambda: None
+        )
+        r = DockerRunner(workdir_base=str(tmp_path))
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        with patch("harness_evaluator.runner.docker.os.chown") as mock_chown:
+            r._prepare_container_home(workdir)
+        assert not mock_chown.called
+
+    def test_no_chown_when_run_as_user_matches_process(
+        self, runner: DockerRunner, tmp_path: Any
+    ):
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        with patch("harness_evaluator.runner.docker.os.chown") as mock_chown:
+            runner._prepare_container_home(workdir)
+        assert not mock_chown.called
+
+    def test_no_chown_for_non_numeric_run_as_user(self, tmp_path: Any):
+        r = DockerRunner(workdir_base=str(tmp_path), run_as_user="someuser")
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        with patch("harness_evaluator.runner.docker.os.chown") as mock_chown:
+            home_dir = r._prepare_container_home(workdir)
+        assert not mock_chown.called
+        assert home_dir.is_dir()
+
+    def test_chowns_to_overridden_run_as_user(self, tmp_path: Any):
+        r = DockerRunner(workdir_base=str(tmp_path), run_as_user="1234:5678")
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        with patch("harness_evaluator.runner.docker.os.chown") as mock_chown:
+            home_dir = r._prepare_container_home(workdir)
+        mock_chown.assert_called_once_with(home_dir, 1234, 5678)
+
+    def test_falls_back_to_permissive_mode_when_chown_fails(self, tmp_path: Any):
+        """An unprivileged host user cannot chown — the harness must still be
+        able to write to HOME rather than failing to start.
+        """
+        r = DockerRunner(workdir_base=str(tmp_path), run_as_user="1234:5678")
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        with patch(
+            "harness_evaluator.runner.docker.os.chown",
+            side_effect=PermissionError("not permitted"),
+        ):
+            home_dir = r._prepare_container_home(workdir)
+        assert home_dir.stat().st_mode & 0o777 == 0o777
+
 
 # ---------------------------------------------------------------------------
 # Container lifecycle: start, exec, stop
@@ -238,6 +389,23 @@ class TestContainerLifecycle:
                     workdir, {}, timeout=60, name="c1"
                 )
 
+    async def test_start_container_creates_container_home(
+        self, runner: DockerRunner, tmp_path: Any
+    ):
+        """The container HOME must exist inside the bind mount before the
+        container starts, owned by the user the container runs as.
+        """
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        with patch(
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.return_value = CompletedProcess(
+                returncode=0, stdout="abc123\n", stderr=""
+            )
+            await runner._start_container(workdir, {}, timeout=60, name="c1")
+        assert (workdir / CONTAINER_HOME_DIRNAME).is_dir()
+
     async def test_exec_in_container_captures_output(
         self, runner: DockerRunner
     ):
@@ -278,6 +446,27 @@ class TestContainerLifecycle:
         # Should NOT contain the default workspace as a separate arg
         ws_idx = cmd.index("-w")
         assert cmd[ws_idx + 1] == CONTAINER_REPO
+
+    async def test_exec_in_container_forces_home(self, runner: DockerRunner):
+        """docker exec --env wins over docker run, so the per-phase env must
+        not reintroduce the host's HOME.
+        """
+        with patch(
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.return_value = CompletedProcess(
+                returncode=0, stdout="ok", stderr=""
+            )
+            await runner._exec_in_container(
+                "cid",
+                ["env"],
+                timeout=30,
+                env={"HOME": "/root", "FOO": "bar"},
+            )
+        cmd = mock_run.call_args[0][0]
+        assert f"HOME={CONTAINER_HOME}" in cmd
+        assert "HOME=/root" not in cmd
+        assert "FOO=bar" in cmd
 
     async def test_exec_in_container_timeout(self, runner: DockerRunner):
         with patch(

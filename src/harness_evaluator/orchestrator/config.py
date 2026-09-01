@@ -77,6 +77,35 @@ def default_task_library() -> str:
     return str(Path(__file__).resolve().parents[3] / "tasks")
 
 
+def resolve_task_repo_path(repo_url: str, lib_root: str | Path) -> Path:
+    """Resolve a local task ``repo_url`` to an absolute path.
+
+    Task YAMLs historically use ``repo_url: tasks/repos/<id>`` (relative to the
+    repo root) while the fixtures live at ``<lib_root>/repos/<id>``, so a leading
+    ``tasks/`` segment is stripped before resolving against ``lib_root``. This is
+    the single source of truth for that mapping: resolving against the library
+    root (rather than a ``__file__``-derived project root) is what makes a
+    bundled ``harness_evaluator/tasks`` inside an installed wheel work.
+
+    A relative path must stay under ``lib_root`` -- ``../..`` traversal raises
+    ``ValueError``. An absolute path is honoured as-is: pointing a custom task
+    library at a repo elsewhere on disk is legitimate, and task YAMLs are
+    trusted input (their ``test_command`` already runs on the host).
+    """
+    base = Path(lib_root).resolve()
+    candidate = Path(repo_url)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    if candidate.parts and candidate.parts[0] == "tasks":
+        candidate = Path(*candidate.parts[1:])
+    resolved = (base / candidate).resolve()
+    if not resolved.is_relative_to(base):
+        raise ValueError(
+            f"Task repo_url '{repo_url}' escapes the task library root '{base}'."
+        )
+    return resolved
+
+
 def default_docker_image() -> str:
     """Return the default runner image.
 
@@ -409,6 +438,13 @@ class RunConfig(BaseModel):
     results_db: str = "harness_evaluator_results.db"
     workdir: str = "./harness_evaluator_workdir"
     docker_image: str = Field(default_factory=default_docker_image)
+    run_as_user: str | None = None
+    """UID:GID the container runs as, e.g. ``"1000:1000"``.
+
+    Defaults to the invoking user so files the harness writes into the mounted
+    workdir are owned by them. Override for rootless Docker or userns-remap
+    setups where the host UID is not the effective container UID.
+    """
     parallel_runs: int = 1
     """Number of parallel container runs (1 = sequential)."""
 
@@ -452,22 +488,14 @@ class RunConfig(BaseModel):
     def _normalize_repo_url(task: TaskSpec, lib_root: Path) -> None:
         """Rewrite a local repo_url to an absolute path under the library.
 
-        Task YAMLs historically use ``repo_url: tasks/repos/<id>`` (relative to
-        the repo root). The fixtures live under ``<lib_root>/repos/<id>``, so a
-        leading ``tasks/`` segment is stripped and the path is resolved against
-        the library root. Remote URLs (http/https/git/ssh) are left untouched.
+        Remote URLs (http/https/git/ssh) are left untouched.
         """
         url = task.repo_url
         if not url:
             return
         if url.startswith(("http://", "https://", "git@", "ssh://")):
             return
-        if Path(url).is_absolute():
-            return
-        rel = Path(url)
-        if rel.parts and rel.parts[0] == "tasks":
-            rel = Path(*rel.parts[1:])
-        task.repo_url = str((lib_root / rel).resolve())
+        task.repo_url = str(resolve_task_repo_path(url, lib_root))
 
     def build_matrix(self) -> list[RunCell]:
         """Build the full eval matrix: harness × model × task × repeat.

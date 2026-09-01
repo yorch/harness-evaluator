@@ -10,7 +10,9 @@ from harness_evaluator.orchestrator.config import (
     ModelSpec,
     RunConfig,
     TaskLibrary,
+    TaskSpec,
     TaskTrack,
+    resolve_task_repo_path,
 )
 
 
@@ -143,6 +145,75 @@ class TestRunConfig:
         assert cfg.name == "yaml-test"
         assert cfg.repeats == 2
         assert len(cfg.harnesses) == 1
+
+
+class TestResolveTaskRepoPath:
+    def test_strips_leading_tasks_segment(self, tmp_path):
+        resolved = resolve_task_repo_path("tasks/repos/swe-1", tmp_path)
+        assert resolved == (tmp_path / "repos" / "swe-1").resolve()
+
+    def test_plain_relative_path_resolves_against_lib_root(self, tmp_path):
+        resolved = resolve_task_repo_path("repos/swe-1", tmp_path)
+        assert resolved == (tmp_path / "repos" / "swe-1").resolve()
+
+    def test_absolute_path_returned_as_is(self, tmp_path):
+        elsewhere = tmp_path.parent / "elsewhere" / "repo"
+        resolved = resolve_task_repo_path(str(elsewhere), tmp_path)
+        assert resolved == elsewhere.resolve()
+
+    def test_traversal_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="escapes the task library root"):
+            resolve_task_repo_path("../../etc", tmp_path)
+
+    def test_traversal_after_tasks_segment_raises(self, tmp_path):
+        with pytest.raises(ValueError, match="escapes the task library root"):
+            resolve_task_repo_path("tasks/../../etc", tmp_path)
+
+    def test_accepts_str_lib_root(self, tmp_path):
+        resolved = resolve_task_repo_path("tasks/repos/swe-1", str(tmp_path))
+        assert resolved == (tmp_path / "repos" / "swe-1").resolve()
+
+
+class TestNormalizeRepoUrl:
+    @staticmethod
+    def _task(repo_url):
+        return TaskSpec(
+            id="t1",
+            name="Task 1",
+            track=TaskTrack.SWE,
+            task_prompt="Fix the bug",
+            repo_url=repo_url,
+        )
+
+    def test_local_path_absolutized_under_library(self, tmp_path):
+        task = self._task("tasks/repos/swe-1")
+        RunConfig._normalize_repo_url(task, tmp_path)
+        assert task.repo_url == str((tmp_path / "repos" / "swe-1").resolve())
+
+    def test_traversal_raises(self, tmp_path):
+        """The guard previously never fired — it emitted an unguarded path."""
+        task = self._task("../../etc")
+        with pytest.raises(ValueError, match="escapes the task library root"):
+            RunConfig._normalize_repo_url(task, tmp_path)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://github.com/example/repo.git",
+            "http://example.com/repo.git",
+            "git@github.com:example/repo.git",
+            "ssh://git@example.com/repo.git",
+        ],
+    )
+    def test_remote_urls_untouched(self, tmp_path, url):
+        task = self._task(url)
+        RunConfig._normalize_repo_url(task, tmp_path)
+        assert task.repo_url == url
+
+    def test_no_repo_url_is_noop(self, tmp_path):
+        task = self._task(None)
+        RunConfig._normalize_repo_url(task, tmp_path)
+        assert task.repo_url is None
 
 
 class TestRunCell:
