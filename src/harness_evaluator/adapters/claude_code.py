@@ -177,19 +177,47 @@ class ClaudeCodeAdapter(BaseAdapter):
             else:
                 cmd.extend(["--allowedTools", str(allowed_tools)])
 
-        # Default to --dangerously-skip-permissions so claude-code can
-        # autonomously edit files without prompting for approval. This is
-        # safe because harness-evaluator runs inside ephemeral Docker
-        # containers with isolated workspaces and no host filesystem
-        # access. Without this flag, claude-code blocks on every file
-        # edit and produces no changes. Set
-        # ``dangerously_skip_permissions: false`` in the harness config to
-        # disable (e.g. to use --allowedTools instead).
-        skip_perms = self.config.get("dangerously_skip_permissions", True)
-        if skip_perms:
+        if self._skip_permissions:
             cmd.append("--dangerously-skip-permissions")
 
         return cmd
+
+    @property
+    def _skip_permissions(self) -> bool:
+        """Whether ``--dangerously-skip-permissions`` will be passed.
+
+        Default to skipping so claude-code can autonomously edit files without
+        prompting for approval. This is safe because harness-evaluator runs
+        inside ephemeral Docker containers with isolated workspaces and no host
+        filesystem access. Without the flag, claude-code blocks on every file
+        edit and produces no changes. Set ``dangerously_skip_permissions:
+        false`` in the harness config to disable (e.g. to use --allowedTools).
+
+        Read from one place because ``get_env`` must agree with it: the two
+        deciding differently is exactly the silent failure this guards against.
+        """
+        return bool(self.config.get("dangerously_skip_permissions", True))
+
+    def get_env(self) -> dict[str, str]:
+        """Return the adapter env, marking the container as a sandbox.
+
+        claude-code refuses ``--dangerously-skip-permissions`` when it is
+        running as root ("cannot be used with root/sudo privileges") and exits
+        before making a single API call. The runner runs containers as the
+        invoking host user, so on a root host -- CI, Docker-in-Docker, or a root
+        shell -- that refusal fires and every cell fails as ``no_change`` with
+        zero tokens, which reads as a model that did nothing rather than a
+        harness that never started.
+
+        ``IS_SANDBOX=1`` is claude-code's supported way to say the process is
+        already confined, which is precisely true here: an ephemeral container
+        with ``--cap-drop=ALL`` and no host filesystem access beyond the mounted
+        cell workdir. It is set only when the flag it unblocks is actually used.
+        """
+        env = super().get_env()
+        if self._skip_permissions:
+            env["IS_SANDBOX"] = "1"
+        return env
 
 
 register_adapter("claude-code", ClaudeCodeAdapter)

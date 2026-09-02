@@ -883,6 +883,73 @@ class TestAdapterGetCommand:
         cmd = adapter.get_command("fix the bug")
         assert "--dangerously-skip-permissions" not in cmd
 
+    def test_claude_code_sets_is_sandbox_with_skip_permissions(
+        self, tmp_path: Any, anthropic_model: ModelSpec
+    ):
+        """claude-code refuses --dangerously-skip-permissions when running as root.
+
+        The runner runs containers as the invoking host user, so on a root host
+        that refusal fires and the harness exits before making a single API
+        call -- the cell then reports no_change with zero tokens, which reads as
+        a model that did nothing. IS_SANDBOX=1 is the supported way to say the
+        process is already confined, which the container is.
+        """
+        from harness_evaluator.adapters.claude_code import ClaudeCodeAdapter
+
+        adapter = ClaudeCodeAdapter(
+            workdir=str(tmp_path),
+            model=anthropic_model,
+        )
+        assert adapter.get_env()["IS_SANDBOX"] == "1"
+        assert "--dangerously-skip-permissions" in adapter.get_command("fix the bug")
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            {},
+            {"dangerously_skip_permissions": True},
+            {"dangerously_skip_permissions": False},
+            {"dangerously_skip_permissions": 0},
+            {"dangerously_skip_permissions": None},
+            # A quoted "false" in YAML is a truthy string -- the flag IS passed.
+            # Pinned deliberately: the env must follow the flag even when the
+            # flag itself is arguably surprising.
+            {"dangerously_skip_permissions": "false"},
+        ],
+    )
+    def test_is_sandbox_set_exactly_when_flag_is_passed(
+        self, tmp_path: Any, anthropic_model: ModelSpec, config: dict
+    ):
+        """IS_SANDBOX must be set if and only if the flag it unblocks is passed.
+
+        These are decided in two different methods (``get_env`` reads the same
+        ``_skip_permissions`` property as ``get_command``). If they ever drift,
+        claude-code either refuses to start as root, or claims to be sandboxed
+        while running without the flag -- so the invariant is the thing worth
+        testing, not either side alone.
+        """
+        from harness_evaluator.adapters.claude_code import ClaudeCodeAdapter
+
+        adapter = ClaudeCodeAdapter(
+            workdir=str(tmp_path), model=anthropic_model, config=config
+        )
+        flag_passed = "--dangerously-skip-permissions" in adapter.get_command("fix")
+        sandbox_set = adapter.get_env().get("IS_SANDBOX") == "1"
+        assert flag_passed == sandbox_set, config
+
+    def test_other_adapters_do_not_set_is_sandbox(
+        self, tmp_path: Any, anthropic_model: ModelSpec
+    ):
+        """Only claude-code has the root check; nothing else should claim sandboxing."""
+        from harness_evaluator.adapters.registry import create_adapter
+
+        for name in ("opencode", "codex", "pi", "omp"):
+            adapter = create_adapter(
+                name, workdir=str(tmp_path), model=anthropic_model
+            )
+            assert adapter is not None
+            assert "IS_SANDBOX" not in adapter.get_env(), name
+
     def test_claude_code_allowed_tools_without_skip_permissions(
         self, tmp_path: Any, anthropic_model: ModelSpec
     ):
