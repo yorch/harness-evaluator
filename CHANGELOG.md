@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.3](https://github.com/yorch/harness-evaluator/compare/v0.14.2...v0.14.3) (2026-09-02)
+
+
+### Bug Fixes
+
+* **adapters:** mark the container a sandbox so claude-code runs as root ([#59](https://github.com/yorch/harness-evaluator/issues/59)) ([7deeff2](https://github.com/yorch/harness-evaluator/commit/7deeff2c8c09edbd92ae427c03880ebb13234d05))
+
 ## [0.14.2](https://github.com/yorch/harness-evaluator/compare/v0.14.1...v0.14.2) (2026-09-01)
 
 
