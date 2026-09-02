@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import errno
 import socket
+from unittest.mock import MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -13,6 +14,7 @@ from harness_evaluator.gateway.proxy import (
     GatewayStartupError,
     _check_port_available,
     _convert_oserror_to_startup_error,
+    _format_eaddrnotavail_error,
 )
 
 runner = CliRunner()
@@ -194,6 +196,8 @@ class TestCliGatewayPortInUse:
                 app,
                 [
                     "gateway",
+                    "--host",
+                    "127.0.0.1",
                     "--port",
                     str(port),
                     "--db",
@@ -216,6 +220,8 @@ class TestCliGatewayPortInUse:
                 app,
                 [
                     "gateway",
+                    "--host",
+                    "127.0.0.1",
                     "--port",
                     str(port),
                     "--db",
@@ -235,6 +241,8 @@ class TestCliGatewayPortInUse:
                 app,
                 [
                     "gateway",
+                    "--host",
+                    "127.0.0.1",
                     "--port",
                     str(port),
                     "--db",
@@ -253,6 +261,8 @@ class TestCliGatewayPortInUse:
             app,
             [
                 "gateway",
+                "--host",
+                "127.0.0.1",
                 "--port",
                 "0",
                 "--db",
@@ -312,3 +322,46 @@ class TestGatewayStartupError:
     def test_is_exception_subclass(self) -> None:
         err = GatewayStartupError("test")
         assert isinstance(err, Exception)
+
+
+class TestEaddrnotavailError:
+    """Tests for EADDRNOTAVAIL handling (e.g. Docker Desktop bridge IP)."""
+
+    def test_format_mentions_docker_desktop(self) -> None:
+        """The error message mentions Docker Desktop and suggests fixes."""
+        msg = _format_eaddrnotavail_error("172.17.0.1", 8877)
+        assert "172.17.0.1" in msg
+        assert "Docker Desktop" in msg
+        assert "--host 0.0.0.0" in msg
+        assert "--host 127.0.0.1" in msg
+
+    def test_convert_oserror_eaddrnotavail(self) -> None:
+        """_convert_oserror_to_startup_error handles EADDRNOTAVAIL."""
+        exc = OSError(errno.EADDRNOTAVAIL, "Cannot assign requested address")
+        result = _convert_oserror_to_startup_error(exc, "172.17.0.1", 8877)
+        assert result.errno == errno.EADDRNOTAVAIL
+        assert "Docker Desktop" in result.message
+        assert result.host == "172.17.0.1"
+        assert result.port == 8877
+
+    def test_check_port_available_raises_eaddrnotavail_error(self) -> None:
+        """_check_port_available raises a friendly error for EADDRNOTAVAIL."""
+        with patch(
+            "harness_evaluator.gateway.proxy.socket.getaddrinfo"
+        ) as mock_getaddrinfo:
+            mock_getaddrinfo.return_value = [
+                (socket.AF_INET, socket.SOCK_STREAM, 0, "", ("172.17.0.1", 8877))
+            ]
+            with patch(
+                "harness_evaluator.gateway.proxy.socket.socket"
+            ) as mock_socket_cls:
+                mock_sock = MagicMock()
+                mock_sock.bind.side_effect = OSError(
+                    errno.EADDRNOTAVAIL, "Cannot assign requested address"
+                )
+                mock_socket_cls.return_value = mock_sock
+
+                with pytest.raises(GatewayStartupError) as exc_info:
+                    _check_port_available("172.17.0.1", 8877)
+                assert exc_info.value.errno == errno.EADDRNOTAVAIL
+                assert "Docker Desktop" in exc_info.value.message

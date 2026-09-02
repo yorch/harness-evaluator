@@ -107,12 +107,15 @@ uvx harness-evaluator gateway --port 8877
 You should see:
 
 ```
-Starting gateway proxy on 127.0.0.1:8877
+Auto-detected Docker bridge gateway: 172.17.0.1 (containers reach it via host.docker.internal)
+Starting gateway proxy on 172.17.0.1:8877
 Captured calls stored to: harness_evaluator_gateway.db
 Configure harnesses with:
-  ANTHROPIC_BASE_URL=http://127.0.0.1:8877
-  OPENAI_BASE_URL=http://127.0.0.1:8877
+  ANTHROPIC_BASE_URL=http://172.17.0.1:8877
+  OPENAI_BASE_URL=http://172.17.0.1:8877
 ```
+
+The gateway binds the Docker bridge gateway IP by default (`--host auto`), so containers can reach it via `host.docker.internal` without exposing it on all interfaces. Pass `--host 127.0.0.1` for standalone use without Docker.
 
 Keep this terminal open — the proxy must be running while you execute evals.
 
@@ -338,10 +341,10 @@ the [Subscription auth guide](guides/subscription/).
 ### Gateway not reachable
 
 ```
-Gateway is NOT reachable on 127.0.0.1:8877.
+Gateway is NOT reachable on port 8877.
 ```
 
-Start the gateway in a separate terminal: `uvx harness-evaluator gateway --port 8877`
+Start the gateway in a separate terminal: `uvx harness-evaluator gateway --port 8877`. The default `--host auto` binds the Docker bridge gateway IP so containers can reach it. If you previously started it with `--host 127.0.0.1`, restart without that flag (or use `--host auto` explicitly).
 
 ### No API calls found for trace_id
 

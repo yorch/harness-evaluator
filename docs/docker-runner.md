@@ -179,7 +179,7 @@ Containers reach the gateway proxy via `host.docker.internal`:
 --add-host host.docker.internal:host-gateway
 ```
 
-For environments where `host.docker.internal` doesn't work, the runner supports `--network=host` as a fallback (`use_host_network=True`).
+The gateway defaults to `--host auto`, which detects the Docker bridge gateway IP (the same IP `host-gateway` resolves to) and binds it. This makes the gateway reachable from containers without exposing it on all interfaces. For environments where `host.docker.internal` doesn't work (e.g. Docker Desktop on macOS/Windows), pass `--host 0.0.0.0` explicitly or use `--network=host` as a fallback (`use_host_network=True`).
 
 ## Repo setup
 
