@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.1](https://github.com/yorch/harness-evaluator/compare/v0.15.0...v0.15.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **eval:** surface actionable error messages for failed cells ([#66](https://github.com/yorch/harness-evaluator/issues/66)) ([21f4879](https://github.com/yorch/harness-evaluator/commit/21f48796c3fddf3f471800d890c8c1ea329a0032))
+* **gateway:** resilient save and cached CallStore in TUI ([d3ef1cf](https://github.com/yorch/harness-evaluator/commit/d3ef1cf4f70f1abeaf5603bdcbd9ce9a3be85265))
+
 ## [0.15.0](https://github.com/yorch/harness-evaluator/compare/v0.14.3...v0.15.0) (2026-09-03)
 
 
