@@ -620,13 +620,23 @@ class DockerRunner:
             # stderr, so it cannot report why the harness failed (e.g.
             # API auth error, command not found). Append a short excerpt
             # of the harness stderr to give the user an actionable hint.
+            # The excerpt is redacted (to avoid leaking secrets) and
+            # collapsed to a single line (to avoid breaking CLI summary
+            # formatting).
             error_message = eval_result.error_message
             if (
                 eval_result.exit_class != "pass"
                 and harness_result.stderr
                 and num_api_calls == 0
             ):
-                stderr_excerpt = harness_result.stderr.strip()[:200]
+                from harness_evaluator.runner.redaction import redact_secrets
+
+                # Redact secrets, strip ANSI codes, collapse whitespace
+                redacted_stderr = redact_secrets(harness_result.stderr.strip())
+                # Remove ANSI escape sequences for clean single-line display
+                redacted_stderr = re.sub(r"\x1b\[[0-9;]*m", "", redacted_stderr)
+                # Collapse all whitespace (newlines, tabs, multiple spaces) to single spaces
+                stderr_excerpt = re.sub(r"\s+", " ", redacted_stderr).strip()[:200]
                 if stderr_excerpt:
                     if error_message:
                         error_message = f"{error_message}; harness error: {stderr_excerpt}"

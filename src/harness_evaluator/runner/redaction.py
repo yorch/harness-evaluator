@@ -142,15 +142,23 @@ class StreamingRedactor:
         return lines
 
     def flush(self) -> str | None:
-        """Return any remaining buffered text, redacted, or None if empty."""
+        """Return any remaining buffered text, redacted, or None if empty.
+
+        Mirrors ``feed()``: strips ``\\r`` only for the redaction match
+        so a secret split by a bare ``\\r`` is reassembled and caught,
+        but preserves ``\\r`` in the emitted text when no redaction
+        occurred (to keep terminal carriage-return semantics).
+        """
         remaining = self._line_buffer
         self._line_buffer = ""
         # Also flush the decoder's internal buffer
         final = self._decoder.decode(b"", final=True)
         remaining += final
         if remaining:
-            # Strip \r before redaction to match feed() behavior —
-            # a secret split by a bare \r without a trailing \n must
-            # still be reassembled and caught by the regex.
-            return redact_secrets(remaining.replace("\r", ""))
+            redacted = redact_secrets(remaining.replace("\r", ""))
+            if redacted != remaining.replace("\r", ""):
+                # Redaction changed the text — emit the redacted version
+                return redacted
+            # No redaction occurred — preserve original with \r intact
+            return remaining
         return None
