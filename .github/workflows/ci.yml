@@ -70,11 +70,51 @@ jobs:
       - name: Pytest
         run: uv run pytest tests/ -q
 
-  # Gate: all three must pass for PRs to be mergeable
+  lockfile:
+    name: Lockfile (uv lock --check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      # Deliberately no `uv sync` before this: sync rewrites uv.lock, which
+      # would make the check pass against a lockfile it had just repaired.
+      # This must run against the committed file.
+      - name: Verify uv.lock matches pyproject.toml
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          case "$HEAD_REF" in
+            release-please--*)
+              # On a release PR the version bump lands first and release-please.yml
+              # syncs the lockfile immediately after. CI here may have started
+              # before that commit, and a GITHUB_TOKEN push does not reliably
+              # retrigger it -- so failing would leave a red check that cannot be
+              # re-run, blocking the release. Warn instead: a lockfile that really
+              # is stale after the release still fails on the next ordinary PR.
+              uv lock --check || {
+                echo "::warning::uv.lock is not in sync yet; release-please.yml syncs it on this branch."
+                exit 0
+              }
+              ;;
+            *)
+              uv lock --check
+              ;;
+          esac
+
+  # Gate: all four must pass for PRs to be mergeable
   quality-gate:
     name: Quality gate
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test]
+    needs: [lint, typecheck, test, lockfile]
     steps:
       - name: All checks passed
-        run: echo "lint, typecheck, and test all passed"
+        run: echo "lint, typecheck, test, and lockfile all passed"

@@ -25,6 +25,68 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # uv.lock records the project's own version, but release-please cannot
+      # update it: its generic updater only rewrites lines carrying an
+      # `x-release-please-version` annotation, and a lockfile uv regenerates
+      # cannot carry one. Listing it in `extra-files` is therefore a silent
+      # no-op, so the lockfile went stale on every release and the next
+      # `uv sync` -- or any `uv run` -- rewrote it, leaving contributors with a
+      # dirty tree they had not touched.
+      #
+      # `uv lock` only rewrites the version of the local project here; it does
+      # not re-resolve dependencies (that needs `--upgrade`), so this cannot
+      # smuggle a dependency bump into a release PR.
+      - name: Resolve the release PR branch
+        id: release-pr
+        if: steps.release-please.outputs.pr
+        env:
+          PR_JSON: ${{ steps.release-please.outputs.pr }}
+        run: |
+          set -euo pipefail
+          branch=$(printf '%s' "$PR_JSON" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin).get('headBranchName', ''))")
+          # Fail loudly rather than skipping: a silent no-op here is exactly
+          # the failure mode this step exists to end.
+          if [ -z "$branch" ]; then
+            echo "::error::Could not read headBranchName from the release-please 'pr' output; its shape may have changed." >&2
+            exit 1
+          fi
+          case "$branch" in
+            release-please--*) ;;
+            *)
+              echo "::error::Refusing to push to unexpected branch '$branch'." >&2
+              exit 1
+              ;;
+          esac
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the release PR branch
+        if: steps.release-pr.outputs.branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release-pr.outputs.branch }}
+
+      - name: Set up uv
+        if: steps.release-pr.outputs.branch
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Sync uv.lock to the bumped version
+        if: steps.release-pr.outputs.branch
+        env:
+          BRANCH: ${{ steps.release-pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          uv lock
+          if git diff --quiet -- uv.lock; then
+            echo "uv.lock is already in sync."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add uv.lock
+          git commit -m "chore: sync uv.lock to the released version"
+          git push origin "HEAD:refs/heads/$BRANCH"
+
   # Publish to PyPI and upload artifacts to the GitHub Release.
   # This job runs in the same workflow as release-please because tags
   # created by GITHUB_TOKEN do not trigger downstream `on: push: tags`
