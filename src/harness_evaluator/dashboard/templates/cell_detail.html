@@ -86,7 +86,7 @@
         <h2>Error</h2>
         <div class="card">
             {% if cell.error_class %}<p><strong class="fail">Error Class:</strong> <span class="mono" translate="no">{{ cell.error_class }}</span></p>{% endif %}
-            {% if cell.error_message %}<pre class="code-block">{{ cell.error_message }}</pre>{% endif %}
+            {% if cell.error_message %}<pre class="code-block">{{ cell.error_message }}</pre>{% else %}<p class="dim">No detailed error message. See Test Output and Harness Output below for diagnostic details.</p>{% endif %}
         </div>
     </section>
     {% endif %}

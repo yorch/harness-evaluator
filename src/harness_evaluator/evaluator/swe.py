@@ -155,12 +155,15 @@ class SWEEvaluator:
                 error_message = "Test runner crashed or produced no parseable results"
             elif self._looks_like_overfit(test_output, diff):
                 error_class = ErrorClass.OVERFIT
+                error_message = "All tests failed — changes may overfit to visible tests"
             else:
                 error_class = ErrorClass.WRONG_APPROACH
+                error_message = "All tests failed — approach did not solve the task"
             exit_class = "fail"
         else:
             error_class = ErrorClass.PARTIAL
             exit_class = "fail"
+            error_message = f"{tests_passed}/{tests_total} tests passed"
 
         # Check for refusal patterns in diff
         if self._looks_like_refusal(diff):

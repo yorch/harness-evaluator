@@ -474,7 +474,10 @@ class DockerRunner:
                 # Convert OpenEndedResult to the format expected by the runner
                 from harness_evaluator.evaluator.swe import ErrorClass, EvaluationResult
 
-                # Map open-ended error classes to SWE ErrorClass
+                # Map open-ended error classes to SWE ErrorClass.
+                # structural_failure and judge_error are both mapped to
+                # CRASH but with distinct error_messages so the user can
+                # tell them apart.
                 error_class_map = {
                     "no_change": ErrorClass.NO_CHANGE,
                     "structural_failure": ErrorClass.CRASH,
@@ -486,13 +489,31 @@ class DockerRunner:
                     oe_result.error_class, ErrorClass.WRONG_APPROACH
                 )
 
+                # Build error_message from the best available source:
+                # judge_result.error for judge failures, or the first
+                # failing structural check for structural failures.
+                if oe_result.judge_result and oe_result.judge_result.error:
+                    oe_error_message = oe_result.judge_result.error
+                elif oe_result.error_class == "structural_failure":
+                    # Extract the first failing structural check detail
+                    failing = [
+                        c.get("detail", c.get("name", ""))
+                        for c in (
+                            oe_result.structural_result.checks
+                            if oe_result.structural_result
+                            else []
+                        )
+                        if not c.get("passed", True)
+                    ]
+                    oe_error_message = failing[0] if failing else "Structural checks failed"
+                else:
+                    oe_error_message = ""
+
                 eval_result = EvaluationResult(
                     exit_class=oe_result.exit_class,
                     success=oe_result.success,
                     error_class=mapped_error_class,
-                    error_message=oe_result.judge_result.error or ""
-                    if oe_result.judge_result
-                    else "",
+                    error_message=oe_error_message,
                     test_output=oe_result.test_output,
                     diff=oe_result.diff,
                 )
@@ -593,11 +614,40 @@ class DockerRunner:
                     phases=phase_results,
                 )
 
+            # Enrich error_message with harness stderr context when the
+            # eval failed and the harness produced error output. The
+            # evaluator only sees the diff/test results, not the harness
+            # stderr, so it cannot report why the harness failed (e.g.
+            # API auth error, command not found). Append a short excerpt
+            # of the harness stderr to give the user an actionable hint.
+            # The excerpt is redacted (to avoid leaking secrets) and
+            # collapsed to a single line (to avoid breaking CLI summary
+            # formatting).
+            error_message = eval_result.error_message
+            if (
+                eval_result.exit_class != "pass"
+                and harness_result.stderr
+                and num_api_calls == 0
+            ):
+                from harness_evaluator.runner.redaction import redact_secrets
+
+                # Redact secrets, strip ANSI codes, collapse whitespace
+                redacted_stderr = redact_secrets(harness_result.stderr.strip())
+                # Remove ANSI escape sequences for clean single-line display
+                redacted_stderr = re.sub(r"\x1b\[[0-9;]*m", "", redacted_stderr)
+                # Collapse all whitespace (newlines, tabs, multiple spaces) to single spaces
+                stderr_excerpt = re.sub(r"\s+", " ", redacted_stderr).strip()[:200]
+                if stderr_excerpt:
+                    if error_message:
+                        error_message = f"{error_message}; harness error: {stderr_excerpt}"
+                    else:
+                        error_message = f"harness error: {stderr_excerpt}"
+
             return {
                 "exit_class": eval_result.exit_class,
                 "success": eval_result.success,
                 "error_class": eval_result.error_class.value,
-                "error_message": eval_result.error_message,
+                "error_message": error_message,
                 "usage": usage,
                 "total_cost": total_cost,
                 "latency_ms": latency_ms,
