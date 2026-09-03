@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/yorch/harness-evaluator/compare/v0.14.3...v0.15.0) (2026-09-03)
+
+
+### Features
+
+* **tui:** report per-cell activity through eval lifecycle ([#62](https://github.com/yorch/harness-evaluator/issues/62)) ([e22c395](https://github.com/yorch/harness-evaluator/commit/e22c39564fe2f56c8f0e56e72c8da119137c38ac))
+
+
+### Bug Fixes
+
+* **gateway:** bind Docker bridge IP by default so containers can reach it ([#61](https://github.com/yorch/harness-evaluator/issues/61)) ([d9ca51e](https://github.com/yorch/harness-evaluator/commit/d9ca51ee18622908b0b4b237ffcb85eb43ef047e))
+
 ## [0.14.3](https://github.com/yorch/harness-evaluator/compare/v0.14.2...v0.14.3) (2026-09-02)
 
 
