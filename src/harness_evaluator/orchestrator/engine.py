@@ -486,6 +486,19 @@ class Orchestrator:
                         self.progress.completed += 1
                     else:
                         self.progress.failed += 1
+                        # Surface eval failures (not just infra kills) in
+                        # progress.errors so the CLI summary can show
+                        # *why* a cell failed, not just that it did.
+                        err_cls = result.get("error_class") or "unknown"
+                        err_msg = result.get("error_message") or ""
+                        if err_msg:
+                            self.progress.errors.append(
+                                f"{cell.cell_id}: {err_cls} — {err_msg}"
+                            )
+                        else:
+                            self.progress.errors.append(
+                                f"{cell.cell_id}: {err_cls}"
+                            )
                 await self._notify_progress()
             except Exception as persist_err:
                 logger.error(

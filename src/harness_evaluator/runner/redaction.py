@@ -149,5 +149,8 @@ class StreamingRedactor:
         final = self._decoder.decode(b"", final=True)
         remaining += final
         if remaining:
-            return redact_secrets(remaining)
+            # Strip \r before redaction to match feed() behavior —
+            # a secret split by a bare \r without a trailing \n must
+            # still be reassembled and caught by the regex.
+            return redact_secrets(remaining.replace("\r", ""))
         return None
