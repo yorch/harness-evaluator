@@ -117,7 +117,8 @@ ci: bump actions/checkout to v7
 
 ## CI
 
-- `.github/workflows/ci.yml` — ruff + mypy + pytest on every push/PR to main
+- `.github/workflows/ci.yml` — ruff + mypy + pytest + `uv lock --check` on
+  every push/PR to main
 - `.github/workflows/release-please.yml` — runs on push to main, opens a
   "Release Please" PR with version bump + changelog from conventional commits;
   merging that PR creates the `v*` tag + GitHub Release and then publishes to
@@ -144,13 +145,21 @@ Releases are managed by [release-please](https://github.com/googleapis/release-p
    `pyproject.toml`, `src/harness_evaluator/__init__.py` and
    `.release-please-manifest.json`, and updates `CHANGELOG.md`
 
-   > **Known gap**: `uv.lock` and `site/src/pages/index.astro` are listed as
-   > `extra-files` but are *not* updated — the generic updater only rewrites
-   > lines carrying an `x-release-please-version` annotation, and neither file
-   > has one. `index.astro` holds no version so this is harmless there, but
-   > `uv.lock` records the project version and goes stale every release, so the
-   > next `uv sync` leaves a dirty tree. Bump it by hand or run `uv lock` after
-   > a release until the workflow does it.
+   `release-please.yml` then runs `uv lock` on the release branch and pushes the
+   result, so the lockfile's recorded project version tracks the bump.
+
+   > **Why that step exists**: `uv.lock` is listed in `extra-files`, but
+   > release-please cannot update it — its generic updater only rewrites lines
+   > carrying an `x-release-please-version` annotation, and a file `uv`
+   > regenerates cannot keep a comment. The entry is a silent no-op, so the
+   > lockfile went stale on every release and the next `uv sync` (or any
+   > `uv run`) rewrote it, leaving contributors with a dirty tree they never
+   > touched. CI's `lockfile` job runs `uv lock --check` so this cannot return
+   > unnoticed; it warns rather than fails on `release-please--*` branches,
+   > where the sync commit may land after CI has already started.
+   >
+   > `site/src/pages/index.astro` is a no-op for the same reason, but it holds
+   > no version string, so nothing goes stale there.
 3. Merge the Release Please PR → creates a `v*` tag + GitHub Release, then
    publishes to PyPI and pushes a version-tagged Docker image (all within
    `release-please.yml`)
