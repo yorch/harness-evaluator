@@ -120,6 +120,20 @@ class CallStore:
             ).fetchall()
             return [self._row_to_call(row) for row in rows]
 
+    def get_by_trace_prefix(self, trace_prefix: str) -> list[CapturedCall]:
+        """Return calls whose trace_id starts with ``trace_prefix``.
+
+        Used by the TUI to aggregate API calls for multi-phase cells,
+        where each phase has a trace ID like ``{cell_id}__phase-{name}``.
+        """
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM captured_calls WHERE trace_id LIKE ? ORDER BY timestamp",
+                (f"{trace_prefix}%",),
+            ).fetchall()
+            return [self._row_to_call(row) for row in rows]
+
     def get_stats_summary(self) -> dict[str, int | float]:
         """Return aggregated stats over all captured calls.
 

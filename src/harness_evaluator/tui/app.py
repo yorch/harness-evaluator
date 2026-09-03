@@ -4,6 +4,9 @@ Layout:
   ┌─ Eval Log ──────────────────────────────┐
   │ (scrollable RichLog, auto-follows tail) │
   │                                         │
+  ├─ Cell Output ───────────────────────────┤
+  │ (opt-in per-cell output panel, hidden   │
+  │  by default, press 'o' to toggle)       │
   ├─ Eval Progress ─────────────────────────┤
   │ (fixed ProgressFooter, docked with the  │
   │  key-bindings Footer below it — FooterBar) │
@@ -16,6 +19,7 @@ text; also shown live in the bindings footer):
   d           — toggle DEBUG log level
   t           — toggle timestamps in log
   f           — toggle auto-follow (tail mode)
+  o           — toggle/cycle per-cell output panel
 """
 
 from __future__ import annotations
@@ -32,7 +36,12 @@ from textual.css.query import NoMatches
 from textual.widgets import Header, RichLog
 
 from harness_evaluator.tui.log_handler import TuiLogHandler
-from harness_evaluator.tui.widgets import FooterBar, FooterState, ProgressFooter
+from harness_evaluator.tui.widgets import (
+    CellOutputPanel,
+    FooterBar,
+    FooterState,
+    ProgressFooter,
+)
 
 if TYPE_CHECKING:
     from harness_evaluator.orchestrator.config import RunConfig
@@ -69,6 +78,7 @@ class EvalApp(App[object]):
         ("d", "toggle_debug", "Toggle debug logging"),
         ("t", "toggle_timestamps", "Toggle timestamps"),
         ("f", "toggle_follow", "Toggle auto-follow"),
+        ("o", "toggle_output_panel", "Toggle per-cell output"),
     ]
 
     def __init__(
@@ -78,6 +88,8 @@ class EvalApp(App[object]):
         run_cell_fn: Any,
         cells: list[Any],
         verbose: int = 0,
+        gateway_db: str | None = None,
+        runner: Any = None,
     ) -> None:
         super().__init__()
         self._config = config
@@ -85,6 +97,8 @@ class EvalApp(App[object]):
         self._run_cell_fn = run_cell_fn
         self._cells = cells
         self._verbose = verbose
+        self._gateway_db = gateway_db
+        self._runner = runner
         self._result: OrchestratorProgress | None = None
         self._log_handler: TuiLogHandler | None = None
         # Initial TUI log level: -vv (verbose>=2) starts at DEBUG; INFO is the
@@ -106,6 +120,7 @@ class EvalApp(App[object]):
         yield Header()
         with Vertical(id="log-container"):
             yield RichLog(id="eval-log", markup=True, auto_scroll=True)
+        yield CellOutputPanel()
         yield FooterBar()
 
     def on_mount(self) -> None:
@@ -178,6 +193,12 @@ class EvalApp(App[object]):
         start_time = self._footer_start_time if self._footer_start_time is not None else (
             time.monotonic()
         )
+        # Preserve live per-cell data (phases, API stats) from the previous
+        # state so a progress snapshot doesn't wipe what the tick callback
+        # already polled. The tick callback will refresh them on the next
+        # tick regardless.
+        prev_phases = footer.state.cell_phases
+        prev_api_stats = footer.state.cell_api_stats
         footer.state = FooterState(
             total_cells=snapshot.total_cells,
             completed=snapshot.completed,
@@ -189,7 +210,84 @@ class EvalApp(App[object]):
             running_cells=list(snapshot.running_cells),
             budget=self._config.budget_usd,
             start_time=start_time,
+            cell_phases=dict(prev_phases),
+            cell_api_stats=dict(prev_api_stats),
         )
+
+    def _poll_cell_activity(self, state: FooterState) -> None:
+        """Poll per-cell phase and API call stats, updating state in place.
+
+        Called by ``ProgressFooter._tick`` on its 1-second timer. Reads
+        phase info from the results store and API call counts from the
+        gateway store. All polling is wrapped in try/except so a SQLite
+        failure (e.g. ``database is locked`` under ``parallel_runs > 1``)
+        never freezes the footer — the previous tick's data simply
+        persists until the next successful poll.
+
+        Only running cells are polled; completed/failed cells are pruned
+        from both maps so stale data doesn't linger.
+        """
+        running = set(state.running_cells)
+        if not running:
+            state.cell_phases.clear()
+            state.cell_api_stats.clear()
+            return
+
+        # Prune cells that are no longer running.
+        for cell_id in list(state.cell_phases):
+            if cell_id not in running:
+                del state.cell_phases[cell_id]
+        for cell_id in list(state.cell_api_stats):
+            if cell_id not in running:
+                del state.cell_api_stats[cell_id]
+
+        # Poll phases from the results store.
+        try:
+            phases = self._store.get_running_cell_phases(self._config.name)
+            for cell_id, (phase, _) in phases.items():
+                if phase:
+                    state.cell_phases[cell_id] = phase
+        except Exception:
+            pass
+
+        # Poll API call counts from the gateway store.
+        # Use get_by_trace_prefix so multi-phase cells (whose per-phase
+        # trace IDs are "{cell_id}__phase-{name}") are also captured.
+        if self._gateway_db:
+            try:
+                from pathlib import Path
+
+                from harness_evaluator.gateway.store import CallStore
+
+                if Path(self._gateway_db).exists():
+                    gw_store = CallStore(self._gateway_db)
+                    for cell_id in running:
+                        calls = gw_store.get_by_trace_prefix(cell_id)
+                        if calls:
+                            total_cost = sum(c.cost.total for c in calls)
+                            state.cell_api_stats[cell_id] = (
+                                len(calls), total_cost,
+                            )
+            except Exception:
+                pass
+
+        # Poll container liveness for cells in the harness_running phase.
+        # If a container has exited but the cell hasn't transitioned to
+        # "evaluating" yet, annotate the phase to signal a potential hang.
+        # Use the runner's docker_bin if available (e.g. podman or a
+        # custom path) so the check matches the runner's container naming.
+        try:
+            from harness_evaluator.runner.docker import check_container_liveness
+
+            docker_bin = getattr(self._runner, "docker_bin", "docker")
+            for cell_id in running:
+                phase = state.cell_phases.get(cell_id, "")
+                if phase.startswith("harness_running"):
+                    status = check_container_liveness(cell_id, docker_bin=docker_bin)
+                    if status is not None and status != "running":
+                        state.cell_phases[cell_id] = f"{phase}:container_{status}"
+        except Exception:
+            pass
 
     @work(exclusive=True, exit_on_error=False)
     async def _run_eval(self) -> None:
@@ -197,6 +295,22 @@ class EvalApp(App[object]):
         from harness_evaluator.orchestrator.engine import Orchestrator
 
         footer = self.query_one(ProgressFooter)
+
+        # Wire the tick callback so the footer polls live per-cell phase
+        # and API call stats on its 1-second refresh timer.
+        footer._tick_callback = self._poll_cell_activity
+
+        # Wire the runner's output streamer to feed the per-cell output
+        # panel. The runner tees harness stdout/stderr to this callback
+        # while still capturing the full buffer for the AdapterResult.
+        # Wrapped in try/except so a missing panel or runner never
+        # prevents the eval from running.
+        if self._runner is not None:
+            try:
+                panel = self.query_one(CellOutputPanel)
+                self._runner.output_streamer = panel.feed
+            except Exception:
+                pass
 
         self._footer_start_time = time.monotonic()
         footer.state = FooterState(
@@ -253,6 +367,25 @@ class EvalApp(App[object]):
         log_widget = self.query_one("#eval-log", RichLog)
         log_widget.auto_scroll = self._auto_follow
         self._notify_toggle("auto-follow", self._auto_follow)
+
+    def action_toggle_output_panel(self) -> None:
+        """Toggle or cycle the per-cell output panel.
+
+        Pressing ``o`` cycles through running cells. If no cells are
+        running, the panel is hidden. If the panel is already showing
+        the last running cell, it is hidden.
+        """
+        try:
+            panel = self.query_one(CellOutputPanel)
+            footer = self.query_one(ProgressFooter)
+        except NoMatches:
+            return
+        running = (
+            list(footer.state.running_cells)
+            if footer.state.running_cells
+            else ([footer.state.current_cell] if footer.state.current_cell else [])
+        )
+        panel.cycle_cell(running)
 
     def _notify_level(self) -> None:
         level_name = logging.getLevelName(self._base_level)

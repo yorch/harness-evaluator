@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS run_state (
     started_at TEXT,
     completed_at TEXT,
     error TEXT,
+    phase TEXT,
+    phase_started_at TEXT,
     PRIMARY KEY (run_name, cell_id)
 );
 
@@ -125,6 +127,8 @@ _MIGRATIONS = [
     ("phase_results", "stdout", "TEXT"),
     ("phase_results", "stderr", "TEXT"),
     ("run_results", "cost_mode", "TEXT DEFAULT 'platform'"),
+    ("run_state", "phase", "TEXT"),
+    ("run_state", "phase_started_at", "TEXT"),
 ]
 
 # Tables whose primary key changed from a bare ``cell_id`` to a composite
@@ -182,6 +186,8 @@ _LEGACY_PK_REBUILD: dict[str, tuple[str, list[str]]] = {
             started_at TEXT,
             completed_at TEXT,
             error TEXT,
+            phase TEXT,
+            phase_started_at TEXT,
             PRIMARY KEY (run_name, cell_id)
         )
         """,
@@ -581,6 +587,50 @@ class ResultsStore:
                     "SELECT status FROM run_state WHERE cell_id = ?", (cell_id,)
                 ).fetchone()
             return row[0] if row else None
+
+    def set_cell_phase(
+        self, cell_id: str, run_name: str, phase: str
+    ) -> None:
+        """Update the current execution phase for a running cell.
+
+        Called by ``DockerRunner`` at each internal phase transition
+        (cloning, container_start, setup, harness_running, evaluating,
+        aggregating, reconciling). The TUI polls this on its 1-second
+        tick timer to show per-cell phase labels without threading
+        callbacks through the orchestrator.
+        """
+        now = datetime.now(UTC).isoformat()
+        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute(
+                "UPDATE run_state SET phase = ?, phase_started_at = ? "
+                "WHERE cell_id = ? AND run_name = ?",
+                (phase, now, cell_id, run_name),
+            )
+            conn.commit()
+
+    def get_running_cell_phases(
+        self, run_name: str
+    ) -> dict[str, tuple[str | None, str | None]]:
+        """Return ``{cell_id: (phase, phase_started_at)}`` for all running cells.
+
+        Used by the TUI's tick timer to poll phase state without
+        callbacks. Returns an empty dict if no cells are running or
+        the table/columns do not exist yet (pre-migration DBs).
+        """
+        try:
+            with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT cell_id, phase, phase_started_at "
+                    "FROM run_state WHERE run_name = ? AND status = 'running'",
+                    (run_name,),
+                ).fetchall()
+                return {
+                    row["cell_id"]: (row["phase"], row["phase_started_at"])
+                    for row in rows
+                }
+        except sqlite3.OperationalError:
+            return {}
 
     def get_completed_cells(self, run_name: str) -> set[str]:
         """Get set of cell IDs that have been completed (for resumability)."""

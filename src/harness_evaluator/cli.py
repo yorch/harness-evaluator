@@ -565,7 +565,10 @@ def run(
         try:
             from harness_evaluator.tui import EvalApp
 
-            tui_app = EvalApp(cfg, store, runner.run_cell, cells, verbose=verbose)
+            tui_app = EvalApp(
+                cfg, store, runner.run_cell, cells, verbose=verbose,
+                gateway_db=cfg.gateway_db, runner=runner,
+            )
             tui_app.run()
         except Exception:
             # textual is a hard dependency, so ImportError should not happen
