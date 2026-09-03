@@ -8,6 +8,7 @@ in the results database or displayed in the dashboard.
 
 from __future__ import annotations
 
+import codecs
 import re
 
 # Maximum bytes of stdout/stderr to store per stream. We keep the *tail*
@@ -71,3 +72,82 @@ def truncate_output(text: str, max_bytes: int = MAX_OUTPUT_BYTES) -> str:
 def sanitize_output(text: str) -> str:
     """Redact secrets and truncate in one pass."""
     return truncate_output(redact_secrets(text))
+
+
+class StreamingRedactor:
+    """Line-by-line redactor for live harness output streams.
+
+    Buffers incomplete lines (split on ``\\n`` or ``\\r``) and applies
+    ``redact_secrets`` to each complete line before emitting it. Uses an
+    incremental UTF-8 decoder so multi-byte sequences split across read
+    boundaries are handled correctly.
+
+    This is designed for the TUI's per-cell output panel: it ensures
+    secrets never reach the terminal even when streaming live, without
+    waiting for the full buffer to be captured (the existing
+    ``sanitize_output`` runs only at persistence time).
+    """
+
+    def __init__(self) -> None:
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        self._line_buffer = ""
+
+    def feed(self, data: bytes) -> list[str]:
+        """Feed raw bytes and return a list of redacted complete lines.
+
+        Lines are split on ``\\n`` (Unix) or ``\\r\\n`` (Windows). A
+        bare ``\\r`` (carriage return without a following ``\\n``) is
+        kept in the line buffer — it is NOT a split point. This ensures
+        that a secret split by a ``\\r`` (e.g. ``sk-ant-abc\\rdefghij``)
+        is redacted as a whole, because the redaction regex runs on the
+        full line up to the next ``\\n``.
+
+        However, the ``\\r`` character itself is not in the regex
+        character class ``[A-Za-z0-9_\\-]``, so it would still break
+        the match. To handle this, ``\\r`` characters are stripped from
+        the line before redaction, reassembling the secret so the regex
+        can catch it. The ``\\r`` is preserved in the emitted line for
+        display purposes (terminals interpret it as a cursor reset).
+        """
+        decoded = self._decoder.decode(data)
+        self._line_buffer += decoded
+        lines: list[str] = []
+        # Only split on \n (and \r\n as a single separator). A bare \r
+        # is NOT a split point for redaction — the full line must be
+        # redacted together so secrets split by \r are caught.
+        while "\n" in self._line_buffer:
+            nl_pos = self._line_buffer.find("\n")
+            # Check for \r\n (Windows line ending)
+            if nl_pos > 0 and self._line_buffer[nl_pos - 1] == "\r":
+                line = self._line_buffer[: nl_pos - 1]
+                self._line_buffer = self._line_buffer[nl_pos + 1 :]
+            else:
+                line = self._line_buffer[:nl_pos]
+                self._line_buffer = self._line_buffer[nl_pos + 1 :]
+            if line:
+                # Strip \r before redaction so secrets split by \r
+                # are reassembled and caught by the regex. Preserve \r
+                # in the emitted line for display.
+                redacted = redact_secrets(line.replace("\r", ""))
+                # Re-insert \r characters at their original positions
+                # if the redacted line is different (i.e. a secret was
+                # found and replaced). If no redaction occurred, emit
+                # the original line with \r intact.
+                if redacted != line.replace("\r", ""):
+                    # Redaction changed the line — emit the redacted
+                    # version without \r (the secret is gone anyway).
+                    lines.append(redacted)
+                else:
+                    lines.append(line)
+        return lines
+
+    def flush(self) -> str | None:
+        """Return any remaining buffered text, redacted, or None if empty."""
+        remaining = self._line_buffer
+        self._line_buffer = ""
+        # Also flush the decoder's internal buffer
+        final = self._decoder.decode(b"", final=True)
+        remaining += final
+        if remaining:
+            return redact_secrets(remaining)
+        return None

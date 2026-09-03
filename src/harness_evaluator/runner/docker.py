@@ -15,6 +15,7 @@ inside it via ``docker exec``, and finally stops the container.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -22,6 +23,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -77,6 +79,29 @@ def _sanitize_container_name(cell_id: str) -> str:
     return f"harness-evaluator-{name}"
 
 
+def check_container_liveness(cell_id: str, docker_bin: str = "docker") -> str | None:
+    """Check if a cell's Docker container is still running.
+
+    Returns the container status string (e.g. ``"running"``, ``"exited"``)
+    or ``None`` if the container doesn't exist or docker is unavailable.
+    Designed for use in the TUI's tick callback — uses a short timeout
+    (2s) and swallows all errors so a docker failure never freezes the UI.
+    """
+    name = _sanitize_container_name(cell_id)
+    try:
+        result = subprocess.run(
+            [docker_bin, "inspect", "--format", "{{.State.Status}}", name],
+            capture_output=True,
+            timeout=2,
+            text=True,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
+
+
 @dataclass
 class CompletedProcess:
     """Result from an async subprocess execution.
@@ -90,13 +115,32 @@ class CompletedProcess:
     stderr: str
 
 
+# Type for the optional streaming output callback.
+# Called as on_output(stream_name, data_bytes) for each chunk read from
+# the subprocess's stdout/stderr. The callback is responsible for
+# redaction and routing — see StreamingRedactor.
+OutputCallback = Callable[[str, bytes], None]
+
+
 async def _run_subprocess(
-    args: list[str], timeout: int | None = None
+    args: list[str],
+    timeout: int | None = None,
+    on_output: OutputCallback | None = None,
 ) -> CompletedProcess:
     """Run a subprocess asynchronously and return a CompletedProcess.
 
     Uses ``asyncio.create_subprocess_exec`` so the event loop is not
     blocked while waiting for the process to finish.
+
+    When ``on_output`` is provided, stdout and stderr are read
+    incrementally and each chunk is passed to the callback as
+    ``on_output(stream_name, data_bytes)`` (``stream_name`` is ``"stdout"``
+    or ``"stderr"``). The full output is still captured for the returned
+    ``CompletedProcess``, so downstream consumers (reconciliation,
+    ``sanitize_output``, multi-phase prompt injection) work unchanged.
+
+    When ``on_output`` is None, the existing ``proc.communicate()`` path
+    is used (backward compatible, no streaming overhead).
 
     Raises ``subprocess.TimeoutExpired`` if the process does not finish
     within ``timeout`` seconds.
@@ -106,16 +150,62 @@ async def _run_subprocess(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    try:
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except TimeoutError:
-        proc.kill()
-        await proc.wait()
-        raise subprocess.TimeoutExpired(
-            cmd=args, timeout=timeout if timeout is not None else 0
-        ) from None
+
+    if on_output is None:
+        # Original buffered path — no streaming overhead.
+        try:
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise subprocess.TimeoutExpired(
+                cmd=args, timeout=timeout if timeout is not None else 0
+            ) from None
+    else:
+        # Streaming path: read both pipes concurrently, tee to callback
+        # and accumulate for the CompletedProcess return value.
+        stdout_chunks: list[bytes] = []
+        stderr_chunks: list[bytes] = []
+
+        async def _read_stream(
+            stream: asyncio.StreamReader,
+            stream_name: str,
+            chunks: list[bytes],
+        ) -> None:
+            while True:
+                data = await stream.read(4096)
+                if not data:
+                    break
+                chunks.append(data)
+                try:
+                    on_output(stream_name, data)
+                except Exception:
+                    logger.debug(
+                        "output callback failed for %s", stream_name,
+                        exc_info=True,
+                    )
+
+        assert proc.stdout is not None and proc.stderr is not None
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    _read_stream(proc.stdout, "stdout", stdout_chunks),
+                    _read_stream(proc.stderr, "stderr", stderr_chunks),
+                    proc.wait(),
+                ),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise subprocess.TimeoutExpired(
+                cmd=args, timeout=timeout if timeout is not None else 0
+            ) from None
+        stdout_bytes = b"".join(stdout_chunks)
+        stderr_bytes = b"".join(stderr_chunks)
+
     returncode = proc.returncode if proc.returncode is not None else -1
     return CompletedProcess(
         returncode=returncode,
@@ -195,6 +285,98 @@ class DockerRunner:
         self.task_library_root = task_library_root
         self.run_as_user = run_as_user or _default_run_as_user()
         self.workdir_base.mkdir(parents=True, exist_ok=True)
+        # Optional per-cell output streamer set by the TUI. When set,
+        # harness stdout/stderr chunks are tee'd to this callback during
+        # _run_harness / _run_harness_multiphase, in addition to being
+        # captured for the AdapterResult. The callback receives
+        # (cell_id, stream_name, data_bytes). See _run_subprocess for
+        # the streaming contract. None disables streaming (default).
+        self.output_streamer: Callable[[str, str, bytes], None] | None = None
+        # Cached ResultsStore for phase writes. Re-creating a ResultsStore
+        # on every phase transition re-runs the full schema/migration
+        # logic, which is expensive and increases SQLite contention under
+        # parallel_runs > 1. Lazily initialized to avoid importing the
+        # store module at construction time (it may not be needed if the
+        # runner is used outside an eval context).
+        self._phase_store: Any = None
+
+    def _make_output_callback(self, cell_id: str) -> OutputCallback | None:
+        """Build an ``on_output`` callback for ``_exec_in_container``.
+
+        Returns ``None`` when no streamer is configured (the
+        ``_run_subprocess`` fast path is used, with no streaming
+        overhead). When a streamer is set, the callback wraps it in
+        try/except so a streaming failure never fails the cell.
+
+        The streamer is expected to be ``CellOutputPanel.feed``. The
+        panel's ``flush_cell`` is called after the subprocess finishes
+        (in ``_exec_in_container``) so any trailing partial line is
+        emitted, and ``clear_cell`` is called at the start of each new
+        harness invocation so retries and multi-phase transitions don't
+        mix stale output with new output.
+        """
+        if self.output_streamer is None:
+            return None
+        streamer = self.output_streamer
+
+        # Clear any stale output for this cell (e.g. from a previous
+        # retry or a prior multi-phase step) before streaming new output.
+        # The streamer is CellOutputPanel.feed, but we also need access
+        # to flush_cell and clear_cell — reach them via the panel's
+        # bound method. This is safe because output_streamer is set to
+        # panel.feed by EvalApp._run_eval.
+        panel = getattr(streamer, "__self__", None)
+        if panel is not None:
+            with contextlib.suppress(Exception):
+                panel.clear_cell(cell_id)
+
+        def _callback(stream_name: str, data: bytes) -> None:
+            try:
+                streamer(cell_id, stream_name, data)
+            except Exception:
+                logger.debug(
+                    "output streamer failed for cell %s", cell_id,
+                    exc_info=True,
+                )
+
+        return _callback
+
+    def _flush_cell_output(self, cell_id: str) -> None:
+        """Flush any remaining buffered output for a cell after exec finishes.
+
+        Ensures trailing partial lines (without a final newline) are
+        emitted to the output panel. Safe to call when no streamer is
+        configured (no-op).
+        """
+        if self.output_streamer is None:
+            return
+        panel = getattr(self.output_streamer, "__self__", None)
+        if panel is not None:
+            with contextlib.suppress(Exception):
+                panel.flush_cell(cell_id)
+
+    def _set_phase(self, cell: RunCell, phase: str) -> None:
+        """Write the current execution phase to the results store.
+
+        Fire-and-forget: a store failure (e.g. ``database is locked``
+        under ``parallel_runs > 1``) must never abort the cell. The TUI
+        polls this on its 1-second tick timer to show per-cell phase
+        labels without threading callbacks through the orchestrator.
+
+        Uses a cached ``ResultsStore`` instance to avoid re-running the
+        full schema/migration logic on every phase transition.
+        """
+        try:
+            if self._phase_store is None:
+                from harness_evaluator.orchestrator.results_store import ResultsStore
+
+                self._phase_store = ResultsStore(self.results_db)
+            self._phase_store.set_cell_phase(cell.cell_id, cell.run_name, phase)
+        except Exception:
+            logger.debug(
+                "Failed to write phase '%s' for cell %s", phase, cell.cell_id,
+                exc_info=True,
+            )
 
     async def run_cell(self, cell: RunCell) -> dict[str, Any]:
         """Run a single eval cell in a Docker container.
@@ -211,6 +393,8 @@ class DockerRunner:
         from harness_evaluator.gateway.store import CallStore
 
         cell_workdir = (self.workdir_base / cell.cell_id).resolve()
+
+        self._set_phase(cell, "cloning")
 
         # Defense in depth: cell_id is built from validated harness/model/task
         # ids, but assert the resolved workdir stays under workdir_base before
@@ -258,6 +442,8 @@ class DockerRunner:
             else:
                 harness_result = await self._run_harness(cell, cell_workdir)
                 phase_results = None
+
+            self._set_phase(cell, "evaluating")
 
             # Evaluate the result on the host
             if cell.task.track in (TaskTrack.SWE, TaskTrack.MULTI_PHASE):
@@ -312,6 +498,7 @@ class DockerRunner:
                 )
 
             # Collect token usage from gateway (per-cell via trace_id)
+            self._set_phase(cell, "aggregating")
             gateway_db_path = Path(self.gateway_db)
             usage = TokenUsage()
             total_cost = 0.0
@@ -383,6 +570,7 @@ class DockerRunner:
             # abort a cell, so failures are logged and swallowed.
             reconciliation_summary: dict[str, Any] | None = None
             if num_api_calls > 0:
+                self._set_phase(cell, "reconciling")
                 try:
                     reconciliation_summary = self._reconcile_cell(
                         cell, harness_result, usage
@@ -843,6 +1031,7 @@ class DockerRunner:
         timeout: int,
         cwd: str | None = None,
         env: dict[str, str] | None = None,
+        on_output: OutputCallback | None = None,
     ) -> AdapterResult:
         """Run a command inside the container via ``docker exec``.
 
@@ -857,6 +1046,10 @@ class DockerRunner:
             env: Additional env vars to set via ``--env`` flags. Useful
                 for multi-phase runs where the model changes between
                 phases and the adapter env must be updated.
+            on_output: Optional streaming callback. When provided, output
+                is teed to this callback as ``on_output(stream, data)``
+                while still being captured for the returned
+                ``AdapterResult``. See ``_run_subprocess`` for details.
         """
         workdir_flag = cwd if cwd is not None else CONTAINER_WORKSPACE
         exec_args = [
@@ -875,7 +1068,7 @@ class DockerRunner:
         exec_args.extend(command)
         start = time.monotonic()
         try:
-            result = await _run_subprocess(exec_args, timeout=timeout)
+            result = await _run_subprocess(exec_args, timeout=timeout, on_output=on_output)
             duration_ms = (time.monotonic() - start) * 1000
             return AdapterResult(
                 exit_code=result.returncode,
@@ -1016,6 +1209,7 @@ class DockerRunner:
         container_name = _sanitize_container_name(cell.cell_id)
         container_id: str | None = None
         try:
+            self._set_phase(cell, "container_start")
             container_id = await self._start_container(
                 workdir, env, timeout, container_name, image,
                 credential_mounts,
@@ -1026,6 +1220,7 @@ class DockerRunner:
             # /workspace/repo so relative paths (e.g. requirements.txt)
             # resolve correctly.
             if cell.task.setup_script:
+                self._set_phase(cell, "setup")
                 setup_result = await self._exec_in_container(
                     container_id,
                     ["bash", "/workspace/setup.sh"],
@@ -1040,9 +1235,13 @@ class DockerRunner:
                     )
 
             # Run the harness command inside the container
+            self._set_phase(cell, "harness_running")
+            on_output = self._make_output_callback(cell.cell_id)
             result = await self._exec_in_container(
-                container_id, harness_cmd, timeout=timeout, cwd=exec_cwd
+                container_id, harness_cmd, timeout=timeout, cwd=exec_cwd,
+                on_output=on_output,
             )
+            self._flush_cell_output(cell.cell_id)
 
         finally:
             if container_id is not None:
@@ -1207,6 +1406,7 @@ class DockerRunner:
                                  "LC_ALL", "TERM", "TMPDIR",
                                  "PIP_BREAK_SYSTEM_PACKAGES")
                     }
+                    self._set_phase(cell, "container_start")
                     container_id = await self._start_container(
                         workdir,
                         base_env,
@@ -1219,6 +1419,7 @@ class DockerRunner:
                     if cell.task.setup_script:
                         setup_path = workdir / "setup.sh"
                         setup_path.write_text(cell.task.setup_script)
+                        self._set_phase(cell, "setup")
                         setup_result = await self._exec_in_container(
                             container_id,
                             ["bash", "/workspace/setup.sh"],
@@ -1234,10 +1435,13 @@ class DockerRunner:
                 # Run the harness command for this phase.
                 # Always pass the full per-phase env via --env flags so
                 # each phase gets its own API key and base URL.
+                self._set_phase(cell, f"harness_running:{phase.name}")
+                on_output = self._make_output_callback(cell.cell_id)
                 result = await self._exec_in_container(
                     container_id, harness_cmd, timeout=phase.timeout_seconds,
-                    cwd=exec_cwd, env=env,
+                    cwd=exec_cwd, env=env, on_output=on_output,
                 )
+                self._flush_cell_output(cell.cell_id)
                 last_result = result
 
                 phase_results.append(

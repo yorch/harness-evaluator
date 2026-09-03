@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from textual.app import ComposeResult
@@ -12,6 +13,8 @@ from textual.reactive import reactive
 from textual.timer import Timer
 from textual.widget import Widget
 from textual.widgets import Footer, Static
+
+from harness_evaluator.runner.redaction import StreamingRedactor
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +87,8 @@ class FooterState:
     running_cells: list[str] = field(default_factory=list)
     budget: float | None = None
     start_time: float = field(default_factory=time.monotonic)
+    cell_phases: dict[str, str] = field(default_factory=dict)
+    cell_api_stats: dict[str, tuple[int, float]] = field(default_factory=dict)
 
     @property
     def done(self) -> int:
@@ -101,7 +106,9 @@ class ProgressFooter(Widget):
 
     A periodic timer re-renders the footer every second so the elapsed
     time ticks even when no progress events arrive (e.g. during a
-    long-running cell).
+    long-running cell). The tick also polls the results store and gateway
+    store for per-cell phase and API call stats, updating ``FooterState``
+    in place so the footer reflects sub-cell activity without callbacks.
     """
 
     DEFAULT_CSS = f"""
@@ -130,6 +137,10 @@ class ProgressFooter(Widget):
         # fault logs once instead of once per tick; cleared on any
         # successful render (in _tick or watch_state).
         self._render_fault_logged = False
+        # Optional callback invoked on each tick to poll live per-cell
+        # data (phases, API stats) and update the footer state in place.
+        # Set by EvalApp.on_mount; None in unit tests.
+        self._tick_callback: Callable[[FooterState], None] | None = None
 
     def compose(self) -> ComposeResult:
         yield self._static
@@ -162,9 +173,21 @@ class ProgressFooter(Widget):
         A formatting error must never stop the timer: ``set_interval``
         re-arms itself automatically, but if this callback raised, Textual
         would treat the interval as failed and stop calling it.
+
+        The tick also invokes the optional ``_tick_callback`` to poll
+        live per-cell data (phases, API stats) from the results store
+        and gateway store, updating the footer state in place before
+        rendering. The callback is wrapped in try/except so a polling
+        failure (e.g. SQLite ``database is locked``) never freezes the
+        footer.
         """
         if not self._static.display:
             return
+        if self._tick_callback is not None:
+            try:
+                self._tick_callback(self.state)
+            except Exception:
+                logger.debug("footer tick callback failed", exc_info=True)
         try:
             rendered = self._format_footer(self.state)
         except Exception:
@@ -181,10 +204,21 @@ class ProgressFooter(Widget):
         self._static.update(rendered)
 
     def watch_state(self, state: FooterState) -> None:
-        """Re-render the footer when state changes."""
-        self._static.update(self._format_footer(state))
+        """Re-render the footer when state changes.
+
+        Mirrors ``_tick``'s defensive rendering: a formatting error
+        must never crash the footer or stop the reactive watcher.
+        """
         self._static.display = True
+        try:
+            rendered = self._format_footer(state)
+        except Exception:
+            if not self._render_fault_logged:
+                logger.debug("footer render failed in watch_state", exc_info=True)
+                self._render_fault_logged = True
+            return
         self._render_fault_logged = False
+        self._static.update(rendered)
 
     def _content_width(self) -> int:
         """The widget's current usable text width, falling back to a sane
@@ -256,6 +290,12 @@ class ProgressFooter(Widget):
         Every line is ellipsized to ``width`` so Rich can never wrap it —
         an unbounded line pushes the "… and N more" indicator (which must
         always be visible, per F7) out of the footer's fixed content rows.
+
+        When phase info is available (polled from the results store on the
+        tick timer), each running cell line shows its current phase, e.g.
+        ``► claude | sonnet | swe-001 | rep 0 [harness_running]``.
+        When API call stats are available, an additional ``(N calls, $X)``
+        suffix is appended.
         """
         if state.running == 0:
             return _ellipsize("Idle", width)
@@ -270,7 +310,15 @@ class ProgressFooter(Widget):
         shown = cells[:_MAX_RUNNING_CELLS_SHOWN]
         lines = [_ellipsize("Running:", width)]
         for cell_id in shown:
-            lines.append(_ellipsize(f"  ► {_format_cell_id(cell_id)}", width))
+            label = f"  ► {_format_cell_id(cell_id)}"
+            phase = state.cell_phases.get(cell_id)
+            if phase:
+                label += f" [{phase}]"
+            api_stats = state.cell_api_stats.get(cell_id)
+            if api_stats:
+                calls, cost = api_stats
+                label += f" ({calls} calls, ${cost:.4f})"
+            lines.append(_ellipsize(label, width))
 
         remaining = len(cells) - len(shown)
         if remaining > 0:
@@ -307,3 +355,156 @@ class FooterBar(Vertical):
     def compose(self) -> ComposeResult:
         yield ProgressFooter()
         yield Footer()
+
+
+# Maximum number of lines retained per cell in the output panel. Older
+# lines are dropped (ring buffer) to bound memory usage during long runs.
+MAX_CELL_OUTPUT_LINES = 200
+
+
+class CellOutputPanel(Widget):
+    """Bounded per-cell harness output panel.
+
+    Displays redacted, line-buffered harness stdout/stderr for a
+    selected cell. Output is fed via ``feed()`` from the runner's
+    streaming callback, redacted line-by-line via
+    ``StreamingRedactor``. Only one cell is shown at a time; the user
+    cycles through running cells with the ``o`` key (wired in
+    ``EvalApp``).
+
+    The panel is opt-in: it is hidden by default and only shown when
+    the user presses ``o``. It uses a separate ``RichLog`` (not the
+    shared ``#eval-log``) with ``markup=False`` so raw harness output
+    is never interpreted as Rich markup, preventing ANSI/markup
+    injection from the harness.
+
+    Retention is bounded to ``MAX_CELL_OUTPUT_LINES`` per cell; older
+    lines are dropped (ring buffer) to bound memory during long runs.
+    """
+
+    DEFAULT_CSS = """
+    CellOutputPanel {
+        height: 1fr;
+        min-height: 3;
+        display: none;
+        border: solid $accent;
+    }
+    CellOutputPanel.-visible {
+        display: block;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        # markup=False so raw harness output is never interpreted as Rich
+        # markup — a harness could output "[red]sk-ant-...[/red]" and the
+        # redaction regex would not catch the split token, but Rich would
+        # strip the tags and render the secret. With markup=False the
+        # tags are displayed literally and the secret stays fragmented.
+        self._static = Static(markup=False)
+        # Per-cell ring buffer of redacted lines.
+        self._cell_lines: dict[str, list[str]] = {}
+        # Currently selected cell ID for display.
+        self._selected_cell: str | None = None
+        # Per-cell streaming redactors (for incomplete line buffering).
+        self._redactors: dict[str, StreamingRedactor] = {}
+
+    def compose(self) -> ComposeResult:
+        yield self._static
+
+    def select_cell(self, cell_id: str | None) -> None:
+        """Select which cell's output to display, or None to hide."""
+        self._selected_cell = cell_id
+        if cell_id is None:
+            self.remove_class("-visible")
+        else:
+            self.add_class("-visible")
+        self._refresh()
+
+    def cycle_cell(self, running_cells: list[str]) -> None:
+        """Cycle to the next running cell, or hide if none."""
+        if not running_cells:
+            self.select_cell(None)
+            return
+        if self._selected_cell is None or self._selected_cell not in running_cells:
+            self.select_cell(running_cells[0])
+        else:
+            idx = running_cells.index(self._selected_cell)
+            next_idx = (idx + 1) % len(running_cells)
+            self.select_cell(running_cells[next_idx])
+
+    def feed(self, cell_id: str, stream_name: str, data: bytes) -> None:
+        """Feed raw bytes from the runner's streaming callback.
+
+        Redacts line-by-line and appends to the cell's ring buffer.
+        If the fed cell is currently selected, refreshes the display.
+        """
+        if cell_id not in self._redactors:
+            self._redactors[cell_id] = StreamingRedactor()
+        redactor = self._redactors[cell_id]
+        lines = redactor.feed(data)
+        if cell_id not in self._cell_lines:
+            self._cell_lines[cell_id] = []
+        buf = self._cell_lines[cell_id]
+        for line in lines:
+            prefix = "" if stream_name == "stdout" else "[stderr] "
+            buf.append(f"{prefix}{line}")
+        # Trim to retention limit (ring buffer).
+        if len(buf) > MAX_CELL_OUTPUT_LINES:
+            self._cell_lines[cell_id] = buf[-MAX_CELL_OUTPUT_LINES:]
+        if cell_id == self._selected_cell:
+            self._refresh()
+
+    def flush_cell(self, cell_id: str) -> None:
+        """Flush any remaining buffered output for a cell."""
+        redactor = self._redactors.get(cell_id)
+        if redactor is None:
+            return
+        remaining = redactor.flush()
+        if remaining and cell_id in self._cell_lines:
+            self._cell_lines[cell_id].append(remaining)
+        if cell_id == self._selected_cell:
+            self._refresh()
+
+    def clear_cell(self, cell_id: str) -> None:
+        """Remove all buffered output for a cell (e.g. on completion)."""
+        self._cell_lines.pop(cell_id, None)
+        self._redactors.pop(cell_id, None)
+        if cell_id == self._selected_cell:
+            self._refresh()
+
+    def _refresh(self) -> None:
+        """Re-render the panel for the currently selected cell.
+
+        Uses ``rich.text.Text`` objects for the header (so styling works
+        even though ``markup=False``), and plain strings for the output
+        lines (so they are displayed literally, never interpreted as
+        Rich markup).
+
+        Safe to call when the widget is not mounted (e.g. in unit tests):
+        ``Static.update`` requires an active app context, so we skip the
+        visual update when not mounted and rely on the next mount/refresh
+        to render the current state.
+        """
+        from rich.text import Text
+
+        if self._selected_cell is None:
+            if self._static.is_mounted:
+                self._static.update("")
+            return
+        lines = self._cell_lines.get(self._selected_cell, [])
+        if not lines:
+            content: Text | str = Text.assemble(
+                (f"Cell {self._selected_cell}: ", "dim"),
+                ("(no output yet)", "dim"),
+            )
+        else:
+            header = Text.assemble(
+                ("Output: ", "bold"),
+                (self._selected_cell, "bold"),
+                "\n",
+            )
+            body = "\n".join(lines)
+            content = Text.assemble(header, body)
+        if self._static.is_mounted:
+            self._static.update(content)
