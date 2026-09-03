@@ -219,10 +219,12 @@ Run: broad-first-pass
 
 ### Gateway preflight
 
-By default, `harness-evaluator run` checks that the gateway proxy is reachable on `127.0.0.1:<gateway_port>` before executing. If the gateway is not running:
+By default, `harness-evaluator run` checks that the gateway proxy is reachable before executing. It probes both the Docker bridge gateway IP (the default bind address) and `127.0.0.1`, so the check works regardless of which `--host` the gateway was started with. It also verifies that the gateway is reachable from inside Docker containers — if not, the run aborts with a fix command rather than wasting budget on cells that will all fail with `Connection refused`. Use `--no-check-gateway` to bypass for custom setups (e.g. `--network=host`).
+
+If the gateway is not running:
 
 ```
-Gateway is NOT reachable on 127.0.0.1:8877.
+Gateway is NOT reachable on port 8877.
 Start it in another terminal with:
   harness-evaluator gateway --port 8877
 Then re-run this command.
@@ -242,7 +244,7 @@ harness-evaluator gateway [options]
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--host` | string | `127.0.0.1` | Host to bind to |
+| `--host` | string | `auto` | Host to bind to. `auto` detects the Docker bridge gateway IP so containers can reach the proxy without exposing it on all interfaces. Pass an explicit IP (e.g. `127.0.0.1` or `0.0.0.0`) to override. |
 | `--port` | int | `8877` | Port to bind to |
 | `--db` | string | `harness_evaluator_gateway.db` | SQLite DB path for captured calls |
 | `--verbose` / `-v` | count | `0` | Increase logging verbosity (`-v`=INFO, `-vv`=DEBUG) |
@@ -253,8 +255,8 @@ harness-evaluator gateway [options]
 # Start on default port
 harness-evaluator gateway
 
-# Custom host and port
-harness-evaluator gateway --host 0.0.0.0 --port 8877
+# Custom host and port (e.g. to bind loopback only)
+harness-evaluator gateway --host 127.0.0.1 --port 8877
 
 # Custom database path
 harness-evaluator gateway --db /data/harness_evaluator_gateway.db

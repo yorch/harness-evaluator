@@ -813,6 +813,23 @@ def _format_eacces_error(host: str, port: int) -> str:
     )
 
 
+def _format_eaddrnotavail_error(host: str, port: int) -> str:
+    """Build a user-friendly error message for EADDRNOTAVAIL.
+
+    This typically happens on Docker Desktop (macOS/Windows) where the Docker
+    bridge IP (e.g. 172.17.0.1) exists inside the Linux VM but is not a local
+    interface on the host.
+    """
+    return (
+        f"Cannot bind to {host}:{port}: the address is not available on this host.\n"
+        f"This often happens on Docker Desktop (macOS/Windows) where the Docker\n"
+        f"bridge IP is inside the Linux VM. Try:\n"
+        f"  harness-evaluator gateway --host 0.0.0.0 --port {port}\n"
+        f"or bind loopback for standalone use:\n"
+        f"  harness-evaluator gateway --host 127.0.0.1 --port {port}"
+    )
+
+
 def _check_port_available(host: str, port: int) -> None:
     """Preflight check that the port is bindable.
 
@@ -861,6 +878,13 @@ def _check_port_available(host: str, port: int) -> None:
                     host=host,
                     port=port,
                 ) from exc
+            if exc.errno == errno_module.EADDRNOTAVAIL:
+                raise GatewayStartupError(
+                    _format_eaddrnotavail_error(host, port),
+                    errno=exc.errno,
+                    host=host,
+                    port=port,
+                ) from exc
             raise GatewayStartupError(
                 f"Cannot bind to {host}:{port}: {exc}",
                 errno=exc.errno,
@@ -893,6 +917,13 @@ def _convert_oserror_to_startup_error(exc: OSError, host: str, port: int) -> Gat
     if exc.errno == errno_module.EACCES:
         return GatewayStartupError(
             _format_eacces_error(host, port),
+            errno=exc.errno,
+            host=host,
+            port=port,
+        )
+    if exc.errno == errno_module.EADDRNOTAVAIL:
+        return GatewayStartupError(
+            _format_eaddrnotavail_error(host, port),
             errno=exc.errno,
             host=host,
             port=port,

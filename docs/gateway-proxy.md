@@ -229,10 +229,12 @@ TLS verification is enabled by default. It can be disabled via the
 ## Running the proxy
 
 ```bash
-# Start the gateway proxy on port 8877
+# Start the gateway proxy on port 8877 (binds the Docker bridge gateway IP
+# by default so containers can reach it via host.docker.internal)
 harness-evaluator gateway --port 8877
 
 # Or with a custom host and database path
+# Use 0.0.0.0 for Docker Desktop (macOS/Windows), or 127.0.0.1 for standalone
 harness-evaluator gateway --host 0.0.0.0 --port 8877 --db ./harness_evaluator_gateway.db
 ```
 
@@ -303,7 +305,7 @@ CLI options for `harness-evaluator gateway`:
 
 | Parameter  | Default            | Description                |
 |------------|--------------------|----------------------------|
-| `--host`   | `127.0.0.1`        | Bind address               |
+| `--host`   | `auto`             | Bind address. `auto` detects the Docker bridge gateway IP so containers can reach the proxy. Pass an explicit IP (e.g. `127.0.0.1` or `0.0.0.0`) to override. |
 | `--port`   | `8877`             | Listen port                |
 | `--db`     | `harness_evaluator_gateway.db` | SQLite database path       |
 
@@ -317,14 +319,14 @@ If the configured port is already in use, the gateway exits with a
 user-friendly error message instead of a raw Python traceback:
 
 ```
-Starting gateway proxy on 127.0.0.1:8877
+Starting gateway proxy on 172.17.0.1:8877
 Captured calls stored to: harness_evaluator_gateway.db
 Configure harnesses with:
-  ANTHROPIC_BASE_URL=http://127.0.0.1:8877
-  OPENAI_BASE_URL=http://127.0.0.1:8877
+  ANTHROPIC_BASE_URL=http://172.17.0.1:8877
+  OPENAI_BASE_URL=http://172.17.0.1:8877
 
 Error: Cannot start gateway
-Port 8877 is already in use on 127.0.0.1.
+Port 8877 is already in use on 172.17.0.1.
 This usually means another gateway (or another process) is already listening on that port.
 Options:
   - Stop the other process and retry
