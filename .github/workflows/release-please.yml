@@ -70,6 +70,14 @@ jobs:
         if: steps.release-pr.outputs.branch
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
+      # uv.lock is a universal lockfile resolved across the whole
+      # `requires-python` range, so its contents do not depend on the
+      # interpreter running uv -- but pin the same version every other job
+      # pins, so this step cannot drift from CI on a future uv change.
+      - name: Set up Python
+        if: steps.release-pr.outputs.branch
+        run: uv python install 3.12
+
       - name: Sync uv.lock to the bumped version
         if: steps.release-pr.outputs.branch
         env:
