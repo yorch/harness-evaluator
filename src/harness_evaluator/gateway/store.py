@@ -66,7 +66,21 @@ class CallStore:
         return conn
 
     def save(self, call: CapturedCall) -> None:
-        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+        try:
+            self._save(call)
+        except sqlite3.OperationalError as e:
+            if "no such table" in str(e).lower():
+                # The table is missing — the DB file may have been
+                # deleted and recreated (e.g. by an external process
+                # or a concurrent CallStore.__init__ race). Reinitialize
+                # the schema and retry once.
+                self._init_db()
+                self._save(call)
+            else:
+                raise
+
+    def _save(self, call: CapturedCall) -> None:
+        with contextlib.closing(self._connect()) as conn:
             conn.execute(
                 """INSERT OR REPLACE INTO captured_calls
                    (id, trace_id, parent_id, provider, model, method, path,
@@ -98,22 +112,19 @@ class CallStore:
             conn.commit()
 
     def get_all(self) -> list[CapturedCall]:
-        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
-            conn.row_factory = sqlite3.Row
+        with contextlib.closing(self._connect()) as conn:
             rows = conn.execute("SELECT * FROM captured_calls ORDER BY timestamp").fetchall()
             return [self._row_to_call(row) for row in rows]
 
     def get_by_id(self, call_id: str) -> CapturedCall | None:
-        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
-            conn.row_factory = sqlite3.Row
+        with contextlib.closing(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM captured_calls WHERE id = ?", (call_id,)
             ).fetchone()
             return self._row_to_call(row) if row else None
 
     def get_by_trace(self, trace_id: str) -> list[CapturedCall]:
-        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
-            conn.row_factory = sqlite3.Row
+        with contextlib.closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT * FROM captured_calls WHERE trace_id = ? ORDER BY timestamp",
                 (trace_id,),
@@ -126,8 +137,7 @@ class CallStore:
         Used by the TUI to aggregate API calls for multi-phase cells,
         where each phase has a trace ID like ``{cell_id}__phase-{name}``.
         """
-        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
-            conn.row_factory = sqlite3.Row
+        with contextlib.closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT * FROM captured_calls WHERE trace_id LIKE ? ORDER BY timestamp",
                 (f"{trace_prefix}%",),
@@ -208,7 +218,7 @@ class CallStore:
         Used on re-runs to avoid double-counting tokens/cost from prior
         attempts of the same cell.
         """
-        with contextlib.closing(sqlite3.connect(self.db_path)) as conn:
+        with contextlib.closing(self._connect()) as conn:
             conn.execute(
                 "DELETE FROM captured_calls WHERE trace_id = ?", (trace_id,)
             )

@@ -99,6 +99,11 @@ class EvalApp(App[object]):
         self._verbose = verbose
         self._gateway_db = gateway_db
         self._runner = runner
+        # Cached CallStore for gateway polling. Re-creating a CallStore
+        # on every tick re-runs _init_db (executescript), which causes
+        # SQLite contention with the gateway's save path. Lazily
+        # initialized on the first poll.
+        self._gw_store: Any = None
         self._result: OrchestratorProgress | None = None
         self._log_handler: TuiLogHandler | None = None
         # Initial TUI log level: -vv (verbose>=2) starts at DEBUG; INFO is the
@@ -253,6 +258,8 @@ class EvalApp(App[object]):
         # Poll API call counts from the gateway store.
         # Use get_by_trace_prefix so multi-phase cells (whose per-phase
         # trace IDs are "{cell_id}__phase-{name}") are also captured.
+        # Cache the CallStore to avoid re-running _init_db (executescript)
+        # on every tick, which causes SQLite contention with the gateway.
         if self._gateway_db:
             try:
                 from pathlib import Path
@@ -260,9 +267,10 @@ class EvalApp(App[object]):
                 from harness_evaluator.gateway.store import CallStore
 
                 if Path(self._gateway_db).exists():
-                    gw_store = CallStore(self._gateway_db)
+                    if self._gw_store is None:
+                        self._gw_store = CallStore(self._gateway_db)
                     for cell_id in running:
-                        calls = gw_store.get_by_trace_prefix(cell_id)
+                        calls = self._gw_store.get_by_trace_prefix(cell_id)
                         if calls:
                             total_cost = sum(c.cost.total for c in calls)
                             state.cell_api_stats[cell_id] = (
