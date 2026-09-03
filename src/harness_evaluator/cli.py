@@ -123,10 +123,19 @@ def gateway(
 
     if host == AUTO_HOST:
         host = resolve_gateway_host()
-        console.print(
-            f"[dim]Auto-detected Docker bridge gateway: {host} "
-            f"(containers reach it via host.docker.internal)[/dim]"
-        )
+        if host == "0.0.0.0":
+            console.print(
+                "[dim]Auto-detected Docker Desktop: binding 0.0.0.0[/dim]\n"
+                "[yellow]Warning: the gateway is bound to all interfaces.[/yellow]\n"
+                "[yellow]Docker Desktop requires this so containers can reach[/yellow]\n"
+                "[yellow]the host via host.docker.internal. Consider enabling[/yellow]\n"
+                "[yellow]the macOS/Windows host firewall to restrict access.[/yellow]"
+            )
+        else:
+            console.print(
+                f"[dim]Auto-detected Docker bridge gateway: {host} "
+                f"(containers reach it via host.docker.internal)[/dim]"
+            )
 
     url_host = format_host_for_url(host)
     console.print(f"[bold green]Starting gateway proxy on {host}:{port}[/bold green]")

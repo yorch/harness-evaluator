@@ -12,11 +12,13 @@ default, keeping the proxy off the host's external NICs while remaining
 reachable from containers — without requiring users to pass ``--host 0.0.0.0``
 (and without the security implications of binding all interfaces).
 
-On Docker Desktop (macOS/Windows) the bridge lives inside a VM and the
-detected IP is not bindable on the host. ``resolve_gateway_host`` probes
-bindability and falls back to ``127.0.0.1`` in that case, so the gateway
-still starts (users on Docker Desktop should pass ``--host 0.0.0.0``
-explicitly for container reachability).
+On Docker Desktop (macOS/Windows) the bridge lives inside a Linux VM and the
+detected IP is not bindable on the host. In that case, ``resolve_gateway_host``
+falls back to ``0.0.0.0`` (with a warning) because Docker Desktop's networking
+model requires it — containers reach the host via a VM-internal address that
+only works if the host process binds all interfaces. This is a weaker security
+posture than the Linux bridge-IP binding, but Docker Desktop typically runs on
+personal machines (not shared servers), and macOS provides a host firewall.
 """
 
 from __future__ import annotations
@@ -35,8 +37,11 @@ _DEFAULT_BRIDGE_GATEWAY = "172.17.0.1"
 # Sentinel value for the CLI --host option that triggers automatic resolution.
 AUTO_HOST = "auto"
 
-# Loopback fallback when the bridge IP is not bindable (e.g. Docker Desktop).
+# Loopback fallback for standalone use without Docker.
 _LOOPBACK_FALLBACK = "127.0.0.1"
+
+# All-interfaces bind for Docker Desktop (bridge IP not bindable on host).
+_ALL_INTERFACES = "0.0.0.0"
 
 
 def _is_bindable(ip: str, port: int = 0) -> bool:
@@ -44,7 +49,7 @@ def _is_bindable(ip: str, port: int = 0) -> bool:
 
     On Docker Desktop (macOS/Windows) the bridge IP lives inside the Linux VM
     and cannot be bound from the host process. This probe detects that case so
-    we can fall back to loopback instead of crashing with EADDRNOTAVAIL.
+    we can fall back instead of crashing with EADDRNOTAVAIL.
     """
     try:
         infos = socket.getaddrinfo(ip, port, type=socket.SOCK_STREAM)
@@ -83,31 +88,71 @@ def _validate_ip(raw: str) -> str | None:
     return str(parsed)
 
 
+def _is_docker_desktop() -> bool:
+    """Detect whether Docker is running via Docker Desktop.
+
+    Docker Desktop (macOS/Windows) runs Docker inside a Linux VM. The bridge
+    network exists inside that VM, so ``docker network inspect bridge``
+    returns an IP (e.g. 172.17.0.1) that is not bindable on the host. We need
+    to detect this to fall back to ``0.0.0.0`` instead of the bridge IP.
+
+    Uses ``docker info --format '{{.OperatingSystem}}'`` which returns
+    "Docker Desktop" on macOS/Windows and the host OS name on Linux.
+    """
+    try:
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{.OperatingSystem}}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return "Docker Desktop" in result.stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return False
+
+
 def resolve_gateway_host() -> str:
-    """Detect the Docker default bridge gateway IP.
+    """Detect the best bind address for the gateway proxy.
 
-    This is the IP that ``--add-host host.docker.internal:host-gateway``
-    resolves to inside containers. Binding the gateway to this IP makes it
-    reachable from containers without exposing it on all interfaces.
+    On **Linux** with a native Docker daemon: detects the Docker bridge gateway
+    IP via ``docker network inspect bridge`` and binds to it. This is the same
+    IP ``host-gateway`` resolves to, so containers reach the gateway without it
+    being exposed on the host's external NICs.
 
-    Tries ``docker network inspect bridge`` first, validates the output is a
-    real IP (not ``0.0.0.0`` or junk), probes whether it can be bound on this
-    host, then falls back to the well-known default ``172.17.0.1``. If that
-    also can't be bound (e.g. Docker Desktop where the bridge is in a VM),
-    falls back to ``127.0.0.1`` so the gateway at least starts.
+    On **Docker Desktop** (macOS/Windows): the bridge IP lives inside the Linux
+    VM and can't be bound on the host. Falls back to ``0.0.0.0`` (all
+    interfaces) because Docker Desktop's networking model requires it —
+    containers reach the host via a VM-internal address that only works with an
+    all-interfaces bind. A warning is logged about the exposure.
 
-    Returns the resolved IP string. Never raises — on any failure, returns
+    When **Docker is not installed**: falls back to ``127.0.0.1`` so the
+    gateway at least starts for standalone/development use.
+
+    Returns the resolved host string. Never raises — on any failure, returns
     a fallback so the gateway can still attempt to bind.
     """
     detected = _detect_bridge_ip()
     if detected is not None and _is_bindable(detected):
         return detected
 
+    # Bridge IP not bindable — likely Docker Desktop or no docker0 interface.
+    if _is_docker_desktop():
+        logger.warning(
+            "Docker Desktop detected: bridge IP %s is inside the Linux VM "
+            "and not bindable on the host. Binding 0.0.0.0 (all interfaces) "
+            "so containers can reach the gateway via host.docker.internal. "
+            "Consider enabling the macOS host firewall or using a firewall "
+            "rule to restrict access to port 8877.",
+            detected or _DEFAULT_BRIDGE_GATEWAY,
+        )
+        return _ALL_INTERFACES
+
     if detected is not None:
         logger.debug(
-            "Bridge IP %s is not bindable on this host; "
-            "likely Docker Desktop or no docker0 interface. "
-            "Falling back to %s.",
+            "Bridge IP %s is not bindable on this host and Docker Desktop "
+            "was not detected. Falling back to %s.",
             detected,
             _LOOPBACK_FALLBACK,
         )

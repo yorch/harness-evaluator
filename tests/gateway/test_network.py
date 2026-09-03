@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from harness_evaluator.cli import app
 from harness_evaluator.gateway.network import (
+    _ALL_INTERFACES,
     _LOOPBACK_FALLBACK,
     _validate_ip,
     format_host_for_url,
@@ -111,7 +112,7 @@ class TestResolveGatewayHost:
             assert resolve_gateway_host() == "10.23.0.1"
 
     def test_falls_back_to_loopback_when_not_bindable(self) -> None:
-        """Docker Desktop: bridge IP detected but not bindable → loopback."""
+        """Non-Docker-Desktop, bridge IP not bindable → loopback."""
         mock_result = MagicMock()
         mock_result.returncode = 0
         mock_result.stdout = "172.17.0.1\n"
@@ -124,8 +125,33 @@ class TestResolveGatewayHost:
                 "harness_evaluator.gateway.network._is_bindable",
                 return_value=False,
             ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
+                return_value=False,
+            ),
         ):
             assert resolve_gateway_host() == _LOOPBACK_FALLBACK
+
+    def test_docker_desktop_falls_back_to_all_interfaces(self) -> None:
+        """Docker Desktop: bridge IP not bindable → 0.0.0.0 (not loopback)."""
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "172.17.0.1\n"
+        with (
+            patch(
+                "harness_evaluator.gateway.network.subprocess.run",
+                return_value=mock_result,
+            ),
+            patch(
+                "harness_evaluator.gateway.network._is_bindable",
+                return_value=False,
+            ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
+                return_value=True,
+            ),
+        ):
+            assert resolve_gateway_host() == _ALL_INTERFACES
 
     def test_falls_back_when_docker_not_found(self) -> None:
         """When docker is not installed, falls back to loopback (not bindable)."""
@@ -136,6 +162,10 @@ class TestResolveGatewayHost:
             ),
             patch(
                 "harness_evaluator.gateway.network._is_bindable",
+                return_value=False,
+            ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
                 return_value=False,
             ),
         ):
@@ -155,6 +185,10 @@ class TestResolveGatewayHost:
                 "harness_evaluator.gateway.network._is_bindable",
                 return_value=False,
             ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
+                return_value=False,
+            ),
         ):
             assert resolve_gateway_host() == _LOOPBACK_FALLBACK
 
@@ -170,6 +204,10 @@ class TestResolveGatewayHost:
             ),
             patch(
                 "harness_evaluator.gateway.network._is_bindable",
+                return_value=False,
+            ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
                 return_value=False,
             ),
         ):
@@ -191,6 +229,10 @@ class TestResolveGatewayHost:
                 "harness_evaluator.gateway.network._is_bindable",
                 return_value=False,
             ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
+                return_value=False,
+            ),
         ):
             assert resolve_gateway_host() == _LOOPBACK_FALLBACK
 
@@ -205,6 +247,10 @@ class TestResolveGatewayHost:
                 "harness_evaluator.gateway.network._is_bindable",
                 return_value=False,
             ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
+                return_value=False,
+            ),
         ):
             assert resolve_gateway_host() == _LOOPBACK_FALLBACK
 
@@ -217,6 +263,10 @@ class TestResolveGatewayHost:
             ),
             patch(
                 "harness_evaluator.gateway.network._is_bindable",
+                return_value=False,
+            ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
                 return_value=False,
             ),
         ):
@@ -314,13 +364,17 @@ class TestCliGatewayAutoHost:
             assert "172.17.0.1" in result.stdout
 
     def test_auto_host_falls_back_to_loopback(self, tmp_path: Path) -> None:
-        """When bridge IP is not bindable, auto falls back to 127.0.0.1."""
+        """When bridge IP is not bindable (not Docker Desktop), falls back to 127.0.0.1."""
         with (
             patch(
                 "harness_evaluator.gateway.network.subprocess.run"
             ) as mock_run,
             patch(
                 "harness_evaluator.gateway.network._is_bindable",
+                return_value=False,
+            ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
                 return_value=False,
             ),
             patch("harness_evaluator.gateway.proxy.run_proxy") as mock_proxy,
@@ -343,3 +397,41 @@ class TestCliGatewayAutoHost:
             mock_proxy.assert_called_once()
             assert mock_proxy.call_args.kwargs["host"] == _LOOPBACK_FALLBACK
             assert _LOOPBACK_FALLBACK in result.stdout
+
+    def test_auto_host_docker_desktop_binds_all_interfaces(
+        self, tmp_path: Path
+    ) -> None:
+        """On Docker Desktop, auto binds 0.0.0.0 with a warning."""
+        with (
+            patch(
+                "harness_evaluator.gateway.network.subprocess.run"
+            ) as mock_run,
+            patch(
+                "harness_evaluator.gateway.network._is_bindable",
+                return_value=False,
+            ),
+            patch(
+                "harness_evaluator.gateway.network._is_docker_desktop",
+                return_value=True,
+            ),
+            patch("harness_evaluator.gateway.proxy.run_proxy") as mock_proxy,
+        ):
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            mock_result.stdout = "172.17.0.1\n"
+            mock_run.return_value = mock_result
+
+            result = runner.invoke(
+                app,
+                [
+                    "gateway",
+                    "--port",
+                    "8877",
+                    "--db",
+                    str(tmp_path / "gw.db"),
+                ],
+            )
+            mock_proxy.assert_called_once()
+            assert mock_proxy.call_args.kwargs["host"] == _ALL_INTERFACES
+            assert "Docker Desktop" in result.stdout
+            assert "all interfaces" in result.stdout
