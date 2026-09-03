@@ -114,7 +114,11 @@ def gateway(
 ) -> None:
     """Start the gateway proxy server for token accounting."""
     _configure_logging(verbose)
-    from harness_evaluator.gateway.network import AUTO_HOST, resolve_gateway_host
+    from harness_evaluator.gateway.network import (
+        AUTO_HOST,
+        format_host_for_url,
+        resolve_gateway_host,
+    )
     from harness_evaluator.gateway.proxy import GatewayStartupError, run_proxy
 
     if host == AUTO_HOST:
@@ -124,12 +128,13 @@ def gateway(
             f"(containers reach it via host.docker.internal)[/dim]"
         )
 
+    url_host = format_host_for_url(host)
     console.print(f"[bold green]Starting gateway proxy on {host}:{port}[/bold green]")
     console.print(f"Captured calls stored to: {db}")
     console.print(
         "Configure harnesses with:\n"
-        f"  ANTHROPIC_BASE_URL=http://{host}:{port}\n"
-        f"  OPENAI_BASE_URL=http://{host}:{port}"
+        f"  ANTHROPIC_BASE_URL=http://{url_host}:{port}\n"
+        f"  OPENAI_BASE_URL=http://{url_host}:{port}"
     )
     try:
         run_proxy(host=host, port=port, db_path=db)
@@ -377,18 +382,25 @@ def run(
         from harness_evaluator.gateway.network import resolve_gateway_host
 
         bridge_ip = resolve_gateway_host()
+        # Deduplicate: if the bridge IP is already loopback, don't probe twice.
         probe_hosts = [bridge_ip, "127.0.0.1"]
+        seen: set[str] = set()
         reachable_on: str | None = None
         for probe_host in probe_hosts:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)
+            if probe_host in seen:
+                continue
+            seen.add(probe_host)
             try:
-                sock.connect((probe_host, cfg.gateway_port))
+                # create_connection is getaddrinfo-backed, so it handles
+                # both IPv4 and IPv6 hosts correctly.
+                sock = socket.create_connection(
+                    (probe_host, cfg.gateway_port), timeout=2
+                )
                 sock.close()
                 reachable_on = probe_host
                 break
             except (ConnectionRefusedError, TimeoutError, OSError):
-                sock.close()
+                pass
 
         if reachable_on is None:
             console.print(

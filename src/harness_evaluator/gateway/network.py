@@ -119,6 +119,23 @@ def resolve_gateway_host() -> str:
     return _LOOPBACK_FALLBACK
 
 
+def format_host_for_url(host: str) -> str:
+    """Format a host for use in a URL, bracketing IPv6 literals.
+
+    ``http://::1:8877`` is ambiguous (the colons in the IPv6 address collide
+    with the port separator). RFC 3986 requires IPv6 literals in URLs to be
+    wrapped in brackets: ``http://[::1]:8877``. IPv4 and hostnames are
+    returned unchanged.
+    """
+    try:
+        parsed = ipaddress.ip_address(host)
+        if parsed.version == 6:
+            return f"[{host}]"
+    except ValueError:
+        pass
+    return host
+
+
 def _detect_bridge_ip() -> str | None:
     """Run ``docker network inspect bridge`` and return the validated gateway IP.
 

@@ -12,6 +12,7 @@ from harness_evaluator.cli import app
 from harness_evaluator.gateway.network import (
     _LOOPBACK_FALLBACK,
     _validate_ip,
+    format_host_for_url,
     resolve_gateway_host,
 )
 
@@ -51,6 +52,25 @@ class TestValidateIp:
 
     def test_rejects_multicast(self) -> None:
         assert _validate_ip("224.0.0.1") is None
+
+
+class TestFormatHostForUrl:
+    """Tests for format_host_for_url()."""
+
+    def test_ipv4_unchanged(self) -> None:
+        assert format_host_for_url("172.17.0.1") == "172.17.0.1"
+
+    def test_ipv6_gets_brackets(self) -> None:
+        assert format_host_for_url("::1") == "[::1]"
+
+    def test_ipv6_full_address(self) -> None:
+        assert format_host_for_url("fd00::1") == "[fd00::1]"
+
+    def test_hostname_unchanged(self) -> None:
+        assert format_host_for_url("host.docker.internal") == "host.docker.internal"
+
+    def test_localhost_unchanged(self) -> None:
+        assert format_host_for_url("localhost") == "localhost"
 
 
 class TestResolveGatewayHost:
