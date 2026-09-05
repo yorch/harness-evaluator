@@ -103,6 +103,45 @@ def _make_completed(returncode: int = 0, stdout: str = "", stderr: str = "") -> 
 # ---------------------------------------------------------------------------
 
 
+class TestHostSideGatewayUrl:
+    """The open-ended judge runs on the host, not in the container.
+
+    ``gateway_host`` defaults to ``host.docker.internal``, which Docker
+    synthesises per container via ``--add-host`` and which does not resolve on
+    the host. Handing it to the judge failed every open-ended cell with
+    ``[Errno -2] Name or service not known``, recorded as a crash.
+    """
+
+    def test_container_only_name_is_replaced(self, tmp_path: Any):
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        assert runner.gateway_host == "host.docker.internal"
+        assert "host.docker.internal" not in runner._host_side_gateway_url()
+
+    def test_host_side_url_resolves_on_this_host(self, tmp_path: Any):
+        import socket
+
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        host = runner._host_side_gateway_url().split("//", 1)[1].rsplit(":", 1)[0]
+        # Would raise gaierror for host.docker.internal -- the original bug.
+        socket.gethostbyname(host)
+
+    def test_explicit_gateway_host_is_respected(self, tmp_path: Any):
+        """An operator-chosen host is presumed reachable and left alone."""
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"), gateway_host="10.1.2.3")
+        assert runner._host_side_gateway_url() == "http://10.1.2.3:8877"
+
+    def test_all_interfaces_bind_maps_to_loopback(self, tmp_path: Any):
+        """The host reaches an 0.0.0.0 bind (Docker Desktop) via loopback."""
+        from unittest.mock import patch
+
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        with patch(
+            "harness_evaluator.gateway.network.resolve_gateway_host",
+            return_value="0.0.0.0",
+        ):
+            assert runner._host_side_gateway_url() == "http://127.0.0.1:8877"
+
+
 class TestBuildRunArgs:
     def test_basic_args(self, runner: DockerRunner, tmp_path: Any):
         workdir = tmp_path / "wd"

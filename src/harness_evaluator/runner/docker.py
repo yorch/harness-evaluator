@@ -4,8 +4,17 @@ Each run gets a fresh container with:
   - The task repo cloned and set up on the host (mounted as a volume)
   - The harness installed and configured
   - The gateway proxy accessible for token accounting
-  - Network policy enforced
   - Timeout enforcement
+
+Isolation is filesystem- and privilege-oriented, not network-oriented: the
+container gets ``--cap-drop=ALL`` and sees only the mounted cell workdir, but
+its network egress is **not** restricted. It uses Docker's default bridge (or
+the host network, see ``use_host_network``) and can reach anything the host
+can. Harnesses need to reach the gateway, and through it the provider API, so
+restricting egress would mean allowlisting rather than blocking -- a real
+feature rather than a flag, and one that would change what is measured, since
+at least one harness alters its behaviour when it detects a contained
+environment with no internet.
 
 The runner uses Approach A: it launches a long-running container
 (``docker run -d ... sleep``), then runs setup and the harness command
@@ -285,7 +294,6 @@ class DockerRunner:
         workdir_base: str = "./harness_evaluator_workdir",
         gateway_host: str = "host.docker.internal",
         gateway_port: int = 8877,
-        network: str = "harness-evaluator-net",
         gateway_db: str = "harness_evaluator_gateway.db",
         results_db: str = "harness_evaluator_results.db",
         docker_bin: str = "docker",
@@ -299,7 +307,6 @@ class DockerRunner:
         self.workdir_base = Path(workdir_base)
         self.gateway_host = gateway_host
         self.gateway_port = gateway_port
-        self.network = network
         self.gateway_db = gateway_db
         self.results_db = results_db
         self.docker_bin = docker_bin
@@ -308,6 +315,7 @@ class DockerRunner:
         self.use_host_network = use_host_network
         self.task_library_root = task_library_root
         self.run_as_user = run_as_user or _default_run_as_user()
+        self._host_gateway_url: str | None = None
         # Some harnesses refuse to run privileged. Resolve this once from the
         # uid the container will actually be launched with, rather than from
         # the host uid, so an explicit run_as_user override is honoured.
@@ -491,9 +499,7 @@ class DockerRunner:
                 from harness_evaluator.evaluator.open_ended import OpenEndedEvaluator
 
                 oe_evaluator = OpenEndedEvaluator(
-                    gateway_url=(
-                        f"http://{self.gateway_host}:{self.gateway_port}"
-                    )
+                    gateway_url=self._host_side_gateway_url()
                 )
                 oe_result = await oe_evaluator.evaluate(
                     cell.task, cell_workdir, trace_id=cell.cell_id
@@ -1048,6 +1054,34 @@ class DockerRunner:
         # Keep the container alive long enough for exec commands.
         args.extend(["sleep", str(timeout + 30)])
         return args
+
+    def _host_side_gateway_url(self) -> str:
+        """Return a gateway URL reachable from the *host*.
+
+        ``gateway_host`` is the address containers use, and its default --
+        ``host.docker.internal`` -- is synthesised per container by
+        ``--add-host``. It does not resolve on the host. The open-ended judge
+        runs host-side, so handing it that name failed every open-ended cell
+        with ``[Errno -2] Name or service not known``, recorded as a crash
+        rather than as anything pointing at the gateway.
+
+        Any other value is used as given: an explicit host or IP was chosen by
+        the operator and is presumed reachable from wherever they run.
+
+        Memoised: resolving shells out to ``docker network inspect``, and the
+        answer cannot change within a run, so it must not happen once per cell.
+        """
+        if self._host_gateway_url is None:
+            host = self.gateway_host
+            if host == "host.docker.internal":
+                from harness_evaluator.gateway.network import resolve_gateway_host
+
+                resolved = resolve_gateway_host()
+                # The gateway binds 0.0.0.0 on Docker Desktop; the host reaches
+                # that through loopback, not by connecting to 0.0.0.0.
+                host = "127.0.0.1" if resolved == "0.0.0.0" else resolved
+            self._host_gateway_url = f"http://{host}:{self.gateway_port}"
+        return self._host_gateway_url
 
     def _prepare_container_home(self, workdir: Path) -> Path:
         """Create the container's HOME inside the workdir, writable by the run user.
