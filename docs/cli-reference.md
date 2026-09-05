@@ -78,6 +78,8 @@ harness-evaluator run <config> [options]
 | `--verbose` / `-v` | count | `0` | Increase logging verbosity (`-v`=INFO, `-vv`=DEBUG) |
 | `--progress` / `--no-progress` | flag | `True` | Show a live progress panel during the run (auto-off in non-TTY) |
 | `--no-tui` | flag | `False` | Skip the Textual TUI and use the Rich live panel instead (stays live on a TTY; the TUI's own fallback if it cannot start) |
+| `--auto-gateway` / `--no-auto-gateway` | flag | `True` | Start the gateway as a subprocess when it is not already reachable, and shut it down when the run finishes. Use `--no-auto-gateway` to require a manually started gateway |
+| `--gateway-log` | string | `harness_evaluator_gateway.log` | Where to write the auto-started gateway's stdout/stderr. Ignored when the gateway was started manually |
 
 ### Examples
 
