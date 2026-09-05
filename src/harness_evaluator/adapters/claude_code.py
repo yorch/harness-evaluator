@@ -26,11 +26,14 @@ Limitations:
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from harness_evaluator.adapters.base import AdapterInfo, AdapterResult, BaseAdapter
 from harness_evaluator.adapters.registry import register_adapter
 from harness_evaluator.gateway.models import TokenUsage
+
+logger = logging.getLogger(__name__)
 
 _ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -212,11 +215,30 @@ class ClaudeCodeAdapter(BaseAdapter):
         ``IS_SANDBOX=1`` is claude-code's supported way to say the process is
         already confined, which is precisely true here: an ephemeral container
         with ``--cap-drop=ALL`` and no host filesystem access beyond the mounted
-        cell workdir. It is set only when the flag it unblocks is actually used.
+        cell workdir.
+
+        It is set only when *both* conditions that make it necessary hold -- the
+        container runs as root, and the flag it unblocks is actually passed --
+        because the variable is not inert. Besides lifting the root guard it
+        also suppresses claude-code's early exit on HTTP 529 (provider
+        overloaded), so a run with it set can keep going where a default run
+        would stop. That is a deviation from stock behaviour, and in a tool
+        whose purpose is comparing harnesses it would quietly favour claude-code
+        against harnesses that have no such suppression. Narrowing it keeps
+        every non-root host -- the common case -- on stock behaviour, and the
+        warning makes the remaining deviation visible in the run log rather than
+        silent.
         """
         env = super().get_env()
-        if self._skip_permissions:
+        if self._skip_permissions and self.runs_as_root:
             env["IS_SANDBOX"] = "1"
+            logger.warning(
+                "Running claude-code as root, so IS_SANDBOX=1 is set to keep "
+                "--dangerously-skip-permissions usable. This also suppresses "
+                "claude-code's early exit on HTTP 529, so results from this host "
+                "are not strictly comparable with a non-root run. Set "
+                "run_as_user to a non-root uid to avoid it."
+            )
         return env
 
 

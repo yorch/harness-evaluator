@@ -149,6 +149,61 @@ class TestBuildRunArgs:
         assert "ANTHROPIC_API_KEY=sk-secret" in args
         assert "HARNESS_EVALUATOR_TRACE_ID=cell-1" in args
 
+    def test_host_only_env_not_forwarded(self, runner: DockerRunner, tmp_path: Any):
+        """Host-specific vars must not cross into the container.
+
+        Their values name host locations: PATH points at host directories that
+        do not exist in the image (it worked only because the host PATH happened
+        to contain /usr/local/bin), and TMPDIR/SHELL/USER are equally host
+        facts. Dropping them lets the image's own environment apply.
+        """
+        workdir = tmp_path / "wd"
+        workdir.mkdir()
+        env = {
+            "PATH": "/host/only/bin",
+            "TMPDIR": "/host/tmp",
+            "SHELL": "/usr/bin/zsh",
+            "USER": "hostuser",
+            "LANG": "en_US.UTF-8",
+            "ANTHROPIC_API_KEY": "sk-secret",
+        }
+        args = runner._build_run_args(workdir, env, timeout=60, container_name="c1")
+        flags = [a for a in args if "=" in a]
+
+        assert not any(a.startswith("PATH=") for a in flags)
+        assert not any(a.startswith("TMPDIR=") for a in flags)
+        assert not any(a.startswith("SHELL=") for a in flags)
+        assert not any(a.startswith("USER=") for a in flags)
+        # Value-neutral and provider vars still cross.
+        assert "LANG=en_US.UTF-8" in args
+        assert "ANTHROPIC_API_KEY=sk-secret" in args
+
+    def test_host_only_env_not_forwarded_on_exec(
+        self, runner: DockerRunner, tmp_path: Any
+    ):
+        """The multi-phase exec path rebuilds env, so it must filter too."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        with patch(
+            "harness_evaluator.runner.docker._run_subprocess",
+            new=AsyncMock(
+                return_value=CompletedProcess(returncode=0, stdout="", stderr="")
+            ),
+        ) as mock_run:
+            asyncio.run(
+                runner._exec_in_container(
+                    "cid",
+                    ["true"],
+                    timeout=30,
+                    env={"PATH": "/host/only/bin", "LANG": "en_US.UTF-8"},
+                )
+            )
+        argv = mock_run.call_args[0][0]
+        assert not any(a.startswith("PATH=") for a in argv)
+        assert "LANG=en_US.UTF-8" in argv
+        assert f"HOME={CONTAINER_HOME}" in argv
+
     def test_add_host_for_gateway(self, runner: DockerRunner, tmp_path: Any):
         workdir = tmp_path / "wd"
         workdir.mkdir()
@@ -883,26 +938,32 @@ class TestAdapterGetCommand:
         cmd = adapter.get_command("fix the bug")
         assert "--dangerously-skip-permissions" not in cmd
 
-    def test_claude_code_sets_is_sandbox_with_skip_permissions(
+    def test_claude_code_sets_is_sandbox_only_as_root(
         self, tmp_path: Any, anthropic_model: ModelSpec
     ):
         """claude-code refuses --dangerously-skip-permissions when running as root.
 
-        The runner runs containers as the invoking host user, so on a root host
-        that refusal fires and the harness exits before making a single API
-        call -- the cell then reports no_change with zero tokens, which reads as
-        a model that did nothing. IS_SANDBOX=1 is the supported way to say the
-        process is already confined, which the container is.
+        The refusal fires before the first API call, so the cell reports
+        no_change with zero tokens -- a model that appears to have done nothing.
+        IS_SANDBOX=1 lifts it. It is scoped to the root case because it is not
+        inert: it also suppresses claude-code's early exit on HTTP 529, which
+        would quietly advantage claude-code in a cross-harness comparison.
         """
         from harness_evaluator.adapters.claude_code import ClaudeCodeAdapter
 
-        adapter = ClaudeCodeAdapter(
-            workdir=str(tmp_path),
-            model=anthropic_model,
+        as_root = ClaudeCodeAdapter(
+            workdir=str(tmp_path), model=anthropic_model, runs_as_root=True
         )
-        assert adapter.get_env()["IS_SANDBOX"] == "1"
-        assert "--dangerously-skip-permissions" in adapter.get_command("fix the bug")
+        assert as_root.get_env()["IS_SANDBOX"] == "1"
+        assert "--dangerously-skip-permissions" in as_root.get_command("fix the bug")
 
+        as_user = ClaudeCodeAdapter(
+            workdir=str(tmp_path), model=anthropic_model, runs_as_root=False
+        )
+        assert "IS_SANDBOX" not in as_user.get_env()
+        assert "--dangerously-skip-permissions" in as_user.get_command("fix the bug")
+
+    @pytest.mark.parametrize("runs_as_root", [True, False])
     @pytest.mark.parametrize(
         "config",
         [
@@ -917,25 +978,32 @@ class TestAdapterGetCommand:
             {"dangerously_skip_permissions": "false"},
         ],
     )
-    def test_is_sandbox_set_exactly_when_flag_is_passed(
-        self, tmp_path: Any, anthropic_model: ModelSpec, config: dict
+    def test_is_sandbox_set_exactly_when_needed(
+        self,
+        tmp_path: Any,
+        anthropic_model: ModelSpec,
+        config: dict,
+        runs_as_root: bool,
     ):
-        """IS_SANDBOX must be set if and only if the flag it unblocks is passed.
+        """IS_SANDBOX is set iff the flag is passed *and* the container is root.
 
-        These are decided in two different methods (``get_env`` reads the same
-        ``_skip_permissions`` property as ``get_command``). If they ever drift,
+        The two halves are decided in different methods -- ``get_command``
+        passes the flag, ``get_env`` sets the variable. If they drift,
         claude-code either refuses to start as root, or claims to be sandboxed
-        while running without the flag -- so the invariant is the thing worth
-        testing, not either side alone.
+        (and silently changes its 529 behaviour) when nothing required it. The
+        invariant is the thing worth testing, not either side alone.
         """
         from harness_evaluator.adapters.claude_code import ClaudeCodeAdapter
 
         adapter = ClaudeCodeAdapter(
-            workdir=str(tmp_path), model=anthropic_model, config=config
+            workdir=str(tmp_path),
+            model=anthropic_model,
+            config=config,
+            runs_as_root=runs_as_root,
         )
         flag_passed = "--dangerously-skip-permissions" in adapter.get_command("fix")
         sandbox_set = adapter.get_env().get("IS_SANDBOX") == "1"
-        assert flag_passed == sandbox_set, config
+        assert sandbox_set == (flag_passed and runs_as_root), (config, runs_as_root)
 
     def test_other_adapters_do_not_set_is_sandbox(
         self, tmp_path: Any, anthropic_model: ModelSpec

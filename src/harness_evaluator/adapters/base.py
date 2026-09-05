@@ -73,6 +73,15 @@ class BaseAdapter(ABC):
     regardless of this flag.
     """
 
+    runs_as_root: bool
+    """Whether the harness process will run as uid 0.
+
+    Set by the runner from the uid the container is actually launched with, not
+    from the host uid, so an explicit ``run_as_user`` override is honoured. Only
+    matters to harnesses that refuse to run privileged; an adapter should use it
+    to opt *into* a workaround, never to change how the harness solves the task.
+    """
+
     def __init__(
         self,
         workdir: str | Path,
@@ -80,12 +89,14 @@ class BaseAdapter(ABC):
         gateway_url: str | None = None,
         trace_id: str | None = None,
         config: dict[str, Any] | None = None,
+        runs_as_root: bool = False,
     ) -> None:
         self.workdir = Path(workdir)
         self.model = model
         self.gateway_url = gateway_url
         self.trace_id = trace_id
         self.config = config or {}
+        self.runs_as_root = runs_as_root
 
     @staticmethod
     @abstractmethod

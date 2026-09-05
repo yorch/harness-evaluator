@@ -41,3 +41,6 @@ site/node_modules/
 site/dist/
 site/.astro/
 harness_evaluator_workdir/
+
+# Gateway log written by `harness-evaluator run` when it auto-starts the proxy.
+harness_evaluator_gateway.log

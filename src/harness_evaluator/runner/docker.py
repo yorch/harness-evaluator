@@ -57,12 +57,36 @@ CONTAINER_WORKSPACE = "/workspace"
 CONTAINER_HOME_DIRNAME = ".home"
 CONTAINER_HOME = f"{CONTAINER_WORKSPACE}/{CONTAINER_HOME_DIRNAME}"
 
+# Host env vars that must not be forwarded into the container: their values
+# name locations on the host that either do not exist inside the image or are
+# not writable by the container user.
+#
+# The adapter allowlist that produces these is shared with local (non-Docker)
+# execution, where `run_command` *replaces* the environment entirely and so
+# genuinely needs the host's PATH -- which is why they are dropped here, at the
+# container boundary, rather than removed from the allowlist.
+#
+# PATH is the sharpest of them: forwarding the host's has worked only by the
+# coincidence that it contains /usr/local/bin, where the harnesses happen to be
+# installed. Dropping it lets the image's own PATH apply, which is what every
+# other container process already uses. HOME is not listed because it is not
+# dropped but overridden -- see CONTAINER_HOME.
+_HOST_ONLY_ENV = frozenset({"PATH", "TMPDIR", "SHELL", "USER"})
+
 # Repo subdirectory inside the container workspace.
 CONTAINER_REPO = "/workspace/repo"
 
 # Strict allow-list for container name characters (Docker requires
 # [a-zA-Z0-9][a-zA-Z0-9_.-]*). We sanitize cell IDs to this charset.
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def _container_env(env: dict[str, str]) -> dict[str, str]:
+    """Return ``env`` as it should appear inside the container."""
+    return {
+        **{k: v for k, v in env.items() if k not in _HOST_ONLY_ENV},
+        "HOME": CONTAINER_HOME,
+    }
 
 
 def _sanitize_container_name(cell_id: str) -> str:
@@ -284,6 +308,10 @@ class DockerRunner:
         self.use_host_network = use_host_network
         self.task_library_root = task_library_root
         self.run_as_user = run_as_user or _default_run_as_user()
+        # Some harnesses refuse to run privileged. Resolve this once from the
+        # uid the container will actually be launched with, rather than from
+        # the host uid, so an explicit run_as_user override is honoured.
+        self.runs_as_root = (self.run_as_user or "").split(":")[0] == "0"
         self.workdir_base.mkdir(parents=True, exist_ok=True)
         # Optional per-cell output streamer set by the TUI. When set,
         # harness stdout/stderr chunks are tee'd to this callback during
@@ -716,6 +744,7 @@ class DockerRunner:
             gateway_url=gateway_url,
             trace_id=cell.cell_id,
             config=cell.harness.config,
+            runs_as_root=self.runs_as_root,
         )
         if adapter is None:
             return None
@@ -992,9 +1021,9 @@ class DockerRunner:
 
         args.extend(["-w", CONTAINER_WORKSPACE])
 
-        # Pass allowlisted env vars via --env (NOT the whole host env).
-        # HOME is forced to a container-local path -- see CONTAINER_HOME.
-        for key, value in {**env, "HOME": CONTAINER_HOME}.items():
+        # Pass allowlisted env vars via --env (NOT the whole host env), minus
+        # the host-specific ones -- see _container_env.
+        for key, value in _container_env(env).items():
             args.extend(["--env", f"{key}={value}"])
 
         # Gateway reachability: use host.docker.internal with --add-host,
@@ -1117,9 +1146,10 @@ class DockerRunner:
         ]
         if env:
             # docker exec --env wins over the values set at docker run, so
-            # re-force HOME here too -- the per-phase env is rebuilt from the
-            # adapter and would otherwise reintroduce the host's HOME.
-            for key, val in {**env, "HOME": CONTAINER_HOME}.items():
+            # re-apply the container view here too -- the per-phase env is
+            # rebuilt from the adapter and would otherwise reintroduce the
+            # host's HOME and PATH.
+            for key, val in _container_env(env).items():
                 exec_args.extend(["--env", f"{key}={val}"])
         exec_args.append(container_id)
         exec_args.extend(command)
@@ -1192,6 +1222,7 @@ class DockerRunner:
             gateway_url=gateway_url,
             trace_id=cell.cell_id,
             config=cell.harness.config,
+            runs_as_root=self.runs_as_root,
         )
 
         if adapter is None:
@@ -1405,6 +1436,7 @@ class DockerRunner:
                     gateway_url=gateway_url,
                     trace_id=phase_trace_id,
                     config=cell.harness.config,
+                    runs_as_root=self.runs_as_root,
                 )
 
                 if adapter is None:

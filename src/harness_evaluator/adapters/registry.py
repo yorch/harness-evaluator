@@ -39,6 +39,7 @@ def create_adapter(
     gateway_url: str | None = None,
     trace_id: str | None = None,
     config: dict[str, Any] | None = None,
+    runs_as_root: bool = False,
 ) -> BaseAdapter | None:
     """Create an adapter instance by name."""
     cls = get_adapter_class(name)
@@ -50,6 +51,7 @@ def create_adapter(
         gateway_url=gateway_url,
         trace_id=trace_id,
         config=config,
+        runs_as_root=runs_as_root,
     )
 
 
