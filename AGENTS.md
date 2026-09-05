@@ -7,7 +7,7 @@
 uv sync --extra dev
 
 # Lint (fast, ~1s)
-uv run ruff check src/ tests/
+uv run ruff check src/ tests/ scripts/
 
 # Type check (fast, ~3s)
 uv run mypy src/harness_evaluator/
@@ -15,8 +15,11 @@ uv run mypy src/harness_evaluator/
 # Tests (full suite ~60s)
 uv run pytest tests/ -q
 
+# Docs drift (fast, ~5s — only needed when changing docs/ or the CLI)
+uv run python scripts/check_docs.py
+
 # All gates at once — must pass before completing any change
-uv run ruff check src/ tests/ && uv run mypy src/harness_evaluator/ && uv run pytest tests/ -q
+uv run ruff check src/ tests/ scripts/ && uv run mypy src/harness_evaluator/ && uv run pytest tests/ -q
 
 # Build Docker image (slow, ~5 min — only needed when changing Dockerfile)
 docker build -t harness-evaluator-runner:latest .
@@ -24,8 +27,12 @@ docker build -t harness-evaluator-runner:latest .
 
 ## Verification
 
-A change is incomplete until all three gates pass: ruff, mypy, pytest.
+A change is incomplete until ruff, mypy and pytest pass.
 Run focused tests first when iterating: `uv run pytest tests/<dir>/ -q`.
+
+Two further gates run in CI and are worth running locally when they apply:
+`uv lock --check` after touching dependencies or the version, and
+`uv run python scripts/check_docs.py` after touching `docs/` or the CLI.
 
 ## Architecture
 
@@ -117,8 +124,8 @@ ci: bump actions/checkout to v7
 
 ## CI
 
-- `.github/workflows/ci.yml` — ruff + mypy + pytest + `uv lock --check` on
-  every push/PR to main
+- `.github/workflows/ci.yml` — ruff + mypy + pytest + `uv lock --check` +
+  `scripts/check_docs.py` on every push/PR to main
 - `.github/workflows/release-please.yml` — runs on push to main, opens a
   "Release Please" PR with version bump + changelog from conventional commits;
   merging that PR creates the `v*` tag + GitHub Release and then publishes to
