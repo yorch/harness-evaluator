@@ -579,6 +579,9 @@ class RunConfig(BaseModel):
                                 )
                 else:
                     # Single-phase: traditional harness × model × task × repeat.
+                    # Every configured model runs, whatever its role -- roles
+                    # only partition the multi-phase expansion above. See
+                    # test_mixed_matrix, which pins this deliberately.
                     for model in self.models:
                         for repeat in range(self.repeats):
                             cells.append(
@@ -590,7 +593,32 @@ class RunConfig(BaseModel):
                                     repeat=repeat,
                                 )
                             )
+
+        self._assert_unique_cell_ids(cells)
         return cells
+
+    @staticmethod
+    def _assert_unique_cell_ids(cells: list[RunCell]) -> None:
+        """Reject a matrix containing two cells with the same ``cell_id``.
+
+        ``cell_id`` keys the results store and names the on-disk workdir, so
+        duplicates do not merely waste a run -- the second cell overwrites the
+        first, and the loss is silent. The id is built from harness, model name,
+        task and repeat, so the usual cause is two models sharing a ``name``
+        (the same model listed twice, or once per role).
+        """
+        seen: dict[str, int] = {}
+        for cell in cells:
+            seen[cell.cell_id] = seen.get(cell.cell_id, 0) + 1
+        duplicates = sorted(cid for cid, n in seen.items() if n > 1)
+        if duplicates:
+            shown = ", ".join(duplicates[:3])
+            more = f" (and {len(duplicates) - 3} more)" if len(duplicates) > 3 else ""
+            raise ValueError(
+                f"Matrix contains {len(duplicates)} duplicate cell ID(s): {shown}{more}. "
+                f"Cell IDs are built from harness, model name, task and repeat, so two "
+                f"models sharing a name collide. Give each model a distinct 'name'."
+            )
 
 
 class RunCell(BaseModel):
