@@ -74,6 +74,78 @@ def sanitize_output(text: str) -> str:
     return truncate_output(redact_secrets(text))
 
 
+# --- Error excerpt helpers -----------------------------------------------------
+# Used by the runner to enrich failed-cell error messages with a short,
+# sanitized excerpt of harness stderr. The evaluator only sees the diff/test
+# results, not the harness stderr, so it cannot report why the harness failed
+# (e.g. API auth error, command not found, crash). These helpers produce a
+# safe, bounded excerpt that can be appended to the evaluator's message.
+
+# Broader ANSI escape stripper: covers CSI (colors, cursor, erase), OSC
+# (window titles), and non-CSI escapes. The previous regex only matched
+# SGR color codes ending in 'm', missing cursor movement, erase, and OSC.
+_ANSI_ESCAPE_RE = re.compile(r"\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+# Other control characters (excluding \t \n \r which are handled by the
+# whitespace collapse): null, bell, backspace, vertical tab, form feed, etc.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+# Maximum length of the stderr excerpt appended to error_message. Kept
+# short so it fits in the CLI's "First N errors" summary without wrapping.
+_ERROR_EXCERPT_MAX_CHARS = 120
+
+# Pattern that indicates actionable error content in harness stderr. Used
+# to suppress benign warnings/progress output when the harness exited 0
+# but the eval still failed (e.g. no_change, wrong_approach).
+_ACTIONABLE_SIGNAL_RE = re.compile(
+    r"\b("
+    r"error|err|exception|traceback|fatal|fail(?:ed|ure)?|"
+    r"invalid|unauthorized|unauthorised|forbidden|"
+    r"unreachable|connection refused|connection reset|"
+    r"timeout|timed out|not found|no such file|"
+    r"api key|bearer|auth(?:entication)?"
+    r"|40[13]|429|50[0-5]"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def stderr_is_actionable(stderr: str) -> bool:
+    """Return True if *stderr* contains actionable error-like content.
+
+    Used to decide whether to append a stderr excerpt to the evaluator's
+    error message when the harness exited 0 (so the stderr is not the
+    primary signal). When the harness crashed (exit_code != 0 or timed
+    out), stderr is always considered actionable.
+    """
+    return bool(_ACTIONABLE_SIGNAL_RE.search(stderr))
+
+
+def make_error_excerpt(stderr: str, max_chars: int = _ERROR_EXCERPT_MAX_CHARS) -> str:
+    """Produce a safe, bounded excerpt of *stderr* for error messages.
+
+    The excerpt is:
+    1. Stripped of ANSI escape sequences and control characters.
+    2. Whitespace-collapsed (newlines/tabs → single spaces) *before*
+       redaction, so secrets split by \\r or \\n are reassembled and
+       caught by the redaction regex.
+    3. Redacted of known secret patterns.
+    4. Truncated on a word boundary with an ellipsis.
+    """
+    # 1. Strip ANSI escapes and control characters
+    text = _ANSI_ESCAPE_RE.sub("", stderr)
+    text = _CONTROL_CHAR_RE.sub("", text)
+    # 2. Collapse whitespace before redaction so split secrets are caught
+    text = re.sub(r"\s+", " ", text).strip()
+    # 3. Redact secrets
+    text = redact_secrets(text)
+    # 4. Truncate on a word boundary with ellipsis
+    if len(text) > max_chars:
+        cut = text.rfind(" ", 0, max_chars)
+        text = (text[:cut].rstrip() if cut > 0 else text[:max_chars]) + "\u2026"
+    return text
+
+
 class StreamingRedactor:
     """Line-by-line redactor for live harness output streams.
 
