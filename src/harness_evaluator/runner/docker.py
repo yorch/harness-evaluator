@@ -618,30 +618,37 @@ class DockerRunner:
             # eval failed and the harness produced error output. The
             # evaluator only sees the diff/test results, not the harness
             # stderr, so it cannot report why the harness failed (e.g.
-            # API auth error, command not found). Append a short excerpt
-            # of the harness stderr to give the user an actionable hint.
-            # The excerpt is redacted (to avoid leaking secrets) and
-            # collapsed to a single line (to avoid breaking CLI summary
-            # formatting).
+            # API auth error, command not found, crash). Append a short
+            # excerpt of the harness stderr to give the user an actionable hint.
+            #
+            # The excerpt is redacted (to avoid leaking secrets), ANSI-stripped,
+            # whitespace-collapsed, and length-bounded (to avoid breaking CLI
+            # summary formatting).
+            #
+            # Condition: enrich when the eval failed AND either:
+            # - The harness itself crashed (exit_code != 0 or timed_out) —
+            #   stderr is the primary diagnostic.
+            # - The harness exited 0 but stderr contains actionable error
+            #   content (e.g. "API key is invalid") — this catches cases
+            #   where the harness made API calls that all failed but still
+            #   exited 0, which the previous `num_api_calls == 0` gate missed.
             error_message = eval_result.error_message
-            if (
-                eval_result.exit_class != "pass"
-                and harness_result.stderr
-                and num_api_calls == 0
-            ):
-                from harness_evaluator.runner.redaction import redact_secrets
+            if eval_result.exit_class != "pass" and harness_result.stderr:
+                from harness_evaluator.runner.redaction import (
+                    make_error_excerpt,
+                    stderr_is_actionable,
+                )
 
-                # Redact secrets, strip ANSI codes, collapse whitespace
-                redacted_stderr = redact_secrets(harness_result.stderr.strip())
-                # Remove ANSI escape sequences for clean single-line display
-                redacted_stderr = re.sub(r"\x1b\[[0-9;]*m", "", redacted_stderr)
-                # Collapse all whitespace (newlines, tabs, multiple spaces) to single spaces
-                stderr_excerpt = re.sub(r"\s+", " ", redacted_stderr).strip()[:200]
-                if stderr_excerpt:
-                    if error_message:
-                        error_message = f"{error_message}; harness error: {stderr_excerpt}"
-                    else:
-                        error_message = f"harness error: {stderr_excerpt}"
+                harness_failed = (
+                    harness_result.exit_code != 0 or harness_result.timed_out
+                )
+                if harness_failed or stderr_is_actionable(harness_result.stderr):
+                    stderr_excerpt = make_error_excerpt(harness_result.stderr)
+                    if stderr_excerpt:
+                        if error_message:
+                            error_message = f"{error_message}; harness error: {stderr_excerpt}"
+                        else:
+                            error_message = f"harness error: {stderr_excerpt}"
 
             return {
                 "exit_class": eval_result.exit_class,

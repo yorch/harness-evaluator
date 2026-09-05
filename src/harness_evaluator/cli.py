@@ -717,7 +717,10 @@ def run(
     if progress.errors:
         console.print(f"\n[red]First {min(5, len(progress.errors))} errors:[/red]")
         for err in progress.errors[:5]:
-            console.print(f"  {err}")
+            # Escape Rich markup — error messages may contain [brackets]
+            # from harness stderr excerpts that would otherwise be
+            # interpreted as Rich tags and raise MarkupError.
+            console.print(f"  {escape(err)}")
 
     # Next steps: tell the user how to explore the results.
     # Pass --db explicitly so the commands work regardless of which
