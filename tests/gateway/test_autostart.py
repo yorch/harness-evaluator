@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import socket
 import threading
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -153,9 +154,29 @@ class TestGatewaySubprocessCleanup:
     """Tests for cleanup behavior."""
 
     def test_cleanup_noop_when_not_managed(self) -> None:
-        """cleanup() should be a no-op if we didn't start a subprocess."""
+        """cleanup() should be a no-op if nothing was started or registered."""
         gw = GatewaySubprocess(port=12345, db_path=":memory:")
         gw.cleanup()  # Should not raise
+
+    def test_cleanup_releases_log_handle_on_startup_failure(self, tmp_path: Path) -> None:
+        """cleanup() closes the log handle even when _managed is False.
+
+        This covers the startup-failure path: _register_cleanup ran, _spawn
+        opened the log file, but _spawn or _wait_for_reachable raised before
+        _managed was set. The log handle must still be closed to avoid an
+        FD leak.
+        """
+        log_path = str(tmp_path / "gw.log")
+        gw = GatewaySubprocess(port=12345, db_path=":memory:", log_file=log_path)
+        # Simulate: _register_cleanup ran (handlers installed) but _spawn
+        # raised after opening the log file, before setting _managed.
+        gw._log_handle = open(log_path, "w")  # noqa: SIM115
+        gw._log_path = log_path
+        # _managed is still False, _prev_sigint/_prev_sigterm are None
+        # (no signal handlers installed in this simplified test)
+        gw.cleanup()
+        assert gw._log_handle is None
+        assert gw._cleaned_up is True
 
     def test_cleanup_is_idempotent(self) -> None:
         """cleanup() can be called multiple times safely."""
@@ -200,11 +221,9 @@ class TestGatewaySubprocessContextManager:
 class TestGatewaySubprocessLogHandling:
     """Tests for log file handling."""
 
-    def test_log_file_opened_and_closed(self, tmp_path: object) -> None:
+    def test_log_file_opened_and_closed(self, tmp_path: Path) -> None:
         """When a log file is specified, it's opened and closed on cleanup."""
-        import pathlib
-
-        log_path = str(pathlib.Path(str(tmp_path)) / "gw.log")
+        log_path = str(tmp_path / "gw.log")
         gw = GatewaySubprocess(port=12345, db_path=":memory:", log_file=log_path)
         gw._managed = True
 
@@ -215,4 +234,4 @@ class TestGatewaySubprocessLogHandling:
         gw.cleanup()
         assert gw._log_handle is None
         # File should exist
-        assert pathlib.Path(log_path).exists()
+        assert tmp_path.joinpath("gw.log").exists()

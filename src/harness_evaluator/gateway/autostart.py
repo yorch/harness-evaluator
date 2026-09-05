@@ -87,6 +87,7 @@ class GatewaySubprocess:
         self._managed = False
         self._cleaned_up = False
         self._log_handle: TextIO | None = None
+        self._log_path: str | None = None
         self._prev_sigint: SignalHandler = None
         self._prev_sigterm: SignalHandler = None
 
@@ -166,6 +167,7 @@ class GatewaySubprocess:
         #   silently discarding all gateway diagnostics.
         # - A log file ensures we can report the cause on startup failure.
         log_path = self.log_file or "harness_evaluator_gateway.log"
+        self._log_path = log_path
         # File handle must stay open for the subprocess lifetime —
         # cannot use a `with` block here.
         self._log_handle = open(log_path, "w", encoding="utf-8")  # noqa: SIM115
@@ -222,13 +224,23 @@ class GatewaySubprocess:
         raise GatewayAutoStartError(msg)
 
     def _read_log_tail(self, n_lines: int = 10) -> str:
-        """Read the last N lines from the gateway log file."""
-        if self._log_handle is None:
+        """Read the last N lines from the gateway log file.
+
+        Opens a *separate* read handle rather than seeking on the writer
+        handle, because the writer's file descriptor offset is shared with
+        the subprocess — rewinding it would corrupt the gateway's ongoing
+        log output.
+        """
+        if self._log_path is None:
             return ""
         try:
-            self._log_handle.flush()
-            self._log_handle.seek(0)
-            lines = self._log_handle.readlines()
+            # Flush the writer so the read handle sees the latest content,
+            # then read from an independent handle to avoid moving the
+            # subprocess's write offset.
+            if self._log_handle is not None:
+                self._log_handle.flush()
+            with open(self._log_path, encoding="utf-8") as f:
+                lines = f.readlines()
             return "".join(lines[-n_lines:])
         except OSError:
             return ""
@@ -245,9 +257,13 @@ class GatewaySubprocess:
         """Clean up the subprocess on signal, then restore the previous handler."""
         logger.debug("Received signal %d — cleaning up gateway subprocess", signum)
         self.cleanup()
-        # Restore the previous handler and re-raise
+        # Restore the previous handler and re-raise. Preserve SIG_DFL and
+        # SIG_IGN as-is (they are integers, not callables); only fall back
+        # to SIG_DFL when prev was never captured (None).
         prev = self._prev_sigint if signum == signal.SIGINT else self._prev_sigterm
-        signal.signal(signum, prev if callable(prev) else signal.SIG_DFL)
+        if prev is None:
+            prev = signal.SIG_DFL
+        signal.signal(signum, prev)
         # Re-raise by sending the signal to ourselves after restoring the handler
         os.kill(os.getpid(), signum)
 
@@ -272,17 +288,31 @@ class GatewaySubprocess:
             self._proc = None
 
     def cleanup(self) -> None:
-        """Terminate the gateway subprocess if we started it."""
-        if self._cleaned_up or not self._managed:
+        """Terminate the gateway subprocess and release all resources.
+
+        Handles both the normal case (subprocess was started and managed)
+        and the startup-failure case (``_register_cleanup`` ran but
+        ``_spawn`` or ``_wait_for_reachable`` raised before ``_managed``
+        was set). In the latter case the log handle and signal handlers
+        must still be released to avoid FD/handler leaks.
+        """
+        if self._cleaned_up:
             return
         self._cleaned_up = True
-        self._kill_subprocess()
+
+        # Only kill the subprocess if we actually started and own it.
+        if self._managed:
+            self._kill_subprocess()
+
+        # Always close the log handle if one was opened, even if _managed
+        # is False (e.g. _spawn raised after opening the log file).
         if self._log_handle is not None:
             with contextlib.suppress(OSError):
                 self._log_handle.close()
             self._log_handle = None
-        # Unregister atexit and restore signal handlers so repeated calls
-        # and repeated run() invocations in one process don't stack handlers.
+
+        # Always unregister atexit and restore signal handlers if they
+        # were installed, even if _managed is False.
         with contextlib.suppress(ValueError):
             atexit.unregister(self.cleanup)
         if self._prev_sigint is not None:
@@ -293,7 +323,9 @@ class GatewaySubprocess:
             with contextlib.suppress(OSError, ValueError):
                 signal.signal(signal.SIGTERM, self._prev_sigterm)
             self._prev_sigterm = None
-        logger.info("Gateway subprocess cleaned up")
+
+        if self._managed:
+            logger.info("Gateway subprocess cleaned up")
 
     def __enter__(self) -> GatewaySubprocess:
         self.start_if_needed()
