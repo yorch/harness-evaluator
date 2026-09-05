@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.16.0](https://github.com/yorch/harness-evaluator/compare/v0.15.1...v0.16.0) (2026-09-05)
+
+
+### Features
+
+* **gateway:** auto-start gateway subprocess from run command ([#68](https://github.com/yorch/harness-evaluator/issues/68)) ([6aefd5b](https://github.com/yorch/harness-evaluator/commit/6aefd5b15f97eed9b868f5f49181b135380166d2))
+
+
+### Bug Fixes
+
+* **ci:** sync uv.lock to 0.15.1 ([183328e](https://github.com/yorch/harness-evaluator/commit/183328e4994e34072e2abab0873d05edaacaabfb))
+* **orchestrator:** reject a matrix with duplicate cell IDs ([#70](https://github.com/yorch/harness-evaluator/issues/70)) ([2809f04](https://github.com/yorch/harness-evaluator/commit/2809f04a0e0d7a46082883e1068f9620cf3f2685))
+* **runner:** enrich error messages with harness stderr on all failures ([#69](https://github.com/yorch/harness-evaluator/issues/69)) ([4f97db8](https://github.com/yorch/harness-evaluator/commit/4f97db8183981a5f0343d6358f82a55714da1611))
+
 ## [0.15.1](https://github.com/yorch/harness-evaluator/compare/v0.15.0...v0.15.1) (2026-09-03)
 
 
