@@ -7,6 +7,7 @@ import yaml
 
 from harness_evaluator.orchestrator.config import (
     HarnessSpec,
+    ModelRole,
     ModelSpec,
     RunConfig,
     TaskLibrary,
@@ -112,6 +113,56 @@ class TestRunConfig:
         cells = sample_config.build_matrix()
         ids = [c.cell_id for c in cells]
         assert len(ids) == len(set(ids))
+
+    def test_differently_named_review_model_still_expands(self, sample_config):
+        """A distinctly named review model keeps running single-phase tasks.
+
+        Pinned alongside the duplicate-name guard below so the two are read
+        together: sharing a *name* is the failure, having a review role is not.
+        """
+        baseline = len(sample_config.build_matrix())
+        sample_config.models.append(
+            ModelSpec(
+                name="claude-opus-5",
+                provider="anthropic",
+                api_key_env="ANTHROPIC_API_KEY",
+                role=ModelRole.REVIEW,
+            )
+        )
+        cells = sample_config.build_matrix()
+        assert len(cells) > baseline
+        ids = [c.cell_id for c in cells]
+        assert len(ids) == len(set(ids))
+
+    def test_duplicate_cell_ids_are_rejected(self, sample_config):
+        """Two models sharing a name collide; fail loudly instead of overwriting.
+
+        cell_id keys the results store and names the on-disk workdir, so the
+        second cell used to overwrite the first with no warning.
+        """
+        sample_config.models.append(
+            ModelSpec(
+                name=sample_config.models[0].name,
+                provider="anthropic",
+                api_key_env="ANTHROPIC_API_KEY",
+            )
+        )
+        with pytest.raises(ValueError, match="duplicate cell ID"):
+            sample_config.build_matrix()
+
+    def test_same_model_in_both_roles_is_rejected(self, sample_config):
+        """The exact shape a user hits when adding a reviewer by copy-paste."""
+        sample_config.models = [
+            sample_config.models[0],
+            ModelSpec(
+                name=sample_config.models[0].name,
+                provider="anthropic",
+                api_key_env="ANTHROPIC_API_KEY",
+                role=ModelRole.REVIEW,
+            ),
+        ]
+        with pytest.raises(ValueError, match="duplicate cell ID"):
+            sample_config.build_matrix()
 
     def test_expand_tasks_all(self, sample_config):
         tasks = sample_config.expand_tasks()
