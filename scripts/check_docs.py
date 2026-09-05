@@ -42,6 +42,34 @@ _OPTION = re.compile(r"(--[a-z][a-z0-9-]*)")
 _TABLE_ROW = re.compile(r"^\s*\|\s*`--[^|]*\|.*$", re.M)
 
 
+def _strip_code_fences(text: str) -> str:
+    """Blank out fenced code blocks, preserving line numbering.
+
+    Shell samples in these docs are full of ``# comment`` lines, which the
+    heading pattern would otherwise read as headings: 69 phantom anchors across
+    ``docs/``, every one of which could mask a genuinely dead ``#anchor`` link.
+    Links inside samples are not real links either, so both are read from the
+    stripped text.
+    """
+    out: list[str] = []
+    fence: str | None = None
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        if fence is None:
+            if stripped.startswith(("```", "~~~")):
+                fence = stripped[:3]
+                out.append("")
+                continue
+        # Only the matching marker closes the block, so a ``` inside a ~~~
+        # sample does not end it early.
+        elif stripped.startswith(fence):
+            fence = None
+            out.append("")
+            continue
+        out.append("" if fence else line)
+    return "\n".join(out)
+
+
 def _slug(heading: str) -> str:
     """Convert a Markdown heading to its GitHub/Starlight anchor.
 
@@ -134,13 +162,19 @@ def check_links() -> list[str]:
     pages = _doc_pages()
     keys = {_page_key(p) for p in pages}
     anchors = {
-        _page_key(p): {_slug(h) for h in _HEADING.findall(p.read_text(encoding="utf-8"))}
+        _page_key(p): {
+            _slug(h)
+            for h in _HEADING.findall(
+                _strip_code_fences(p.read_text(encoding="utf-8"))
+            )
+        }
         for p in pages
     }
 
     for page in pages:
         key = _page_key(page)
-        for text, href in _LINK.findall(page.read_text(encoding="utf-8")):
+        body = _strip_code_fences(page.read_text(encoding="utf-8"))
+        for text, href in _LINK.findall(body):
             if href.startswith(("http://", "https://", "mailto:", "#!")):
                 continue
             target, _, fragment = href.partition("#")
