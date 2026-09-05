@@ -6,15 +6,23 @@ Each run gets a fresh container with:
   - The gateway proxy accessible for token accounting
   - Timeout enforcement
 
-Isolation is filesystem- and privilege-oriented, not network-oriented: the
-container gets ``--cap-drop=ALL`` and sees only the mounted cell workdir, but
-its network egress is **not** restricted. It uses Docker's default bridge (or
-the host network, see ``use_host_network``) and can reach anything the host
-can. Harnesses need to reach the gateway, and through it the provider API, so
-restricting egress would mean allowlisting rather than blocking -- a real
-feature rather than a flag, and one that would change what is measured, since
-at least one harness alters its behaviour when it detects a contained
-environment with no internet.
+What the container is and is not isolated from, stated precisely because it has
+been overstated before:
+
+- **Capabilities**: ``--cap-drop=ALL``.
+- **User**: the *invoking* user, not a dedicated unprivileged one. On a root
+  host the container therefore runs as root (see ``run_as_user``), because the
+  bind-mounted workdir is host-owned and must stay writable both ways.
+- **Filesystem**: the cell workdir, plus -- under OAuth auth modes -- a
+  writable temp copy of the harness's credential directory, which carries live
+  tokens (see ``_resolve_credential_mounts``).
+- **Network**: not restricted. Verified against a real daemon: outbound
+  internet works, host loopback-only services are *not* reachable, and other
+  containers on the same default bridge *are*. Restricting egress would mean
+  allowlisting rather than blocking, since harnesses must reach the gateway and
+  through it the provider API -- a feature rather than a flag, and one that
+  would change what is measured, as at least one harness alters its behaviour
+  when it detects a contained environment with no internet.
 
 The runner uses Approach A: it launches a long-running container
 (``docker run -d ... sleep``), then runs setup and the harness command
@@ -1072,15 +1080,22 @@ class DockerRunner:
         answer cannot change within a run, so it must not happen once per cell.
         """
         if self._host_gateway_url is None:
+            from harness_evaluator.gateway.network import (
+                format_host_for_url,
+                resolve_gateway_host,
+            )
+
             host = self.gateway_host
             if host == "host.docker.internal":
-                from harness_evaluator.gateway.network import resolve_gateway_host
-
                 resolved = resolve_gateway_host()
                 # The gateway binds 0.0.0.0 on Docker Desktop; the host reaches
                 # that through loopback, not by connecting to 0.0.0.0.
                 host = "127.0.0.1" if resolved == "0.0.0.0" else resolved
-            self._host_gateway_url = f"http://{host}:{self.gateway_port}"
+            # Bracket IPv6 literals: an IPv6 bridge address would otherwise
+            # yield http://::1:8877, which urlparse rejects outright.
+            self._host_gateway_url = (
+                f"http://{format_host_for_url(host)}:{self.gateway_port}"
+            )
         return self._host_gateway_url
 
     def _prepare_container_home(self, workdir: Path) -> Path:

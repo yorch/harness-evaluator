@@ -117,13 +117,38 @@ class TestHostSideGatewayUrl:
         assert runner.gateway_host == "host.docker.internal"
         assert "host.docker.internal" not in runner._host_side_gateway_url()
 
-    def test_host_side_url_resolves_on_this_host(self, tmp_path: Any):
-        import socket
+    def test_host_side_url_is_parseable(self, tmp_path: Any):
+        """The URL must survive urlparse, including for an IPv6 bridge address.
+
+        An unbracketed IPv6 literal yields ``http://::1:8877``, which urlparse
+        rejects outright -- so the port cannot be read and the judge cannot
+        connect.
+        """
+        from urllib.parse import urlparse
 
         runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
-        host = runner._host_side_gateway_url().split("//", 1)[1].rsplit(":", 1)[0]
-        # Would raise gaierror for host.docker.internal -- the original bug.
-        socket.gethostbyname(host)
+        assert urlparse(runner._host_side_gateway_url()).port == 8877
+
+        with patch(
+            "harness_evaluator.gateway.network.resolve_gateway_host",
+            return_value="fd00::1",
+        ):
+            runner_v6 = DockerRunner(workdir_base=str(tmp_path / "wd6"))
+            url = runner_v6._host_side_gateway_url()
+        assert url == "http://[fd00::1]:8877", url
+        assert urlparse(url).port == 8877
+
+    def test_memoised_so_detection_runs_once(self, tmp_path: Any):
+        """Resolving shells out to docker; it must not run per cell."""
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        with patch(
+            "harness_evaluator.gateway.network.resolve_gateway_host",
+            return_value="172.17.0.1",
+        ) as mock_resolve:
+            first = runner._host_side_gateway_url()
+            second = runner._host_side_gateway_url()
+        assert first == second
+        assert mock_resolve.call_count == 1
 
     def test_explicit_gateway_host_is_respected(self, tmp_path: Any):
         """An operator-chosen host is presumed reachable and left alone."""
