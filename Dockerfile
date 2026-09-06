@@ -10,9 +10,11 @@
 #   docker run -d --rm harness-evaluator-runner:latest sleep infinity
 #   docker exec <id> claude -p "..." --model claude-sonnet-5
 #
-# The image is intentionally large (~1.2 GB) because it carries five
-# harnesses.  For a single-harness eval you can build a trimmed variant
-# by commenting out unused RUN lines.
+# The image is large (~3.7 GB) because it carries five harnesses; OMP
+# alone accounts for roughly a third even after its unusable GPU and
+# cross-platform ML artifacts are pruned (see the OMP install step).
+# For a single-harness eval you can build a trimmed variant by commenting
+# out unused RUN lines.
 
 FROM node:22-slim AS base
 
@@ -85,8 +87,23 @@ ENV BUN_INSTALL=/usr/local
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v${BUN_VERSION}" \
     && chmod -R a+rX /usr/local/bin/bun /usr/local/cache 2>/dev/null || true
 
-# OMP — coding-first fork of Pi with Rust core
-RUN npm install -g @oh-my-pi/pi-coding-agent@${OMP_VERSION}
+# OMP — coding-first fork of Pi with Rust core.
+#
+# OMP bundles the full onnxruntime / @huggingface/transformers ML stack,
+# which ships GPU (CUDA/DirectML/TensorRT) providers and prebuilt binaries
+# for every platform (macOS .dylib, Windows .dll). None of these can run in
+# this headless linux/x64 CPU container, yet they add ~1.3 GB to the image.
+# Delete them after install to keep the image lean; OMP only needs the
+# linux/x64 CPU artifacts, which are preserved.
+RUN npm install -g @oh-my-pi/pi-coding-agent@${OMP_VERSION} \
+    && find /usr/local/lib/node_modules/@oh-my-pi -type f \
+        \( -name '*cuda*' \
+           -o -name '*tensorrt*' \
+           -o -name '*DirectML*' \
+           -o -path '*darwin*' \
+           -o -path '*win32*' \
+           -o -name '*.dll' \
+           -o -name '*.dylib' \) -delete
 
 # Record the installed harness versions as image labels so a built image is
 # self-describing (and reproducible runs can be traced to exact versions).

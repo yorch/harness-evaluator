@@ -60,7 +60,7 @@ labels. See [Configuration](configuration/#docker-image-configuration).
 | Bun | Runtime required by OMP's CLI entry point |
 | pytest, pyyaml, requests, aiohttp | Python packages for task repos |
 
-The image is ~1.2 GB because it carries all five preinstalled harnesses. For single-harness evals, you can build a trimmed variant by commenting out unused `RUN` lines in the Dockerfile. To add a non-preinstalled harness (Aider, Gemini CLI, etc.), add its install command to the Dockerfile and rebuild.
+The image is ~3.7 GB because it carries all five preinstalled harnesses. OMP is the largest single contributor (~0.9 GB) because it bundles the onnxruntime / `@huggingface/transformers` ML stack; the Dockerfile prunes OMP's GPU (CUDA/DirectML/TensorRT) providers and non-linux (macOS/Windows) binaries after install, since none of them can run in this headless linux/x64 CPU container, saving ~1 GB. For single-harness evals, you can build a trimmed variant by commenting out unused `RUN` lines in the Dockerfile. To add a non-preinstalled harness (Aider, Gemini CLI, etc.), add its install command to the Dockerfile and rebuild.
 
 ### Non-root user
 
