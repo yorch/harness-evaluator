@@ -338,6 +338,14 @@ class TestSetupScriptWritten:
                 side_effect=docker_results,
             ),
             patch("harness_evaluator.runner.docker.subprocess.run") as mock_run,
+            # These tests patch subprocess.run globally with a fixed
+            # side-effect list. Bridge detection shells out too, so pin it
+            # here: this test is about evaluator wiring, not about how the
+            # host reaches the gateway.
+            patch(
+                "harness_evaluator.gateway.network.resolve_gateway_host",
+                return_value="172.17.0.1",
+            ),
             patch("harness_evaluator.adapters.base.shutil.which", return_value="/usr/bin/claude"),
         ):
             mock_run.side_effect = git_results
@@ -586,6 +594,14 @@ class TestOpenEndedEvaluatorGateway:
                 side_effect=docker_results,
             ),
             patch("harness_evaluator.runner.docker.subprocess.run") as mock_run,
+            # These tests patch subprocess.run globally with a fixed
+            # side-effect list. Bridge detection shells out too, so pin it
+            # here: this test is about evaluator wiring, not about how the
+            # host reaches the gateway.
+            patch(
+                "harness_evaluator.gateway.network.resolve_gateway_host",
+                return_value="172.17.0.1",
+            ),
             patch(
                 "harness_evaluator.adapters.registry.create_adapter",
                 return_value=mock_adapter,
@@ -610,9 +626,16 @@ class TestOpenEndedEvaluatorGateway:
         assert gateway_url_passed is not None, (
             "OpenEndedEvaluator should be constructed with gateway_url"
         )
-        assert "host.docker.internal" in gateway_url_passed, (
-            f"gateway_url should contain host.docker.internal, got: {gateway_url_passed}"
+        # Previously asserted the opposite -- that the judge is handed
+        # `host.docker.internal`. That is the container-facing name, synthesised
+        # per container by `--add-host`, and the judge runs on the host: a real
+        # run failed every open-ended cell with
+        # `crash — [Errno -2] Name or service not known`. The test was pinning
+        # the defect, so it is corrected rather than relaxed.
+        assert "host.docker.internal" not in gateway_url_passed, (
+            f"judge must not be given the container-only name: {gateway_url_passed}"
         )
+        assert gateway_url_passed == "http://172.17.0.1:8877", gateway_url_passed
 
         # Check evaluate received trace_id matching cell.cell_id
         eval_kwargs = mock_eval_instance.evaluate.call_args.kwargs
@@ -723,6 +746,14 @@ class TestRedactionApplied:
                 side_effect=docker_results,
             ),
             patch("harness_evaluator.runner.docker.subprocess.run") as mock_run,
+            # These tests patch subprocess.run globally with a fixed
+            # side-effect list. Bridge detection shells out too, so pin it
+            # here: this test is about evaluator wiring, not about how the
+            # host reaches the gateway.
+            patch(
+                "harness_evaluator.gateway.network.resolve_gateway_host",
+                return_value="172.17.0.1",
+            ),
             patch(
                 "harness_evaluator.adapters.registry.create_adapter",
                 return_value=mock_adapter,

@@ -103,6 +103,70 @@ def _make_completed(returncode: int = 0, stdout: str = "", stderr: str = "") -> 
 # ---------------------------------------------------------------------------
 
 
+class TestHostSideGatewayUrl:
+    """The open-ended judge runs on the host, not in the container.
+
+    ``gateway_host`` defaults to ``host.docker.internal``, which Docker
+    synthesises per container via ``--add-host`` and which does not resolve on
+    the host. Handing it to the judge failed every open-ended cell with
+    ``[Errno -2] Name or service not known``, recorded as a crash.
+    """
+
+    def test_container_only_name_is_replaced(self, tmp_path: Any):
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        assert runner.gateway_host == "host.docker.internal"
+        assert "host.docker.internal" not in runner._host_side_gateway_url()
+
+    def test_host_side_url_is_parseable(self, tmp_path: Any):
+        """The URL must survive urlparse, including for an IPv6 bridge address.
+
+        An unbracketed IPv6 literal yields ``http://::1:8877``, which urlparse
+        rejects outright -- so the port cannot be read and the judge cannot
+        connect.
+        """
+        from urllib.parse import urlparse
+
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        assert urlparse(runner._host_side_gateway_url()).port == 8877
+
+        with patch(
+            "harness_evaluator.gateway.network.resolve_gateway_host",
+            return_value="fd00::1",
+        ):
+            runner_v6 = DockerRunner(workdir_base=str(tmp_path / "wd6"))
+            url = runner_v6._host_side_gateway_url()
+        assert url == "http://[fd00::1]:8877", url
+        assert urlparse(url).port == 8877
+
+    def test_memoised_so_detection_runs_once(self, tmp_path: Any):
+        """Resolving shells out to docker; it must not run per cell."""
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        with patch(
+            "harness_evaluator.gateway.network.resolve_gateway_host",
+            return_value="172.17.0.1",
+        ) as mock_resolve:
+            first = runner._host_side_gateway_url()
+            second = runner._host_side_gateway_url()
+        assert first == second
+        assert mock_resolve.call_count == 1
+
+    def test_explicit_gateway_host_is_respected(self, tmp_path: Any):
+        """An operator-chosen host is presumed reachable and left alone."""
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"), gateway_host="10.1.2.3")
+        assert runner._host_side_gateway_url() == "http://10.1.2.3:8877"
+
+    def test_all_interfaces_bind_maps_to_loopback(self, tmp_path: Any):
+        """The host reaches an 0.0.0.0 bind (Docker Desktop) via loopback."""
+        from unittest.mock import patch
+
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        with patch(
+            "harness_evaluator.gateway.network.resolve_gateway_host",
+            return_value="0.0.0.0",
+        ):
+            assert runner._host_side_gateway_url() == "http://127.0.0.1:8877"
+
+
 class TestBuildRunArgs:
     def test_basic_args(self, runner: DockerRunner, tmp_path: Any):
         workdir = tmp_path / "wd"
