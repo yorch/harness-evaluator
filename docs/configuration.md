@@ -42,6 +42,8 @@ workdir: "./harness_evaluator_workdir"         # Optional. Host workdir for cell
 docker_image: "..."                # Optional. Defaults to
                                    #   ghcr.io/yorch/harness-evaluator-runner:latest.
 parallel_runs: 1                   # Optional. Parallel container runs. Default: 1.
+use_host_network: false            # Optional. Use --network host instead of the
+                                   #   default bridge. Default: false.
 run_as_user: "1000:1000"           # Optional. UID:GID the container runs as.
                                    #   Defaults to the invoking user.
 ```
@@ -143,6 +145,33 @@ UID is not the effective UID inside the container. If you do, make sure the
 `HOME` inside the container is always set to `/workspace/.home` (a directory in
 the mounted workdir). The harnesses need a writable `HOME`, and it is kept out
 of the repo directory so harness state never lands in the evaluated diff.
+
+#### `use_host_network`
+
+Run containers with `--network host` instead of the default bridge. Default:
+`false`.
+
+A fallback for environments where containers cannot reach the gateway via
+`host.docker.internal`. With it on, containers share the host's network
+namespace and reach the gateway on `127.0.0.1`, and `--add-host` is omitted —
+Docker rejects the two together.
+
+> **Note**: host networking removes the container's network namespace
+> isolation. Prefer the default bridge unless `host.docker.internal` genuinely
+> does not work in your environment.
+
+### Where hidden tests run
+
+SWE tasks are scored by running the task's `test_command` **inside the runner
+image**, not in the interpreter running harness-evaluator. The task's
+`setup_script` installs its dependencies there, and an ordinary install of
+harness-evaluator has neither those dependencies nor pytest — under `uvx` the
+SWE track previously failed every cell with `No module named pytest` while the
+model's diff was correct.
+
+Diffing and applying the hidden-test patch remain host-side filesystem work.
+`SWEEvaluator` still runs tests in-process when used directly as a library, so
+it needs no Docker outside a run.
 
 ### Minimal example
 

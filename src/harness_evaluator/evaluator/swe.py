@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import shlex
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -18,6 +19,9 @@ from typing import Any
 
 from harness_evaluator.evaluator.utils import get_workdir_diff
 from harness_evaluator.orchestrator.config import TaskSpec
+
+TestRunner = Callable[[Path, str, int], tuple[str, int, bool]]
+"""Runs a task's test command: (repo_dir, command, timeout) -> (output, rc, timed_out)."""
 
 
 class ErrorClass(StrEnum):
@@ -48,6 +52,24 @@ class EvaluationResult:
 
 class SWEEvaluator:
     """Evaluates SWE-bench-style tasks using hidden tests."""
+
+    def __init__(self, test_runner: TestRunner | None = None) -> None:
+        """Optionally run the task's tests somewhere other than this process.
+
+        Diffing and applying the hidden-test patch are filesystem work and stay
+        here. Running the tests is the one step that needs an *environment* --
+        the task's interpreter and its dependencies -- and that environment is
+        the container, where ``setup_script`` installed them. Running them in
+        the harness-evaluator process instead requires the host to happen to
+        have pytest and every task's dependencies, which an ordinary install
+        does not: under ``uvx harness-evaluator`` the SWE track failed every
+        cell with ``No module named pytest`` while the model's diff was
+        perfectly good.
+
+        Defaults to running in this process, so using the evaluator as a
+        library needs no Docker.
+        """
+        self._test_runner = test_runner
 
     def evaluate(
         self,
@@ -207,12 +229,19 @@ class SWEEvaluator:
     ) -> tuple[str, int, bool]:
         """Run the test command and return (output, returncode, timed_out).
 
+        Delegates to the injected runner when one was supplied -- see
+        ``__init__`` -- so the tests execute in the environment that has the
+        task's dependencies rather than in whatever interpreter happens to be
+        running harness-evaluator.
+
         Uses ``shlex.split`` to parse the command into an argument list
         instead of ``shell=True``, avoiding shell injection from task
         YAML. Commands that require shell features (pipes, redirects,
         variable expansion) should be wrapped in ``bash -c "..."`` in
         the task definition.
         """
+        if self._test_runner is not None:
+            return self._test_runner(workdir, command, timeout)
         try:
             result = subprocess.run(
                 shlex.split(command),

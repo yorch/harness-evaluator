@@ -579,6 +579,7 @@ def run(
         results_db=cfg.results_db,
         task_library_root=cfg.task_library_path,
         run_as_user=cfg.run_as_user,
+        use_host_network=cfg.use_host_network,
     )
 
     # Check for already-completed cells (resumability) before starting the
