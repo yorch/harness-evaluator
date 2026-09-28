@@ -275,3 +275,31 @@ class TestRunCell:
         assert "__" in cell.cell_id
         assert cell.cell_id.startswith(cell.harness.name + "__")
         assert f"__r{cell.repeat}" in cell.cell_id
+
+
+class TestHostNetworkOption:
+    def test_use_host_network_is_settable(self, tmp_task_dir):
+        """The docs recommend this fallback; nothing could previously set it."""
+        cfg = RunConfig(
+            name="hn",
+            harnesses=[HarnessSpec(name="opencode", adapter="opencode")],
+            models=[
+                ModelSpec(name="m", provider="anthropic", api_key_env="ANTHROPIC_API_KEY")
+            ],
+            tasks=["*"],
+            task_library_path=str(tmp_task_dir),
+            use_host_network=True,
+        )
+        assert cfg.use_host_network is True
+
+    def test_defaults_to_bridge(self, tmp_task_dir):
+        cfg = RunConfig(
+            name="hn",
+            harnesses=[HarnessSpec(name="opencode", adapter="opencode")],
+            models=[
+                ModelSpec(name="m", provider="anthropic", api_key_env="ANTHROPIC_API_KEY")
+            ],
+            tasks=["*"],
+            task_library_path=str(tmp_task_dir),
+        )
+        assert cfg.use_host_network is False

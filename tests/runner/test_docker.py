@@ -103,6 +103,33 @@ def _make_completed(returncode: int = 0, stdout: str = "", stderr: str = "") -> 
 # ---------------------------------------------------------------------------
 
 
+class TestContainerGatewayUrl:
+    """What address the *harness* uses to reach the gateway.
+
+    ``--add-host`` and ``--network host`` are mutually exclusive, so under host
+    networking ``host.docker.internal`` resolves nowhere and every harness
+    request failed with Connection refused. Sharing the host's netns means the
+    host's loopback is the container's loopback.
+    """
+
+    def test_bridge_mode_uses_add_host_name(self, tmp_path: Any):
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"))
+        assert runner.container_gateway_url() == "http://host.docker.internal:8877"
+
+    def test_host_network_uses_loopback(self, tmp_path: Any):
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"), use_host_network=True)
+        assert runner.container_gateway_url() == "http://127.0.0.1:8877"
+
+    def test_host_network_omits_add_host(self, tmp_path: Any):
+        """Docker rejects the two together, so the flags must not both appear."""
+        workdir = tmp_path / "wd2"
+        workdir.mkdir()
+        runner = DockerRunner(workdir_base=str(tmp_path / "wd"), use_host_network=True)
+        args = runner._build_run_args(workdir, {}, timeout=60, container_name="c1")
+        assert "--network" in args
+        assert "--add-host" not in args
+
+
 class TestBuildRunArgs:
     def test_basic_args(self, runner: DockerRunner, tmp_path: Any):
         workdir = tmp_path / "wd"

@@ -445,6 +445,13 @@ class RunConfig(BaseModel):
     workdir are owned by them. Override for rootless Docker or userns-remap
     setups where the host UID is not the effective container UID.
     """
+    use_host_network: bool = False
+    """Run containers with ``--network host`` instead of the default bridge.
+
+    A fallback for environments where containers cannot reach the gateway via
+    ``host.docker.internal``. The docs have recommended it for a while, but
+    nothing passed it through, so it could not actually be turned on.
+    """
     parallel_runs: int = 1
     """Number of parallel container runs (1 = sequential)."""
 

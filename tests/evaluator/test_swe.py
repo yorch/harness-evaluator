@@ -201,3 +201,34 @@ class TestSWEEvaluatorTestParsing:
         passed, total, _ = swe_evaluator._parse_test_output(output, 1)
         assert passed == 2
         assert total == 3
+
+
+class TestInjectedTestRunner:
+    """Where the task's tests execute.
+
+    Running them in the harness-evaluator process requires that interpreter to
+    have pytest and every task's dependencies. An ordinary install has neither:
+    under ``uvx harness-evaluator`` the SWE track failed every cell while the
+    model's diff was correct. The runner therefore injects an implementation
+    that executes in the image, where ``setup_script`` installed them.
+    """
+
+    def test_injected_runner_is_used(self, tmp_path):
+        calls = []
+
+        def fake_runner(repo_dir, command, timeout):
+            calls.append((repo_dir, command, timeout))
+            return ("3 passed", 0, False)
+
+        evaluator = SWEEvaluator(test_runner=fake_runner)
+        out, rc, timed_out = evaluator._run_tests(tmp_path, "pytest tests/", 42)
+
+        assert (out, rc, timed_out) == ("3 passed", 0, False)
+        assert calls == [(tmp_path, "pytest tests/", 42)]
+
+    def test_defaults_to_in_process(self, tmp_path):
+        """No injection means no Docker requirement for library use."""
+        evaluator = SWEEvaluator()
+        out, rc, _ = evaluator._run_tests(tmp_path, "python3 -c \"print('ok')\"", 30)
+        assert rc == 0
+        assert "ok" in out

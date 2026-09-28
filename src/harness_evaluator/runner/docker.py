@@ -19,6 +19,7 @@ import contextlib
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -475,11 +476,17 @@ class DockerRunner:
 
             # Evaluate the result on the host
             if cell.task.track in (TaskTrack.SWE, TaskTrack.MULTI_PHASE):
-                evaluator = SWEEvaluator()
                 repo_dir = (
                     cell_workdir / "repo"
                     if (cell_workdir / "repo").exists()
                     else cell_workdir
+                )
+                # Run the hidden tests in the image, not in this process: the
+                # task's dependencies were installed there by setup_script, and
+                # the interpreter running harness-evaluator need not have even
+                # pytest -- under `uvx harness-evaluator` it does not.
+                evaluator = SWEEvaluator(
+                    test_runner=self._make_container_test_runner(cell, cell_workdir)
                 )
                 # SWEEvaluator.evaluate uses synchronous subprocess calls
                 # (git diff, git apply, pytest). Offload to a thread to
@@ -736,7 +743,7 @@ class DockerRunner:
         )
         from harness_evaluator.orchestrator.results_store import ResultsStore
 
-        gateway_url = f"http://{self.gateway_host}:{self.gateway_port}"
+        gateway_url = self.container_gateway_url()
         adapter = create_adapter(
             name=cell.harness.adapter,
             workdir=str(self.workdir_base / cell.cell_id),
@@ -1027,7 +1034,10 @@ class DockerRunner:
             args.extend(["--env", f"{key}={value}"])
 
         # Gateway reachability: use host.docker.internal with --add-host,
-        # or --network=host as a fallback.
+        # or --network=host as a fallback. The two are mutually exclusive --
+        # --add-host cannot be combined with host networking -- which is why
+        # the harness is handed a different gateway address in that mode; see
+        # container_gateway_url().
         if self.use_host_network:
             args.extend(["--network", "host"])
         else:
@@ -1048,6 +1058,88 @@ class DockerRunner:
         # Keep the container alive long enough for exec commands.
         args.extend(["sleep", str(timeout + 30)])
         return args
+
+    def container_gateway_url(self) -> str:
+        """Return the gateway URL as seen from *inside* a container.
+
+        Normally that is ``gateway_host`` (default ``host.docker.internal``),
+        which Docker synthesises per container via ``--add-host``. Under
+        ``use_host_network`` there is no ``--add-host`` -- Docker rejects it
+        alongside ``--network host`` -- so that name resolves nowhere and every
+        harness request failed with ``Connection refused``. In that mode the
+        container shares the host's network namespace, so the host's own
+        loopback is the container's loopback.
+        """
+        host = "127.0.0.1" if self.use_host_network else self.gateway_host
+        return f"http://{host}:{self.gateway_port}"
+
+    def _make_container_test_runner(
+        self, cell: RunCell, cell_workdir: Path
+    ) -> Callable[[Path, str, int], tuple[str, int, bool]]:
+        """Build a ``SWEEvaluator`` test runner that executes inside the image.
+
+        The harness container is already stopped by the time evaluation runs, so
+        this starts a short-lived one over the same mounted workdir. It re-runs
+        ``setup_script`` first, because dependencies were installed into the
+        previous container's filesystem, not into the workdir that outlived it.
+
+        Falls back to in-process execution if the container cannot be started,
+        so a Docker hiccup degrades to the old behaviour rather than scoring the
+        cell as a failure the model did not cause.
+        """
+
+        def run_tests(repo_dir: Path, command: str, timeout: int) -> tuple[str, int, bool]:
+            name = _sanitize_container_name(f"{cell.cell_id}-tests")
+            exec_cwd = CONTAINER_REPO if cell.task.repo_url else CONTAINER_WORKSPACE
+            container_id: str | None = None
+            try:
+                container_id = asyncio.run(
+                    self._start_container(
+                        workdir=cell_workdir,
+                        env={},
+                        timeout=timeout,
+                        name=name,
+                        image=cell.harness.resolve_image(self.image),
+                    )
+                )
+                if cell.task.setup_script:
+                    asyncio.run(
+                        self._exec_in_container(
+                            container_id,
+                            ["bash", "-lc", cell.task.setup_script],
+                            timeout=timeout,
+                            cwd=exec_cwd,
+                        )
+                    )
+                result = asyncio.run(
+                    self._exec_in_container(
+                        container_id,
+                        shlex.split(command),
+                        timeout=timeout,
+                        cwd=exec_cwd,
+                    )
+                )
+                return (
+                    result.stdout + result.stderr,
+                    result.exit_code,
+                    result.timed_out,
+                )
+            except Exception as exc:  # noqa: BLE001 - see docstring
+                logger.warning(
+                    "Could not run tests for %s in a container (%s); falling back "
+                    "to this process, which may lack the task's dependencies.",
+                    cell.cell_id,
+                    exc,
+                )
+                from harness_evaluator.evaluator.swe import SWEEvaluator
+
+                return SWEEvaluator()._run_tests(repo_dir, command, timeout)
+            finally:
+                if container_id:
+                    with contextlib.suppress(Exception):
+                        asyncio.run(self._stop_container(container_id))
+
+        return run_tests
 
     def _prepare_container_home(self, workdir: Path) -> Path:
         """Create the container's HOME inside the workdir, writable by the run user.
@@ -1214,7 +1306,7 @@ class DockerRunner:
         # Create the adapter. The gateway URL uses the Docker-reachable host
         # (host.docker.internal), NOT 127.0.0.1 which is unreachable from
         # inside a container.
-        gateway_url = f"http://{self.gateway_host}:{self.gateway_port}"
+        gateway_url = self.container_gateway_url()
         adapter = create_adapter(
             name=cell.harness.adapter,
             workdir=str(workdir),
@@ -1377,7 +1469,7 @@ class DockerRunner:
 
         start = time.monotonic()
         repo_dir = workdir / "repo" if (workdir / "repo").exists() else workdir
-        gateway_url = f"http://{self.gateway_host}:{self.gateway_port}"
+        gateway_url = self.container_gateway_url()
         image = cell.harness.resolve_image(self.image)
         container_name = _sanitize_container_name(cell.cell_id)
         container_id: str | None = None
