@@ -124,6 +124,14 @@ The parser supports three formats, tried in order:
 
 If no test output is parseable and the return code is 0, the evaluator returns `(0, 0)` — not `(1, 1)` — to prevent a test command like `true` from scoring 100%. A non-zero exit with no parseable output also returns `(0, 0)` so the caller can classify it as `crash` rather than `wrong_approach`.
 
+`crash` and `timeout` results fold a bounded excerpt of the test output into
+`error_message`, taken from the **end** of the output (where a test runner
+prints its failure) and redacted of secrets. Without it the message said only
+"Test runner crashed or produced no parseable results", which restates the
+symptom — the actual cause (`No module named pytest`, an import error, a bad
+test path) was recorded in `test_output` and never surfaced in the CLI
+summary or the run log.
+
 ## Open-ended track
 
 The open-ended evaluator (`src/harness_evaluator/evaluator/open_ended.py`) evaluates tasks without a single correct answer using a frozen LLM judge, structured rubric, and structural checks.

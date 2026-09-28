@@ -121,7 +121,12 @@ def stderr_is_actionable(stderr: str) -> bool:
     return bool(_ACTIONABLE_SIGNAL_RE.search(stderr))
 
 
-def make_error_excerpt(stderr: str, max_chars: int = _ERROR_EXCERPT_MAX_CHARS) -> str:
+def make_error_excerpt(
+    stderr: str,
+    max_chars: int = _ERROR_EXCERPT_MAX_CHARS,
+    *,
+    from_end: bool = False,
+) -> str:
     """Produce a safe, bounded excerpt of *stderr* for error messages.
 
     The excerpt is:
@@ -131,6 +136,11 @@ def make_error_excerpt(stderr: str, max_chars: int = _ERROR_EXCERPT_MAX_CHARS) -
        caught by the redaction regex.
     3. Redacted of known secret patterns.
     4. Truncated on a word boundary with an ellipsis.
+
+    ``from_end`` keeps the *tail* rather than the head. Which end matters
+    depends on the producer: a harness writes its fatal error last, and a
+    test runner prints a banner first and the actual failure last, so for
+    those the head is the least informative part of the output.
     """
     # 1. Strip ANSI escapes and control characters
     text = _ANSI_ESCAPE_RE.sub("", stderr)
@@ -141,8 +151,13 @@ def make_error_excerpt(stderr: str, max_chars: int = _ERROR_EXCERPT_MAX_CHARS) -
     text = redact_secrets(text)
     # 4. Truncate on a word boundary with ellipsis
     if len(text) > max_chars:
-        cut = text.rfind(" ", 0, max_chars)
-        text = (text[:cut].rstrip() if cut > 0 else text[:max_chars]) + "\u2026"
+        if from_end:
+            cut = text.find(" ", len(text) - max_chars)
+            tail = text[cut:].lstrip() if cut != -1 else text[-max_chars:]
+            text = "\u2026" + tail
+        else:
+            cut = text.rfind(" ", 0, max_chars)
+            text = (text[:cut].rstrip() if cut > 0 else text[:max_chars]) + "\u2026"
     return text
 
 
