@@ -741,6 +741,58 @@ class TestVerboseWiring:
         mock_configure.assert_called_once_with(0)
 
 
+class TestRunPlanBanner:
+    """A run writes to several places and can take hours; naming them up
+    front is what makes a later failure investigable."""
+
+    def test_banner_names_tasks_image_and_output_locations(self, tmp_path) -> None:
+        config_file = _write_config(tmp_path)
+        with (
+            mock.patch("harness_evaluator.runner.docker.DockerRunner"),
+            mock.patch("harness_evaluator.orchestrator.engine.Orchestrator") as mock_orch,
+        ):
+            mock_orch.return_value.run = mock.AsyncMock(return_value=_fake_progress())
+            result = _invoke(
+                ["run", str(config_file), "--no-check-gateway", "--no-progress"],
+                isatty=False,
+            )
+        assert result.exit_code == 0, result.output
+        assert "Tasks: 1 (t1)" in result.output
+        assert "Tracks: 1 swe" in result.output
+        assert "Concurrency: 1 cell(s) at a time" in result.output
+        assert "Image:" in result.output
+        # Output locations, with newlines collapsed (Rich wraps them).
+        flat = " ".join(result.output.split())
+        assert "Results" in flat
+        assert "Gateway calls" in flat
+
+
+    def test_tracks_count_tasks_not_cells(self, capsys) -> None:
+        """Harnesses x models x repeats multiply the cells, not the tasks."""
+        from types import SimpleNamespace
+
+        from harness_evaluator.cli import _print_run_plan
+        from harness_evaluator.orchestrator.config import TaskTrack
+
+        swe = SimpleNamespace(id="swe-1", track=TaskTrack.SWE)
+        oe = SimpleNamespace(id="oe-1", track=TaskTrack.OPEN_ENDED)
+        cells = [
+            SimpleNamespace(task=task) for task in (swe, oe) for _ in range(2 * 3 * 5)
+        ]
+        cfg = SimpleNamespace(
+            parallel_runs=1,
+            budget_usd=None,
+            docker_image="img",
+            workdir="wd",
+            results_db="r.db",
+            gateway_db="g.db",
+        )
+        _print_run_plan(cfg, cells)
+        out = " ".join(capsys.readouterr().out.split())
+        assert "Tasks: 2 (oe-1, swe-1)" in out
+        assert "Tracks: 1 open_ended, 1 swe" in out
+
+
 class TestCostLabelling:
     """F-UI: total_cost (informational) and the budget cap must be labelled
     as distinct quantities, not a "spent / cap" pair -- and the billable
