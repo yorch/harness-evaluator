@@ -813,6 +813,9 @@ class TestRunHarness:
 
         assert result.exit_code == -1
         assert "No adapter found" in result.stderr
+        # Flagged so run_cell reports it as an infrastructure error rather
+        # than as a harness that ran and failed.
+        assert result.harness_ran is False
         # No docker run should have been invoked
         run_cmds = [
             c[0][0] for c in mock_run_async.call_args_list if "run" in c[0][0]

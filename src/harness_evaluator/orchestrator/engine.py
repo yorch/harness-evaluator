@@ -30,6 +30,10 @@ logger = logging.getLogger(__name__)
 # budget than an eval error message before truncation.
 _INFRA_ERROR_CHARS = 500
 
+# `progress.errors` entries are shown by the CLI summary, the Live panel and
+# the TUI footer, so they are redacted and bounded where they are recorded.
+_ERRORS_ENTRY_CHARS = 2000
+
 
 def cell_label(cell: RunCell) -> str:
     """Human-readable one-line description of a cell for log narration.
@@ -94,11 +98,25 @@ class OrchestratorProgress:
     when ``model.cost_mode`` is subscription — see
     ``Orchestrator._is_budget_exempt``, ``_reconcile_reservation`` and
     ``_estimate_cell_cost``.
+
+    ``failed`` counts every cell that did not pass, for backwards
+    compatibility with the footer's ``✗`` count. ``errored`` counts the
+    subset of those that never produced a measurement because the
+    infrastructure failed: retries exhausted, a non-retryable exception out
+    of ``run_cell_fn`` (a missing Docker image, a crashed container), or a
+    result flagged with ``infra_error`` (e.g. no provider call ever reached
+    the gateway). The CLI's exit code is keyed on it: a harness that ran and
+    did not solve the task is a legitimate eval result, while an infra error
+    means the run did not measure what it was asked to measure.
+
+    ``error_classes`` counts failures by ``error_class`` so the summary can
+    say *how* cells failed ("18 × no_change") rather than only how many.
     """
 
     total_cells: int = 0
     completed: int = 0
     failed: int = 0
+    errored: int = 0
     skipped: int = 0
     running: int = 0
     total_cost: float = 0.0
@@ -106,6 +124,7 @@ class OrchestratorProgress:
     current_cell: str | None = None
     running_cells: list[str] = field(default_factory=list)
     skip_reasons: dict[str, str] = field(default_factory=dict)
+    error_classes: dict[str, int] = field(default_factory=dict)
 
     @property
     def done(self) -> int:
@@ -127,6 +146,7 @@ class OrchestratorProgress:
             total_cells=self.total_cells,
             completed=self.completed,
             failed=self.failed,
+            errored=self.errored,
             skipped=self.skipped,
             running=self.running,
             total_cost=self.total_cost,
@@ -134,6 +154,7 @@ class OrchestratorProgress:
             current_cell=self.current_cell,
             running_cells=list(self.running_cells),
             skip_reasons=dict(self.skip_reasons),
+            error_classes=dict(self.error_classes),
         )
 
 
@@ -326,10 +347,12 @@ class Orchestrator:
                 await heartbeat
 
         logger.info(
-            "Run '%s' complete: %d passed, %d failed, %d skipped, $%.4f spent",
+            "Run '%s' complete: %d passed, %d failed (%d of them infrastructure "
+            "errors), %d skipped, $%.4f spent",
             self.config.name,
             self.progress.completed,
             self.progress.failed,
+            self.progress.errored,
             self.progress.skipped,
             self.progress.total_cost,
         )
@@ -471,7 +494,12 @@ class Orchestrator:
                         )
                     async with self._progress_lock:
                         self.progress.failed += 1
-                        self.progress.errors.append(f"{cell.cell_id}: {e}")
+                        self.progress.errored += 1
+                        self._count_error_class("retry_exhausted")
+                        self.progress.errors.append(
+                            f"{cell.cell_id}: retry_exhausted — "
+                            f"{truncate_message(str(e), _ERRORS_ENTRY_CHARS)}"
+                        )
                     await self._notify_progress()
                     return
 
@@ -481,13 +509,33 @@ class Orchestrator:
             exit_class = result.get("exit_class", ExitClass.FAIL.value)
             success = result.get("success", 0.0)
             cell_cost = result.get("total_cost", 0.0)
+            # A cell can complete (the harness ran, the evaluator scored it)
+            # and still measure nothing: `run_cell_fn` sets `infra_error`
+            # when, e.g., no provider call was ever captured. Such a cell is
+            # persisted as a NON_RETRYABLE_KILL with score 0 and the reason
+            # folded into its error message (so stats treat it like any
+            # other infrastructure kill, not as a task failure), and marked
+            # `failed` rather than `completed`, so a resume re-runs it.
+            infra_error = (
+                result.get("infra_error") if exit_class != ExitClass.PASS.value else None
+            )
+            if infra_error:
+                prior_msg = result.get("error_message") or ""
+                result = {
+                    **result,
+                    "error_message": (
+                        f"{prior_msg}; {infra_error}" if prior_msg else str(infra_error)
+                    ),
+                }
             try:
                 async with self._budget_lock:
                     self._reconcile_reservation(cell, cell_cost)
                     self.store.save_result(
                         cell=self._billing_cell(cell),
-                        exit_class=exit_class,
-                        success=success,
+                        exit_class=(
+                            ExitClass.NON_RETRYABLE_KILL.value if infra_error else exit_class
+                        ),
+                        success=0.0 if infra_error else success,
                         error_class=result.get("error_class"),
                         error_message=result.get("error_message"),
                         usage=result.get("usage"),
@@ -505,7 +553,12 @@ class Orchestrator:
                         harness_stderr=result.get("harness_stderr"),
                         retry_count=retry_count,
                     )
-                    self.store.set_cell_state(cell.cell_id, cell.run_name, "completed")
+                    if infra_error:
+                        self.store.set_cell_state(
+                            cell.cell_id, cell.run_name, "failed", result["error_message"]
+                        )
+                    else:
+                        self.store.set_cell_state(cell.cell_id, cell.run_name, "completed")
                     if self.config.budget_usd is not None:
                         # By this point the result and "completed" state
                         # are already durably persisted, so a failure of
@@ -570,14 +623,18 @@ class Orchestrator:
                         self.progress.completed += 1
                     else:
                         self.progress.failed += 1
+                        if infra_error:
+                            self.progress.errored += 1
                         # Surface eval failures (not just infra kills) in
                         # progress.errors so the CLI summary can show
                         # *why* a cell failed, not just that it did.
                         err_cls = result.get("error_class") or "unknown"
                         err_msg = result.get("error_message") or ""
+                        self._count_error_class(str(err_cls))
                         if err_msg:
                             self.progress.errors.append(
-                                f"{cell.cell_id}: {err_cls} — {err_msg}"
+                                f"{cell.cell_id}: {err_cls} — "
+                                f"{truncate_message(err_msg, _ERRORS_ENTRY_CHARS)}"
                             )
                         else:
                             self.progress.errors.append(
@@ -630,7 +687,12 @@ class Orchestrator:
                 )
             async with self._progress_lock:
                 self.progress.failed += 1
-                self.progress.errors.append(f"{cell.cell_id}: {e}")
+                self.progress.errored += 1
+                self._count_error_class("non_retryable")
+                self.progress.errors.append(
+                    f"{cell.cell_id}: non_retryable — "
+                    f"{truncate_message(str(e), _ERRORS_ENTRY_CHARS)}"
+                )
             await self._notify_progress()
             return
         finally:
@@ -698,6 +760,12 @@ class Orchestrator:
         total = self._pending_total or self.progress.total_cells
         return f"[{started}/{total}]" if total else f"[{started}]"
 
+    def _count_error_class(self, error_class: str) -> None:
+        """Tally a failure by error class. Call under the progress lock."""
+        self.progress.error_classes[error_class] = (
+            self.progress.error_classes.get(error_class, 0) + 1
+        )
+
     def _log_cell_outcome(
         self,
         cell: RunCell,
@@ -734,8 +802,12 @@ class Orchestrator:
             )
             return
         err_cls = result.get("error_class") or "unknown"
-        err_msg = truncate_message(str(result.get("error_message") or ""))
-        logger.info(
+        # An infra reason is appended to the end of the message, so give it
+        # the longer infrastructure budget or truncation would drop it.
+        limit = _INFRA_ERROR_CHARS if result.get("infra_error") else 200
+        err_msg = truncate_message(str(result.get("error_message") or ""), limit)
+        logger.log(
+            logging.WARNING if result.get("infra_error") else logging.INFO,
             "✗ %s FAIL %s — %s (score %.2f) [%s]%s",
             ordinal,
             cell_label(cell),

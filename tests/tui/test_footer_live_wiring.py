@@ -130,3 +130,24 @@ class TestPhaseLabelReachesTheScreen:
             footer = await _tick(app, pilot)
             assert footer.state.cell_phases == {}
             assert "[harness_running]" not in _screen_text(app)
+
+    async def test_infra_count_and_last_failure_reach_the_screen(
+        self, store, config
+    ) -> None:
+        """The failure line carries harness-derived text, which can contain
+        brackets that a markup-enabled widget would eat (or choke on)."""
+        cell = _cell()
+        app = _SeededApp(config, store, AsyncMock(), [cell])
+        app.seed_state = FooterState(
+            total_cells=4,
+            completed=1,
+            failed=2,
+            errored=2,
+            running=0,
+            last_error=f"{cell.cell_id}: non_retryable — [boom] docker run failed",
+        )
+        async with app.run_test() as pilot:
+            await _tick(app, pilot)
+            screen = _screen_text(app)
+            assert "2 infra" in screen
+            assert "[boom] docker run failed" in screen
