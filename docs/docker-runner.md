@@ -122,6 +122,35 @@ The runner uses a long-running container (`sleep <timeout+30>`) and `docker exec
 - Clean separation of setup and execution phases
 - The container's filesystem state persists between exec calls
 
+### Execution phases
+
+Each step above is recorded as a *phase*, written to `run_state.phase`
+(polled by the TUI footer) and logged at INFO so every run mode can show
+where a long cell is spending its time:
+
+| Phase | Meaning |
+|-------|---------|
+| `cloning` | Preparing the workspace (copying the task repo) |
+| `container_start` | Starting the container |
+| `setup` | Running the task setup script in the container |
+| `harness_running` | Running the harness — normally most of the cell's wall time |
+| `evaluating` | Evaluating the result (diff + hidden tests, or the judge) |
+| `aggregating` | Aggregating token usage and cost from the gateway |
+| `reconciling` | Reconciling gateway usage against the harness self-report |
+
+Multi-phase tasks use `harness_running:<phase name>`. Writing the phase is
+fire-and-forget: a store failure (e.g. `database is locked` under
+`parallel_runs > 1`) is logged at DEBUG and never aborts the cell, and the
+INFO narration happens regardless of whether the write succeeded.
+
+Two further lines bracket the harness itself, and are the primary
+diagnostic when a cell fails:
+
+- how the harness process ended — exit code and duration, at INFO for a
+  clean exit and WARNING (with a redacted, ANSI-stripped output tail) for a
+  non-zero exit or timeout;
+- the evaluator's verdict — exit class, score and error class.
+
 ### Harness output capture
 
 The runner captures harness stdout and stderr from the `docker exec` subprocess.

@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from harness_evaluator.adapters.base import AdapterResult
+from harness_evaluator.adapters.base import AdapterResult, BaseAdapter
 from harness_evaluator.gateway.models import TokenUsage
 from harness_evaluator.orchestrator.config import (
     AuthMode,
@@ -42,7 +42,7 @@ from harness_evaluator.orchestrator.config import (
     resolve_task_repo_path,
 )
 from harness_evaluator.orchestrator.engine import RetryableError
-from harness_evaluator.runner.redaction import sanitize_output
+from harness_evaluator.runner.redaction import make_error_excerpt, sanitize_output
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +80,47 @@ CONTAINER_REPO = "/workspace/repo"
 # Strict allow-list for container name characters (Docker requires
 # [a-zA-Z0-9][a-zA-Z0-9_.-]*). We sanitize cell IDs to this charset.
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]")
+
+# Human-readable descriptions of the execution phases written by
+# ``DockerRunner._set_phase``. The phase strings themselves are the
+# machine-readable values the TUI footer and the results store use; these
+# are what gets narrated in the log so a reader can tell where a
+# multi-minute cell is actually spending its time. Multi-phase runs use
+# ``harness_running:<phase name>``, which is resolved by prefix.
+PHASE_DESCRIPTIONS = {
+    "cloning": "preparing the workspace (copying the task repo)",
+    "container_start": "starting the container",
+    "setup": "running the task setup script in the container",
+    "harness_running": "running the harness (this is the long part)",
+    "evaluating": "evaluating the result (diff + hidden tests)",
+    "aggregating": "aggregating token usage and cost from the gateway",
+    "reconciling": "reconciling gateway usage against the harness self-report",
+}
+_OPEN_ENDED_EVALUATING = "evaluating the result (structural checks + LLM judge)"
+
+
+def _excerpt(text: str, max_chars: int = 400) -> str:
+    """Return a safe single-line excerpt of ``text`` for a log message.
+
+    Harness and setup-script output is untrusted, can be megabytes long,
+    and is full of ANSI colour codes; a log line must stay on one line,
+    must not carry a secret, and must not repaint the terminal. Delegates
+    to ``make_error_excerpt``, which strips ANSI/control characters,
+    collapses whitespace, redacts secrets and truncates on a word boundary.
+    """
+    if not text:
+        return "(no output)"
+    return make_error_excerpt(text, max_chars=max_chars, from_end=True) or "(no output)"
+
+
+def describe_phase(phase: str) -> str:
+    """Return the human-readable description of an execution phase."""
+    if phase in PHASE_DESCRIPTIONS:
+        return PHASE_DESCRIPTIONS[phase]
+    base, _, detail = phase.partition(":")
+    if base in PHASE_DESCRIPTIONS and detail:
+        return f"{PHASE_DESCRIPTIONS[base]} — phase '{detail}'"
+    return phase
 
 
 def _container_env(env: dict[str, str]) -> dict[str, str]:
@@ -249,6 +290,13 @@ class RunResult:
     timed_out: bool
     workdir: str
     duration_ms: float
+    # Whether provider calls are expected to show up at the gateway: the
+    # harness was handed the gateway URL (in its env or on its command
+    # line) and its adapter is known to honour it. Several adapters bypass
+    # the gateway by design (Cursor, Copilot, Kiro, Antigravity, Google
+    # models, codex_chatgpt), and "minimal"-tier ones (Pi, OMP) may ignore
+    # the base URL; for all of those zero captured calls is not a fault.
+    expects_gateway_calls: bool = False
 
 
 def _default_run_as_user() -> str | None:
@@ -385,16 +433,26 @@ class DockerRunner:
                 panel.flush_cell(cell_id)
 
     def _set_phase(self, cell: RunCell, phase: str) -> None:
-        """Write the current execution phase to the results store.
+        """Write the current execution phase to the results store and log it.
 
         Fire-and-forget: a store failure (e.g. ``database is locked``
         under ``parallel_runs > 1``) must never abort the cell. The TUI
         polls this on its 1-second tick timer to show per-cell phase
         labels without threading callbacks through the orchestrator.
 
+        The phase is *also* logged at INFO, because the store is only
+        polled by the TUI — without this, every other run mode (the Rich
+        `Live` panel, `--no-progress`, CI) goes silent for the whole
+        multi-minute body of a cell, which is where the time actually goes.
+
         Uses a cached ``ResultsStore`` instance to avoid re-running the
         full schema/migration logic on every phase transition.
         """
+        if phase == "evaluating" and cell.task.track == TaskTrack.OPEN_ENDED:
+            description = _OPEN_ENDED_EVALUATING
+        else:
+            description = describe_phase(phase)
+        logger.info("  · %s: %s", cell.cell_id, description)
         try:
             if self._phase_store is None:
                 from harness_evaluator.orchestrator.results_store import ResultsStore
@@ -553,6 +611,27 @@ class DockerRunner:
                     diff=oe_result.diff,
                 )
 
+            # Narrate the evaluator's verdict. Without this, a run has no
+            # record of *why* a cell scored what it did until the results DB
+            # is opened after the fact.
+            logger.info(
+                "  · %s: evaluation %s (score %.2f, %s)%s",
+                cell.cell_id,
+                eval_result.exit_class,
+                eval_result.success,
+                eval_result.error_class.value,
+                f" — {_excerpt(eval_result.error_message, 200)}"
+                if eval_result.error_message
+                else "",
+            )
+            if eval_result.diff:
+                logger.debug(
+                    "%s: diff is %d B across %d changed hunks",
+                    cell.cell_id,
+                    len(eval_result.diff),
+                    eval_result.diff.count("@@ ") // 2,
+                )
+
             # Collect token usage from gateway (per-cell via trace_id)
             self._set_phase(cell, "aggregating")
             gateway_db_path = Path(self.gateway_db)
@@ -618,6 +697,16 @@ class DockerRunner:
                         "never reached it or the trace prefix was lost.",
                         cell.cell_id,
                     )
+            elif harness_result.expects_gateway_calls:
+                # No gateway DB at all. Previously silent, which made a run
+                # started without a gateway (e.g. --no-check-gateway) look
+                # like a run in which every harness simply changed nothing.
+                logger.warning(
+                    "Gateway call database %s does not exist, so cell %s has no "
+                    "token or cost attribution at all — was the gateway running?",
+                    self.gateway_db,
+                    cell.cell_id,
+                )
 
             # Reconcile gateway-captured usage against harness self-report.
             # Only attempt reconciliation when the gateway actually captured
@@ -669,10 +758,7 @@ class DockerRunner:
             #   exited 0, which the previous `num_api_calls == 0` gate missed.
             error_message = eval_result.error_message
             if eval_result.exit_class != "pass" and harness_result.stderr:
-                from harness_evaluator.runner.redaction import (
-                    make_error_excerpt,
-                    stderr_is_actionable,
-                )
+                from harness_evaluator.runner.redaction import stderr_is_actionable
 
                 harness_failed = (
                     harness_result.exit_code != 0 or harness_result.timed_out
@@ -719,8 +805,14 @@ class DockerRunner:
 
         except subprocess.TimeoutExpired as e:
             raise RetryableError(f"Container timed out: {e}") from e
-        except Exception as e:
-            logger.error("Cell %s failed: %s", cell.cell_id, e)
+        except Exception:
+            # Deliberately not logged at ERROR here: the orchestrator's own
+            # handler narrates this same failure with the cell's label and
+            # ordinal (see Orchestrator._run_cell_with_budget_check), and
+            # logging it twice made the most important line in a broken run
+            # appear as two differently-formatted copies. The traceback,
+            # which the orchestrator does not have, is kept at DEBUG.
+            logger.debug("Cell %s raised", cell.cell_id, exc_info=True)
             raise
 
     def _reconcile_cell(
@@ -1201,6 +1293,8 @@ class DockerRunner:
             hint = ""
             lowered = stderr.lower()
             if "unable to find image" in lowered or "pull access denied" in lowered:
+                # docker run is given only 60s, so this also covers "the pull
+                # was simply too slow" -- both are fixed the same way.
                 hint = (
                     f" Pull the runner image before the run "
                     f"(docker pull {image or self.image}) and check the "
@@ -1312,6 +1406,54 @@ class DockerRunner:
                 )
             except Exception as e2:
                 logger.warning("Failed to force-remove container %s: %s", container_id, e2)
+
+    @staticmethod
+    def _expects_gateway_calls(
+        adapter: BaseAdapter, gateway_url: str, env: dict[str, str], cmd: list[str]
+    ) -> bool:
+        """Whether the harness's provider calls should reach the gateway.
+
+        Derived from what the adapter actually produced rather than from the
+        auth mode or provider, since adapters differ: most set a base-URL
+        env var, Codex passes it on argv, and several strip it and talk to
+        their own backend. Adapters that declare a ``minimal`` observability
+        tier may ignore the base URL they are given, so they are excluded.
+        """
+        if not gateway_url or adapter.info().observability_tier == "minimal":
+            return False
+        return any(gateway_url in v for v in env.values()) or any(
+            gateway_url in a for a in cmd
+        )
+
+    def _log_harness_exit(
+        self, cell: RunCell, result: AdapterResult, timeout: int, phase: str = ""
+    ) -> None:
+        """Narrate how the harness process itself ended.
+
+        This is the single most useful line in a failed run and it was
+        previously not logged at all: a harness that exits non-zero (bad
+        credentials, missing binary, crash) is otherwise indistinguishable
+        from one that ran fine but changed nothing, because the evaluator
+        only sees the diff.
+        """
+        label = f"{cell.cell_id}{f' phase {phase}' if phase else ''}"
+        secs = result.duration_ms / 1000
+        if result.timed_out:
+            logger.warning(
+                "⏱ %s: harness TIMED OUT after %ds (will be retried)", label, timeout
+            )
+            return
+        if result.exit_code == 0:
+            logger.info(
+                "  · %s: harness exited 0 after %.1fs (%d B stdout, %d B stderr)",
+                label, secs, len(result.stdout or ""), len(result.stderr or ""),
+            )
+            return
+        logger.warning(
+            "%s: harness exited %d after %.1fs — output tail: %s",
+            label, result.exit_code, secs,
+            _excerpt(result.stderr or result.stdout),
+        )
 
     async def _run_harness(self, cell: RunCell, workdir: Path) -> RunResult:
         """Run the harness adapter for this cell inside a Docker container.
@@ -1432,19 +1574,30 @@ class DockerRunner:
                 )
                 if setup_result.exit_code != 0:
                     logger.warning(
-                        "Setup script failed for %s: %s",
+                        "Setup script failed for %s (exit %d) — the harness will "
+                        "still run, but the repo may be missing dependencies: %s",
                         cell.cell_id,
-                        setup_result.stderr,
+                        setup_result.exit_code,
+                        _excerpt(setup_result.stderr or setup_result.stdout),
                     )
 
             # Run the harness command inside the container
             self._set_phase(cell, "harness_running")
+            # Only the executable: argv carries the full task prompt and
+            # user-supplied adapter arguments, which can include credentials.
+            logger.debug(
+                "Harness command for %s: %s (%d args)",
+                cell.cell_id,
+                harness_cmd[0] if harness_cmd else "?",
+                max(len(harness_cmd) - 1, 0),
+            )
             on_output = self._make_output_callback(cell.cell_id)
             result = await self._exec_in_container(
                 container_id, harness_cmd, timeout=timeout, cwd=exec_cwd,
                 on_output=on_output,
             )
             self._flush_cell_output(cell.cell_id)
+            self._log_harness_exit(cell, result, timeout)
 
         finally:
             if container_id is not None:
@@ -1472,6 +1625,9 @@ class DockerRunner:
             timed_out=result.timed_out,
             workdir=str(repo_dir),
             duration_ms=(time.monotonic() - start) * 1000,
+            expects_gateway_calls=self._expects_gateway_calls(
+                adapter, gateway_url, env, harness_cmd
+            ),
         )
 
     async def _run_harness_multiphase(
@@ -1498,6 +1654,7 @@ class DockerRunner:
         container_id: str | None = None
         phase_results: list[dict[str, Any]] = []
         last_result: AdapterResult | None = None
+        expects_gateway_calls = False
 
         # Track outputs from prior phases for input injection.
         prior_diff: str | None = None
@@ -1590,6 +1747,9 @@ class DockerRunner:
                 )
 
                 harness_cmd = adapter.get_command(phase_prompt)
+                expects_gateway_calls = expects_gateway_calls or (
+                    self._expects_gateway_calls(adapter, gateway_url, env, harness_cmd)
+                )
                 exec_cwd = (
                     CONTAINER_REPO if cell.task.repo_url else CONTAINER_WORKSPACE
                 )
@@ -1633,7 +1793,7 @@ class DockerRunner:
                         if setup_result.exit_code != 0:
                             raise RuntimeError(
                                 f"Setup script failed for {cell.cell_id}: "
-                                f"{setup_result.stderr.strip()}"
+                                f"{_excerpt(setup_result.stderr or setup_result.stdout)}"
                             )
 
                 # Run the harness command for this phase.
@@ -1646,6 +1806,9 @@ class DockerRunner:
                     cwd=exec_cwd, env=env, on_output=on_output,
                 )
                 self._flush_cell_output(cell.cell_id)
+                self._log_harness_exit(
+                    cell, result, phase.timeout_seconds, phase=phase.name
+                )
                 last_result = result
 
                 phase_results.append(
@@ -1724,6 +1887,7 @@ class DockerRunner:
             timed_out=last_result.timed_out,
             workdir=str(repo_dir),
             duration_ms=(time.monotonic() - start) * 1000,
+            expects_gateway_calls=expects_gateway_calls,
         )
         return run_result, phase_results
 
