@@ -697,7 +697,11 @@ class DockerRunner:
                 "num_api_calls": num_api_calls,
                 "num_tool_calls": 0,
                 "diff": eval_result.diff,
-                "test_output": eval_result.test_output,
+                "test_output": (
+                    sanitize_output(eval_result.test_output)
+                    if eval_result.test_output is not None
+                    else None
+                ),
                 "harness_stdout": sanitize_output(harness_result.stdout),
                 "harness_stderr": sanitize_output(harness_result.stderr),
                 "harness_metadata": {
@@ -1193,9 +1197,28 @@ class DockerRunner:
         )
         result = await _run_subprocess(args, timeout=60)
         if result.returncode != 0:
+            stderr = result.stderr.strip()
+            hint = ""
+            lowered = stderr.lower()
+            if "unable to find image" in lowered or "pull access denied" in lowered:
+                hint = (
+                    f" Pull the runner image before the run "
+                    f"(docker pull {image or self.image}) and check the "
+                    f"docker_image setting in your run config."
+                )
+            elif "is already in use by container" in lowered:
+                hint = (
+                    f" A container for this cell is still running from an "
+                    f"earlier run — remove it with 'docker rm -f {name}' "
+                    f"(or wait for the other run to finish)."
+                )
+            elif "permission denied" in lowered and "docker daemon socket" in lowered:
+                hint = (
+                    " The current user cannot talk to the Docker daemon "
+                    "(add it to the 'docker' group, or run with sudo)."
+                )
             raise RuntimeError(
-                f"docker run failed (exit {result.returncode}): "
-                f"{result.stderr.strip()}"
+                f"docker run failed (exit {result.returncode}): {stderr}{hint}"
             )
         container_id = result.stdout.strip()
         if not container_id:

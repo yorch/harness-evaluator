@@ -59,6 +59,38 @@ class TestStderrIsActionable:
         assert stderr_is_actionable("Error: command not found: claude")
 
 
+class TestMakeErrorExcerptFromEnd:
+    """`from_end=True` keeps the tail. Harnesses and test runners print a
+    banner first and the fatal error last, so head-truncating their output
+    reliably discards the only interesting part."""
+
+    def test_keeps_the_tail(self) -> None:
+        text = "noise " * 200 + "THE ACTUAL ERROR"
+        excerpt = make_error_excerpt(text, max_chars=60, from_end=True)
+        assert "THE ACTUAL ERROR" in excerpt
+        assert excerpt.startswith("\u2026")
+
+    def test_head_truncation_remains_the_default(self) -> None:
+        text = "FIRST " + "noise " * 200 + "last"
+        excerpt = make_error_excerpt(text, max_chars=60)
+        assert excerpt.startswith("FIRST")
+        assert excerpt.endswith("\u2026")
+
+    def test_short_text_is_untouched_either_way(self) -> None:
+        assert make_error_excerpt("boom", from_end=True) == "boom"
+
+    def test_still_redacts_and_strips_ansi(self) -> None:
+        text = "noise " * 100 + "\x1b[31mkey sk-ant-api03-" + "B" * 30 + "\x1b[0m"
+        excerpt = make_error_excerpt(text, max_chars=80, from_end=True)
+        assert "\x1b" not in excerpt
+        assert "sk-ant-api03-" + "B" * 30 not in excerpt
+        assert "[REDACTED]" in excerpt
+
+    def test_no_word_boundary_still_bounded(self) -> None:
+        excerpt = make_error_excerpt("x" * 500, max_chars=50, from_end=True)
+        assert len(excerpt) <= 51
+
+
 class TestMakeErrorExcerpt:
     """Tests for the make_error_excerpt sanitizer."""
 
