@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/yorch/harness-evaluator/compare/v0.16.0...v0.16.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **runner:** run hidden tests in the image and make host networking usable ([#75](https://github.com/yorch/harness-evaluator/issues/75)) ([5e7b5ee](https://github.com/yorch/harness-evaluator/commit/5e7b5eeb5376205629853d748e77fc49410a4f7d))
+
 ## [0.16.0](https://github.com/yorch/harness-evaluator/compare/v0.15.1...v0.16.0) (2026-09-05)
 
 
