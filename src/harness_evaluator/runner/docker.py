@@ -297,6 +297,9 @@ class RunResult:
     # models, codex_chatgpt), and "minimal"-tier ones (Pi, OMP) may ignore
     # the base URL; for all of those zero captured calls is not a fault.
     expects_gateway_calls: bool = False
+    # False when the harness never started at all (no adapter registered
+    # under that name, or one with no command), which measures nothing.
+    harness_ran: bool = True
 
 
 def _default_run_as_user() -> str | None:
@@ -771,11 +774,38 @@ class DockerRunner:
                         else:
                             error_message = f"harness error: {stderr_excerpt}"
 
+            # A failing cell that produced no captured API calls did not
+            # measure anything: the harness never reached the provider (bad
+            # credentials, no gateway, wrong base URL) or its traffic was
+            # not attributed to this cell. Flag it so the orchestrator can
+            # count it as an infrastructure error rather than as "the
+            # harness tried and did not solve the task" — the two look
+            # identical in the results otherwise, and only one of them
+            # means the run is broken. A *passing* cell is left alone: the
+            # eval verdict stands even if cost accounting is missing.
+            infra_error: str | None = None
+            if eval_result.exit_class != "pass" and not harness_result.harness_ran:
+                infra_error = (
+                    "the harness never ran, so nothing was measured — "
+                    f"{_excerpt(harness_result.stderr, 200)}"
+                )
+            elif (
+                eval_result.exit_class != "pass"
+                and num_api_calls == 0
+                and harness_result.expects_gateway_calls
+            ):
+                infra_error = (
+                    "no API calls were captured for this cell, so nothing was "
+                    "measured — the harness never reached the gateway "
+                    "(check credentials, the gateway, and the gateway log)"
+                )
+
             return {
                 "exit_class": eval_result.exit_class,
                 "success": eval_result.success,
                 "error_class": eval_result.error_class.value,
                 "error_message": error_message,
+                "infra_error": infra_error,
                 "usage": usage,
                 "total_cost": total_cost,
                 "latency_ms": latency_ms,
@@ -1494,6 +1524,7 @@ class DockerRunner:
                 timed_out=False,
                 workdir=str(repo_dir),
                 duration_ms=(time.monotonic() - start) * 1000,
+                harness_ran=False,
             )
 
         # Get the allowlisted env vars (gateway URL, API key, trace_id, etc.)
@@ -1532,6 +1563,7 @@ class DockerRunner:
                 timed_out=False,
                 workdir=str(repo_dir),
                 duration_ms=(time.monotonic() - start) * 1000,
+                harness_ran=False,
             )
 
         # NOTE: We intentionally skip adapter.prepare() here. In the Docker
@@ -1655,6 +1687,7 @@ class DockerRunner:
         phase_results: list[dict[str, Any]] = []
         last_result: AdapterResult | None = None
         expects_gateway_calls = False
+        harness_ran = True
 
         # Track outputs from prior phases for input injection.
         prior_diff: str | None = None
@@ -1712,6 +1745,7 @@ class DockerRunner:
                 )
 
                 if adapter is None:
+                    harness_ran = False
                     last_result = AdapterResult(
                         exit_code=-1,
                         stdout="",
@@ -1888,6 +1922,7 @@ class DockerRunner:
             workdir=str(repo_dir),
             duration_ms=(time.monotonic() - start) * 1000,
             expects_gateway_calls=expects_gateway_calls,
+            harness_ran=harness_ran,
         )
         return run_result, phase_results
 

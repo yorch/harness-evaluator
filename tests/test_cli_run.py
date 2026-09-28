@@ -741,6 +741,146 @@ class TestVerboseWiring:
         mock_configure.assert_called_once_with(0)
 
 
+class TestFailureReporting:
+    """The run summary must make a broken run unmistakable, and must not
+    report an infrastructure failure as a clean, green "Run complete" with
+    exit 0 — which is exactly what it did for a missing Docker image or a
+    run with no working credentials."""
+
+    def _run_with(self, tmp_path, progress):
+        config_file = _write_config(tmp_path)
+        with (
+            mock.patch("harness_evaluator.runner.docker.DockerRunner"),
+            mock.patch("harness_evaluator.orchestrator.engine.Orchestrator") as mock_orch,
+        ):
+            mock_orch.return_value.run = mock.AsyncMock(return_value=progress)
+            return _invoke(
+                ["run", str(config_file), "--no-check-gateway", "--no-progress"],
+                isatty=False,
+            )
+
+    def test_infra_errors_report_failure_and_exit_nonzero(self, tmp_path) -> None:
+        result = self._run_with(
+            tmp_path,
+            _fake_progress(
+                total_cells=2,
+                completed=0,
+                failed=2,
+                errored=2,
+                errors=[
+                    "cell-a: non_retryable — docker run failed (exit 125)",
+                    "cell-b: non_retryable — docker run failed (exit 125)",
+                ],
+                error_classes={"non_retryable": 2},
+            ),
+        )
+        assert result.exit_code == 1, result.output
+        assert "Run FAILED" in result.output
+        assert "Run complete" not in result.output
+        assert "Errored: 2" in result.output
+        assert "2 × non_retryable" in result.output
+        assert "docker run failed" in result.output
+        # And the remediation block for the one failure class the harness
+        # can never be blamed for.
+        assert "Infrastructure errors usually mean" in result.output
+
+    def test_eval_failures_alone_still_exit_zero(self, tmp_path) -> None:
+        """A harness that ran and failed its task is a legitimate result:
+        it must be reported, but it must not make the command look broken."""
+        result = self._run_with(
+            tmp_path,
+            _fake_progress(
+                total_cells=2,
+                completed=1,
+                failed=1,
+                errored=0,
+                errors=["cell-a: wrong_approach — tests still failing"],
+                error_classes={"wrong_approach": 1},
+            ),
+        )
+        assert result.exit_code == 0, result.output
+        assert "Run complete" in result.output
+        assert "Run FAILED" not in result.output
+        assert "Failed: 1" in result.output
+        assert "Errored: 0" in result.output
+        assert "1 × wrong_approach" in result.output
+
+    def test_zero_passes_without_infra_errors_is_called_out(self, tmp_path) -> None:
+        result = self._run_with(
+            tmp_path,
+            _fake_progress(
+                total_cells=3,
+                completed=0,
+                failed=3,
+                errored=0,
+                errors=["c: no_change — nothing changed"],
+                error_classes={"no_change": 3},
+            ),
+        )
+        # Not an infra failure, so exit 0 -- but the headline must not read
+        # as an ordinary success.
+        assert result.exit_code == 0, result.output
+        # Flattened: Rich wraps the headline across lines.
+        flat = " ".join(result.output.split())
+        assert "0 of 3 evaluated cell(s) passed" in flat
+        assert "usually a configuration problem" in flat
+
+    def test_zero_pass_headline_excludes_skipped_cells(self, tmp_path) -> None:
+        """Budget or resumability skips were never evaluated."""
+        result = self._run_with(
+            tmp_path,
+            _fake_progress(
+                total_cells=5,
+                completed=0,
+                failed=2,
+                skipped=3,
+                errored=0,
+                errors=["c: no_change — nothing changed"],
+                error_classes={"no_change": 2},
+            ),
+        )
+        flat = " ".join(result.output.split())
+        assert "0 of 2 evaluated cell(s) passed" in flat
+
+    def test_failure_detail_is_capped_and_points_at_the_results_command(
+        self, tmp_path
+    ) -> None:
+        errors = [f"cell-{i}: no_change — nothing changed" for i in range(25)]
+        result = self._run_with(
+            tmp_path,
+            _fake_progress(
+                total_cells=25,
+                completed=0,
+                failed=25,
+                errored=0,
+                errors=errors,
+                error_classes={"no_change": 25},
+            ),
+        )
+        assert "Failure detail (first 10 of 25)" in result.output
+        assert "and 15 more" in result.output
+        assert "harness-evaluator results" in result.output
+
+    def test_error_messages_with_brackets_do_not_break_rendering(
+        self, tmp_path
+    ) -> None:
+        """Harness stderr excerpts reach this output verbatim; Rich would
+        otherwise read '[/dim]'-shaped text as markup."""
+        result = self._run_with(
+            tmp_path,
+            _fake_progress(
+                total_cells=1,
+                completed=0,
+                failed=1,
+                errored=1,
+                errors=["cell-a: non_retryable — [bold]boom[/bold] [not-a-tag]"],
+                error_classes={"non_retryable": 1},
+            ),
+        )
+        assert result.exit_code == 1
+        assert "[bold]boom[/bold] [not-a-tag]" in result.output
+
+
 class TestRunPlanBanner:
     """A run writes to several places and can take hours; naming them up
     front is what makes a later failure investigable."""
