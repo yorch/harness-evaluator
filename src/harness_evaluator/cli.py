@@ -244,6 +244,40 @@ def canary(
         raise typer.Exit(1)
 
 
+def _print_run_plan(cfg: Any, cells: list[Any]) -> None:
+    """Print what the run will actually do, and where its output will land.
+
+    A run can take hours and writes to several places (workdir, results
+    DB, gateway DB; the gateway log path is printed if the gateway is
+    auto-started). Naming them up front is what makes a failure
+    investigable afterwards.
+    """
+    tasks = {c.task.id: c.task for c in cells}
+    tracks: dict[str, int] = {}
+    for task in tasks.values():
+        track = getattr(task.track, "value", str(task.track))
+        tracks[track] = tracks.get(track, 0) + 1
+    task_ids = sorted(tasks)
+    shown = ", ".join(task_ids[:6]) + (f", … (+{len(task_ids) - 6})" if len(task_ids) > 6 else "")
+    console.print(f"  Tasks: {len(task_ids)} ({shown})")
+    console.print(
+        "  Tracks: " + ", ".join(f"{count} {track}" for track, count in sorted(tracks.items()))
+    )
+    console.print(
+        f"  Concurrency: {cfg.parallel_runs} cell(s) at a time"
+        + (
+            f"  |  Budget cap: ${cfg.budget_usd:.2f}"
+            if cfg.budget_usd is not None
+            else "  |  Budget cap: none"
+        )
+    )
+    console.print(f"  Image: {cfg.docker_image}")
+    console.print(
+        f"  [dim]Workdir {cfg.workdir}  |  Results {cfg.results_db}  "
+        f"|  Gateway calls {cfg.gateway_db}[/dim]"
+    )
+
+
 def _render_progress_panel(
     progress: Any,
     start_time: float,
@@ -377,6 +411,7 @@ def run(
         raise typer.Exit(1) from exc
 
     console.print(f"  Total cells: {len(cells)}")
+    _print_run_plan(cfg, cells)
 
     if dry_run:
         table = Table(title="Eval Matrix")
@@ -479,7 +514,8 @@ def run(
 
             if started:
                 console.print(
-                    f"[green]Gateway auto-started on port {cfg.gateway_port}[/green]"
+                    f"[green]Gateway auto-started on port {cfg.gateway_port}[/green] "
+                    f"[dim](log: {gateway_log or 'harness_evaluator_gateway.log'})[/dim]"
                 )
                 reachable_on = "auto-started"
             else:
@@ -630,12 +666,15 @@ def run(
     # than attempting (and never using) the TUI first.
     want_live_panel = show_progress and no_tui and sys.stdout.isatty()
 
-    # Non-TTY runs default to WARNING (silent) at verbose=0. When the user
-    # asked for progress but no live UI is possible, floor the level at
-    # INFO so the run reports *something* between the matrix banner and the
-    # final summary instead of going dark end to end.
+    # Logging defaults to WARNING (silent) at verbose=0, which for a run
+    # means no narration at all: no cell start/finish lines, no phase
+    # transitions, no harness exit codes. Whenever progress was asked for
+    # (the default), floor the level at INFO so every mode — TUI log pane,
+    # Rich `Live` panel, and the plain non-TTY path — narrates the run.
+    # An explicit --no-progress still means "be quiet"; -vv still means
+    # DEBUG.
     effective_verbose = verbose
-    if show_progress and not sys.stdout.isatty() and effective_verbose < 1:
+    if show_progress and effective_verbose < 1:
         effective_verbose = 1
     _configure_logging(effective_verbose)
 
