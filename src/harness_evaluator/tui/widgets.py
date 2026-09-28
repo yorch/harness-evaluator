@@ -24,12 +24,16 @@ _FOOTER_REFRESH_INTERVAL = 1.0
 # Maximum number of running cells to list individually.
 _MAX_RUNNING_CELLS_SHOWN = 3
 
-# _format_footer can emit up to 8 lines (3 header lines + "Running:" + up to
-# _MAX_RUNNING_CELLS_SHOWN cell lines + "… and N more"). The widget's
-# border-top consumes one row of its declared CSS height, so the height must
-# be the max line count plus this border overhead for every line to render.
+# _format_footer can emit up to 9 lines (3 header lines + the optional "last
+# failure" line + "Running:" + up to _MAX_RUNNING_CELLS_SHOWN cell lines +
+# "… and N more"). The widget's border-top consumes one row of its declared
+# CSS height, so the height must be the max line count plus this border
+# overhead for every line to render.
 _FOOTER_BORDER_ROWS = 1
-_FOOTER_HEIGHT = 3 + 1 + _MAX_RUNNING_CELLS_SHOWN + 1 + _FOOTER_BORDER_ROWS
+_FOOTER_LAST_ERROR_ROWS = 1
+_FOOTER_HEIGHT = (
+    3 + _FOOTER_LAST_ERROR_ROWS + 1 + _MAX_RUNNING_CELLS_SHOWN + 1 + _FOOTER_BORDER_ROWS
+)
 
 # Fallback line width used when the widget hasn't been mounted/sized yet
 # (e.g. unit tests calling _format_footer directly on a bare ProgressFooter()).
@@ -80,6 +84,7 @@ class FooterState:
     total_cells: int = 0
     completed: int = 0
     failed: int = 0
+    errored: int = 0
     skipped: int = 0
     running: int = 0
     total_cost: float = 0.0
@@ -89,6 +94,7 @@ class FooterState:
     start_time: float = field(default_factory=time.monotonic)
     cell_phases: dict[str, str] = field(default_factory=dict)
     cell_api_stats: dict[str, tuple[int, float]] = field(default_factory=dict)
+    last_error: str | None = None
 
     @property
     def done(self) -> int:
@@ -130,7 +136,9 @@ class ProgressFooter(Widget):
 
     def __init__(self) -> None:
         super().__init__()
-        self._static = Static()
+        # markup=False: the "[phase]" labels and the harness-derived "last
+        # failure" text would otherwise be parsed as tags.
+        self._static = Static(markup=False)
         self._static.display = False
         self._refresh_timer: Timer | None = None
         # Latches True after _tick logs a render fault, so a *persistent*
@@ -248,8 +256,13 @@ class ProgressFooter(Widget):
         filled = int(bar_width * done / total) if total else 0
         bar = "█" * filled + "░" * (bar_width - filled)
 
-        # Counts
+        # Counts. `errored` (the infrastructure-failure subset of `failed`)
+        # is shown only when non-zero: it is the difference between "a
+        # harness failed a task" and "the run is broken", and it must not be
+        # possible to watch a run that is failing that way and not notice.
         counts = f"✓ {state.completed}  ✗ {state.failed}  ⊘ {state.skipped}  ► {state.running}"
+        if state.errored:
+            counts += f"  ⚠ {state.errored} infra"
 
         # Cost line. `state.total_cost` is the informational "true cost of
         # every cell" figure — it is NOT the figure charged against
@@ -281,6 +294,12 @@ class ProgressFooter(Widget):
             f"{cost_line}  |  Elapsed: {elapsed_str}",
         ]
         lines = [_ellipsize(line, line_width) for line in header_lines]
+        # The most recent failure, so a run that is failing every cell is
+        # visible on screen without scrolling the log pane back.
+        if state.last_error:
+            lines.append(
+                _ellipsize(f"! {' '.join(state.last_error.split())}", line_width)
+            )
         lines.append(running_lines)
         return "\n".join(lines)
 

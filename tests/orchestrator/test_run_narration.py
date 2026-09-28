@@ -20,6 +20,7 @@ from harness_evaluator.orchestrator.config import (
 )
 from harness_evaluator.orchestrator.engine import (
     Orchestrator,
+    RetryableError,
     cell_label,
     truncate_message,
 )
@@ -133,7 +134,121 @@ class TestCellNarration:
             "FAIL h1 | m1 | t1 | rep 0" in m and "[no_change]" in m for m in messages
         )
         assert any("No changes were made" in m for m in messages)
+        # An eval failure is not an infrastructure error.
         assert progress.failed == 2
+        assert progress.errored == 0
+        assert progress.error_classes == {"no_change": 2}
+
+
+class TestInfraVersusEvalFailure:
+    async def test_non_retryable_exception_counts_as_errored(self, config, store):
+        async def run_cell(cell):
+            raise RuntimeError("docker run failed (exit 125)")
+
+        orch = Orchestrator(config, store, run_cell_fn=run_cell)
+        progress = await orch.run()
+
+        assert progress.completed == 0
+        assert progress.failed == 2
+        assert progress.errored == 2
+        assert progress.error_classes == {"non_retryable": 2}
+        assert all("non_retryable" in e for e in progress.errors)
+
+    async def test_retry_exhaustion_counts_as_errored(self, config, store):
+        async def run_cell(cell):
+            raise RetryableError("timed out")
+
+        orch = Orchestrator(config, store, run_cell_fn=run_cell)
+        orch.RETRY_BASE_DELAY = 0.0
+        progress = await orch.run()
+
+        assert progress.errored == 2
+        assert progress.error_classes == {"retry_exhausted": 2}
+
+    async def test_infra_error_flag_on_a_completed_cell_counts_as_errored(
+        self, config, store, caplog
+    ):
+        """A cell can complete and still have measured nothing: the runner
+        flags that via ``infra_error`` (no captured API calls). It must be
+        counted with the kills, and the reason must reach both the log and
+        ``progress.errors``."""
+
+        async def run_cell(cell):
+            return _result(
+                exit_class="fail",
+                success=0.0,
+                num_api_calls=0,
+                total_cost=0.0,
+                error_class="no_change",
+                error_message="No changes were made to the repository",
+                infra_error="no API calls were captured for this cell",
+            )
+
+        orch = Orchestrator(config, store, run_cell_fn=run_cell)
+        with caplog.at_level(logging.WARNING, logger="harness_evaluator.orchestrator.engine"):
+            progress = await orch.run()
+
+        assert progress.failed == 2
+        assert progress.errored == 2
+        assert all("no API calls were captured" in e for e in progress.errors)
+        assert any(
+            "no API calls were captured" in r.getMessage() for r in caplog.records
+        )
+
+    async def test_infra_error_cells_are_rerun_on_resume(self, config, store):
+        """An infra-errored cell measured nothing, so it must not be recorded
+        as completed: a resume after fixing the cause has to re-run it, and
+        the reason has to be persisted, not only shown in the summary."""
+        calls: list[str] = []
+
+        async def broken(cell):
+            calls.append(cell.cell_id)
+            return _result(
+                exit_class="fail",
+                success=0.0,
+                num_api_calls=0,
+                error_class="no_change",
+                error_message="No changes were made to the repository",
+                infra_error="no API calls were captured for this cell",
+            )
+
+        await Orchestrator(config, store, run_cell_fn=broken).run()
+        assert store.get_completed_cells(config.name) == set()
+        rows = store.get_all_results(config.name)
+        assert rows
+        assert all("no API calls were captured" in r["error_message"] for r in rows)
+        assert all(r["exit_class"] == "non_retryable_kill" for r in rows)
+
+        async def fixed(cell):
+            calls.append(cell.cell_id)
+            return _result()
+
+        progress = await Orchestrator(config, store, run_cell_fn=fixed).run()
+        assert len(calls) == 4
+        assert progress.completed == 2
+        assert progress.errored == 0
+        assert len(store.get_completed_cells(config.name)) == 2
+
+    async def test_progress_errors_are_redacted(self, config, store):
+        """They reach the CLI summary and the TUI footer verbatim."""
+
+        async def run_cell(cell):
+            raise RuntimeError(
+                "setup failed: ANTHROPIC_API_KEY=sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAA"
+            )
+
+        progress = await Orchestrator(config, store, run_cell_fn=run_cell).run()
+        assert progress.errors
+        assert not any("sk-ant-api03" in e for e in progress.errors)
+
+    async def test_a_passing_cell_is_never_errored(self, config, store):
+        async def run_cell(cell):
+            return _result(infra_error=None)
+
+        orch = Orchestrator(config, store, run_cell_fn=run_cell)
+        progress = await orch.run()
+        assert progress.errored == 0
+        assert progress.error_classes == {}
 
 
 class TestHeartbeat:
@@ -248,3 +363,22 @@ class TestNarrationFaultsAreContained:
         assert not any("Failed to persist" in m for m in messages)
         assert any("Could not narrate" in m for m in messages)
         assert len(store.get_completed_cells(config.name)) == 2
+
+
+class TestProgressSnapshotCarriesNewFields:
+    async def test_snapshot_includes_errored_and_error_classes(self, config, store):
+        seen = []
+
+        async def run_cell(cell):
+            raise RuntimeError("boom")
+
+        orch = Orchestrator(
+            config, store, run_cell_fn=run_cell, on_progress=seen.append
+        )
+        await orch.run()
+
+        final = seen[-1]
+        assert final.errored == 2
+        assert final.error_classes == {"non_retryable": 2}
+        # Snapshots must be independent copies, not aliases of live state.
+        assert final.error_classes is not orch.progress.error_classes

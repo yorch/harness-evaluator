@@ -148,7 +148,7 @@ Failures are narrated in the same shape, with the failure class and reason:
 
 ```
 WARN  ...__r0: harness exited 1 after 68.6s — output tail: Error: API key is invalid
-INFO  ✗ [2/1000] FAIL opencode | claude-sonnet-5 | swe-bugfix-002 | rep 0 — 74.8s, $0.0000, 0 API calls, 0 tokens (score 0.00) [no_change]: No changes were made to the repository; harness error: Error: API key is invalid
+WARN  ✗ [2/1000] FAIL opencode | claude-sonnet-5 | swe-bugfix-002 | rep 0 — 74.8s, $0.0000, 0 API calls, 0 tokens (score 0.00) [no_change]: No changes were made to the repository; harness error: Error: API key is invalid; no API calls were captured for this cell, so nothing was measured — …
 ERROR ✗ [3/1000] ERROR opencode | claude-sonnet-5 | swe-bugfix-003 | rep 0 — RuntimeError: docker run failed (exit 125): Unable to find image … Pull the runner image before the run (docker pull …)
 ↻ [4/1000] retry opencode | claude-sonnet-5 | swe-bugfix-004 | rep 0 — attempt 1/3 failed (Harness command timed out after 300s), retrying in 2.0s
 ```
@@ -171,8 +171,9 @@ On a TTY, a Textual TUI is shown (auto-off in non-TTY/CI):
 │ (scrollable — scroll up to inspect, `f` to resume tail)    │
 ├─ Eval Progress ────────────────────────────────────────────┤
 │ ████████████░░░░░░░░  120/1000 (12.0%)                     │
-│ ✓ 100  ✗ 15  ⊘ 5  ► 1                                      │
+│ ✓ 100  ✗ 15  ⊘ 5  ► 1  ⚠ 2 infra                          │
 │ Cost: $1.2340 (info) | Cap: $100.00  |  Elapsed: 5:42      │
+│ ! opencode__…__swe-bugfix-003__r0: no_change — No changes…  │
 │ Running:                                                   │
 │   ► opencode | claude-sonnet-5 | swe-bugfix-004 | rep 0 [harness_running] (9 calls, $0.0121) │
 └────────────────────────────────────────────────────────────┘
@@ -183,10 +184,12 @@ The TUI has two regions:
   color-coded by level (INFO, WARN, ERROR). Auto-follows the tail; scroll
   up to pause, press `f` to resume.
 - **Progress footer** (bottom, fixed) — a progress bar,
-  completed/failed/skipped/running counts, cumulative cost (labelled
-  `(info)`, distinct from the `Cap:` budget figure — see
-  [Budget exemption](orchestrator/#budget-exemption)), elapsed time, and
-  the running cells with their current phase and live API-call/cost counts.
+  completed/failed/skipped/running counts, a `⚠ N infra` count when any
+  cell hit an infrastructure error, cumulative cost (labelled `(info)`,
+  distinct from the `Cap:` budget figure — see
+  [Budget exemption](orchestrator/#budget-exemption)), elapsed time, the
+  most recent failure, and the running cells with their current phase and
+  live API-call/cost counts.
 
 Keyboard shortcuts:
 
@@ -209,28 +212,56 @@ skipped and logs go to stderr via a Rich handler.
 
 ```
 Run complete
-  Passed: 600
-  Failed: 400
+  Passed: 600 of 1000
+  Failed: 400 (harness ran, task not solved)
+  Errored: 0 (infrastructure error, no result)
   Skipped: 0
   Total cost (informational, includes budget-exempt cells): $12.3456
   Billable cost: $12.3456 / $100.00 budget cap
 
+Failures by class:
+  312 × wrong_approach
+  88 × no_change
+
+Failure detail (first 10 of 400):
+  opencode__claude-sonnet-5__swe-bugfix-002__r0: no_change — No changes were made …
+  …
+  … and 390 more — see harness-evaluator results broad-first-pass --db harness_evaluator_results.db
+  Full harness stdout/stderr per cell is stored in the results DB (visible in the dashboard's cell detail view).
+
 Next steps
   View per-cell results:
     harness-evaluator results broad-first-pass
-  Generate HTML/JSON/CSV reports:
-    harness-evaluator report broad-first-pass
-  Statistical analysis:
-    harness-evaluator stats broad-first-pass
-  Interactive dashboard:
-    harness-evaluator dashboard --db harness_evaluator_results.db
+  …
 ```
+
+`Failed` and `Errored` are deliberately separate figures:
+
+- **Failed** — the harness ran and the evaluator scored it, but it did not
+  pass. This is a legitimate eval result.
+- **Errored** — the cell produced no result at all, so nothing was
+  measured. Either the infrastructure failed outright (a missing Docker
+  image, a crashed container, retries exhausted) or the cell completed
+  without a single provider call reaching the gateway, which means the
+  harness never talked to the model. When any cell is in this state the
+  headline reads `Run FAILED`, a remediation block is printed, and the
+  command exits non-zero. Such a cell is recorded as `failed` rather than
+  `completed` in `run_state`, so re-running the same config after fixing
+  the cause re-runs it instead of skipping it as done.
+
+A run where every cell failed but none errored is still reported
+prominently (`Run complete, but 0 of N evaluated cell(s) passed`, where N excludes
+skipped cells), because that is
+almost always a configuration problem rather than a real result.
 
 ### Exit codes
 
-`harness-evaluator run` exits non-zero in two cases beyond an ordinary
+`harness-evaluator run` exits non-zero in three cases beyond an ordinary
 uncaught error:
 
+- **`Run FAILED`** (exit 1): one or more cells hit an infrastructure error
+  and produced no result (`Errored` above is non-zero). The run did not
+  measure what it was asked to measure, so it must not look green in CI.
 - **`Run outcome UNKNOWN`** (exit 1): no final progress snapshot could be
   obtained at all — the TUI exited cleanly with nothing to report and,
   where applicable, the fallback run also produced nothing. Not the same
@@ -242,8 +273,8 @@ uncaught error:
   but incomplete — a partial run is reported honestly rather than as a
   clean "Run complete".
 
-A normal completed run (all cells ran, whether they individually passed
-or failed) exits 0.
+A completed run exits 0 even when harnesses failed their tasks: a harness
+that ran and did not solve the task is a measurement, not a malfunction.
 
 ### Dry run output
 
