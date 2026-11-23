@@ -579,6 +579,10 @@ def run(
             import subprocess
 
             try:
+                # Probe with the configured runner image rather than a fixed
+                # python:* tag: the run needs that image anyway, and pinning a
+                # tag the user never pulled made the probe fail with "No such
+                # image" — which looked identical to an unreachable gateway.
                 docker_check = subprocess.run(
                     [
                         "docker",
@@ -587,7 +591,7 @@ def run(
                         "--pull=never",
                         "--add-host",
                         "host.docker.internal:host-gateway",
-                        "python:3.12-slim",
+                        cfg.docker_image,
                         "python",
                         "-c",
                         f"import socket; s=socket.socket(); s.settimeout(2); "
@@ -613,19 +617,39 @@ def run(
                 raise typer.Exit(1) from None
 
             if docker_check.returncode != 0:
-                console.print(
-                    f"[red]Gateway is reachable on the host but NOT "
-                    f"from inside Docker containers.[/red]\n"
-                    f"The gateway is likely bound to 127.0.0.1 only. "
-                    f"Restart it with:\n"
-                    f"  harness-evaluator gateway --port {cfg.gateway_port}\n"
-                    f"(the default 'auto' host binds the Docker bridge gateway IP, "
-                    f"which containers can reach via host.docker.internal).\n"
-                    f"On Docker Desktop (macOS/Windows), use "
-                    f"--host 0.0.0.0 instead.\n"
-                    f"Or bypass this check with --no-check-gateway "
-                    f"(e.g. for --network=host setups)."
+                stderr = (docker_check.stderr or b"").decode(
+                    "utf-8", errors="replace"
                 )
+                if "No such image" in stderr or "Unable to find image" in stderr:
+                    console.print(
+                        f"[red]Runner image not available locally:[/red] "
+                        f"{cfg.docker_image}\n"
+                        f"Pull it first:\n"
+                        f"  docker pull {cfg.docker_image}"
+                    )
+                else:
+                    from harness_evaluator.runner.redaction import (
+                        make_error_excerpt,
+                    )
+
+                    probe_tail = make_error_excerpt(
+                        stderr, max_chars=300, from_end=True
+                    )
+                    console.print(
+                        f"[red]Gateway is reachable on the host but NOT "
+                        f"from inside Docker containers.[/red]\n"
+                        f"The gateway is likely bound to 127.0.0.1 only. "
+                        f"Restart it with:\n"
+                        f"  harness-evaluator gateway --port {cfg.gateway_port}\n"
+                        f"(the default 'auto' host binds the Docker bridge gateway IP, "
+                        f"which containers can reach via host.docker.internal).\n"
+                        f"On Docker Desktop (macOS/Windows), use "
+                        f"--host 0.0.0.0 instead.\n"
+                        f"Or bypass this check with --no-check-gateway "
+                        f"(e.g. for --network=host setups)."
+                    )
+                    if probe_tail:
+                        console.print(f"[dim]Probe output: {probe_tail}[/dim]")
                 raise typer.Exit(1) from None
 
     store = ResultsStore(cfg.results_db)
