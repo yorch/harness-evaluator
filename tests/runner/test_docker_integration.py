@@ -585,6 +585,15 @@ class TestOpenEndedEvaluatorGateway:
                 new_callable=AsyncMock,
                 side_effect=docker_results,
             ),
+            # Patching `harness_evaluator.runner.docker.subprocess.run`
+            # patches the shared `subprocess` module attribute, so it would
+            # also intercept (and steal a git result from) the
+            # `docker network inspect` that host_gateway_url's fallback runs.
+            # Resolve that separately and deterministically.
+            patch(
+                "harness_evaluator.gateway.network.resolve_gateway_host",
+                return_value="172.17.0.1",
+            ),
             patch("harness_evaluator.runner.docker.subprocess.run") as mock_run,
             patch(
                 "harness_evaluator.adapters.registry.create_adapter",
@@ -610,8 +619,18 @@ class TestOpenEndedEvaluatorGateway:
         assert gateway_url_passed is not None, (
             "OpenEndedEvaluator should be constructed with gateway_url"
         )
-        assert "host.docker.internal" in gateway_url_passed, (
-            f"gateway_url should contain host.docker.internal, got: {gateway_url_passed}"
+        # The judge runs on the HOST, so it must be given a host-reachable
+        # address -- NOT the container-facing `gateway_host`. Passing
+        # host.docker.internal (which does not resolve outside a container on
+        # Linux) failed every open-ended cell with
+        # "[Errno -2] Name or service not known" after the harness had
+        # already run and been billed.
+        assert "host.docker.internal" not in gateway_url_passed, (
+            f"the judge must not be given the container-facing gateway host, "
+            f"got: {gateway_url_passed}"
+        )
+        assert gateway_url_passed == f"http://172.17.0.1:{runner.gateway_port}", (
+            f"unexpected host-side gateway url: {gateway_url_passed}"
         )
 
         # Check evaluate received trace_id matching cell.cell_id
@@ -722,6 +741,12 @@ class TestRedactionApplied:
                 "harness_evaluator.runner.docker._run_subprocess",
                 new_callable=AsyncMock,
                 side_effect=docker_results,
+            ),
+            # See the note in TestOpenEndedEvaluatorGateway: the host-side
+            # gateway URL must not consume one of the mocked git results.
+            patch(
+                "harness_evaluator.gateway.network.resolve_gateway_host",
+                return_value="172.17.0.1",
             ),
             patch("harness_evaluator.runner.docker.subprocess.run") as mock_run,
             patch(
