@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/yorch/harness-evaluator/compare/v1.0.0...v1.0.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **cli:** stop the gateway probe confusing a missing image with an unreachable gateway ([#84](https://github.com/yorch/harness-evaluator/issues/84)) ([664f3c1](https://github.com/yorch/harness-evaluator/commit/664f3c1aacbe7786e20f727a9f13ea1283399702))
+
 ## [1.0.0](https://github.com/yorch/harness-evaluator/compare/v0.16.0...v1.0.0) (2026-11-23)
 
 
