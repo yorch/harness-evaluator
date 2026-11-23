@@ -1056,3 +1056,69 @@ class TestCostLabelling:
         text = str(panel.renderable)
         assert "Cost (informational)" in text
         assert "Cost: $" not in text
+
+
+class TestGatewayDockerProbe:
+    """The container-reachability probe must not confuse 'the probe itself
+    could not run' (e.g. the image was never pulled) with 'the gateway is
+    unreachable from containers' -- the two have different fixes."""
+
+    def _invoke_with_probe(
+        self, tmp_path, probe_result, *, isatty: bool = False
+    ):
+        config_file = _write_config(tmp_path)
+        fake_sock = mock.MagicMock()
+        with (
+            mock.patch(
+                "harness_evaluator.gateway.network.resolve_gateway_host",
+                return_value="172.17.0.1",
+            ),
+            mock.patch("socket.create_connection", return_value=fake_sock),
+            mock.patch("subprocess.run", return_value=probe_result) as mock_run,
+            mock.patch("harness_evaluator.runner.docker.DockerRunner"),
+            mock.patch("harness_evaluator.orchestrator.engine.Orchestrator") as mock_orch,
+        ):
+            mock_orch.return_value.run = mock.AsyncMock(return_value=_fake_progress())
+            result = _invoke(
+                ["run", str(config_file), "--no-progress"], isatty=isatty
+            )
+        return result, mock_run, mock_orch
+
+    def test_probe_uses_the_configured_runner_image(self, tmp_path) -> None:
+        """Pinning a throwaway python:* tag made the probe fail with 'No such
+        image' on machines that never pulled it, aborting every run."""
+        result, mock_run, mock_orch = self._invoke_with_probe(
+            tmp_path, mock.MagicMock(returncode=0, stderr=b"")
+        )
+        assert result.exit_code == 0, result.output
+        args = mock_run.call_args.args[0]
+        assert "python:3.12-slim" not in args
+        from harness_evaluator.orchestrator.config import default_docker_image
+
+        assert default_docker_image() in args
+        mock_orch.return_value.run.assert_awaited_once()
+
+    def test_missing_probe_image_is_not_reported_as_unreachable_gateway(
+        self, tmp_path
+    ) -> None:
+        probe = mock.MagicMock(
+            returncode=1,
+            stderr=b"Unable to find image 'img:latest' locally",
+        )
+        result, _, mock_orch = self._invoke_with_probe(tmp_path, probe)
+        assert result.exit_code == 1
+        assert "Runner image not available locally" in result.output
+        assert "docker pull" in result.output
+        assert "NOT from inside Docker containers" not in result.output
+        mock_orch.return_value.run.assert_not_called()
+
+    def test_genuine_probe_failure_shows_stderr_tail(self, tmp_path) -> None:
+        probe = mock.MagicMock(
+            returncode=1, stderr=b"Error response from daemon: connection refused"
+        )
+        result, _, mock_orch = self._invoke_with_probe(tmp_path, probe)
+        assert result.exit_code == 1
+        assert "NOT from inside Docker containers" in result.output
+        assert "Probe output:" in result.output
+        assert "connection refused" in result.output
+        mock_orch.return_value.run.assert_not_called()
