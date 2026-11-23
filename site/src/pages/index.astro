@@ -759,8 +759,8 @@ const base = import.meta.env.BASE_URL;
             </div>
             <h3>Docker Isolation</h3>
             <p>
-              Each harness runs in its own container with <code>--cap-drop=ALL</code>, non-root user,
-              and network policy enforcement.
+              Each harness runs in its own disposable container with <code>--cap-drop=ALL</code>,
+              a fresh repo checkout, and a workspace scoped to that cell.
             </p>
           </div>
           <div class="feature-card reveal">
@@ -949,7 +949,7 @@ const base = import.meta.env.BASE_URL;
             <strong>Orchestrator</strong><span>Builds the eval matrix (harness &times; model &times; task &times; repeats), manages budget caps, and handles cell-level resumability.</span>
           </li>
           <li>
-            <strong>Runner</strong><span>Docker-based isolation, one container per run with capability dropping and non-root execution.</span>
+            <strong>Runner</strong><span>Docker-based isolation, one disposable container per cell with capability dropping.</span>
           </li>
           <li>
             <strong>Adapters</strong><span>Per-harness integration (Python core + TS shims where needed) with a uniform prepare/run/cleanup interface.</span>

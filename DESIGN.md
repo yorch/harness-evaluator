@@ -83,7 +83,9 @@ Leaderboards can be filtered by tier. Comparisons across tiers are flagged.
 ## Isolation
 
 - Docker container per eval cell, disposable
-- Controlled network policy (block non-provider traffic unless task requires it)
+- Capability isolation (`--cap-drop=ALL`); network egress is **not** restricted,
+  since harnesses must reach the provider through the gateway (see the
+  `runner/docker.py` module docstring for the precise posture)
 - Hosted API models only for v1 (local models out of scope)
 - Fresh repo checkout per cell
 
