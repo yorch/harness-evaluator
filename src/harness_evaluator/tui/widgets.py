@@ -130,7 +130,8 @@ class ProgressFooter(Widget):
 
     def __init__(self) -> None:
         super().__init__()
-        self._static = Static()
+        # markup=False: the "[phase]" labels would otherwise be parsed as tags.
+        self._static = Static(markup=False)
         self._static.display = False
         self._refresh_timer: Timer | None = None
         # Latches True after _tick logs a render fault, so a *persistent*
