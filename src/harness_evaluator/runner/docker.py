@@ -21,6 +21,7 @@ import os
 import re
 import shlex
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
@@ -379,6 +380,7 @@ class DockerRunner:
         # store module at construction time (it may not be needed if the
         # runner is used outside an eval context).
         self._phase_store: Any = None
+        self._host_gateway_url: str | None = None
 
     def _make_output_callback(self, cell_id: str) -> OutputCallback | None:
         """Build an ``on_output`` callback for ``_exec_in_container``.
@@ -559,9 +561,7 @@ class DockerRunner:
                 from harness_evaluator.evaluator.open_ended import OpenEndedEvaluator
 
                 oe_evaluator = OpenEndedEvaluator(
-                    gateway_url=(
-                        f"http://{self.gateway_host}:{self.gateway_port}"
-                    )
+                    gateway_url=self.host_gateway_url()
                 )
                 oe_result = await oe_evaluator.evaluate(
                     cell.task, cell_workdir, trace_id=cell.cell_id
@@ -1184,6 +1184,56 @@ class DockerRunner:
         # Keep the container alive long enough for exec commands.
         args.extend(["sleep", str(timeout + 30)])
         return args
+
+    def host_gateway_url(self) -> str:
+        """Return a gateway URL reachable from **this host**, not a container.
+
+        ``self.gateway_host`` is the *container-facing* address
+        (``host.docker.internal`` by default, mapped in via ``--add-host``).
+        Host-side code cannot use it: on Linux that name does not resolve
+        outside a container, so the open-ended judge — which runs on the host
+        — failed every single open-ended cell with
+        ``[Errno -2] Name or service not known``, scoring 0 and recording a
+        judge error after the harness had already been paid for.
+
+        Resolution order:
+
+        1. ``self.gateway_host`` itself, when it resolves here (an explicit
+           IP or a real hostname — including ``host.docker.internal`` on
+           Docker Desktop, where it does resolve).
+        2. The Docker bridge gateway IP, which is what the gateway binds by
+           default and is reachable from the host.
+        3. Loopback.
+
+        The result is cached: resolution shells out to ``docker network
+        inspect`` and this is called once per open-ended cell.
+        """
+        if self._host_gateway_url is not None:
+            return self._host_gateway_url
+
+        from harness_evaluator.gateway.network import (
+            format_host_for_url,
+            resolve_gateway_host,
+        )
+
+        host = self.gateway_host
+        try:
+            socket.getaddrinfo(host, self.gateway_port)
+        except OSError:
+            resolved = resolve_gateway_host()
+            # resolve_gateway_host returns a *bind* address; 0.0.0.0 is not a
+            # destination, so connect to loopback in that case.
+            host = "127.0.0.1" if resolved == "0.0.0.0" else resolved
+            logger.debug(
+                "Gateway host '%s' does not resolve on this host; host-side "
+                "callers (e.g. the open-ended judge) will use '%s' instead.",
+                self.gateway_host,
+                host,
+            )
+        self._host_gateway_url = (
+            f"http://{format_host_for_url(host)}:{self.gateway_port}"
+        )
+        return self._host_gateway_url
 
     def container_gateway_url(self) -> str:
         """Return the gateway URL as seen from *inside* a container.

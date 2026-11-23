@@ -209,6 +209,14 @@ The judge prompt explicitly instructs the LLM to treat diff content as data, not
 
 The judge routes through the gateway proxy when `gateway_url` is set, sending the `x-harness-evaluator-trace-id` header so token usage is captured and attributed to the trace. Direct API calls (without gateway) are a fallback for testing only.
 
+The judge runs on the **host**, not in the container, so the Docker runner
+passes it `DockerRunner.host_gateway_url()` — a host-reachable address —
+rather than the container-facing `gateway_host` (`host.docker.internal` by
+default, which does not resolve outside a container on Linux). Passing the
+container-facing name made every open-ended cell fail with
+`[Errno -2] Name or service not known` *after* the harness had already run
+and been billed.
+
 ### Structural checks
 
 `StructuralChecker` runs three checks:
