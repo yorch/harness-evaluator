@@ -75,8 +75,8 @@ harness-evaluator run <config> [options]
 |--------|------|---------|-------------|
 | `--dry-run` / `--no-dry-run` | flag | `False` | Print the eval matrix without executing |
 | `--check-gateway` / `--no-check-gateway` | flag | `True` | Preflight: check that the gateway is reachable |
-| `--verbose` / `-v` | count | `0` | Increase logging verbosity (`-v`=INFO, `-vv`=DEBUG) |
-| `--progress` / `--no-progress` | flag | `True` | Show a live progress panel during the run (auto-off in non-TTY) |
+| `--verbose` / `-v` | count | `0` | Increase logging verbosity. `run` narrates at INFO by default (see [Run narration](#run-narration)), so `-v` matches the default and `-vv` adds DEBUG detail (harness command lines, tracebacks, diff sizes) |
+| `--progress` / `--no-progress` | flag | `True` | Show a live progress panel during the run (auto-off in non-TTY). `--no-progress` also silences the narration, leaving warnings and errors only |
 | `--no-tui` | flag | `False` | Skip the Textual TUI and use the Rich live panel instead (stays live on a TTY; the TUI's own fallback if it cannot start) |
 | `--auto-gateway` / `--no-auto-gateway` | flag | `True` | Start the gateway as a subprocess when it is not already reachable, and shut it down when the run finishes. Use `--no-auto-gateway` to require a manually started gateway |
 | `--gateway-log` | string | `harness_evaluator_gateway.log` | Where to write the auto-started gateway's stdout/stderr. Ignored when the gateway was started manually |
@@ -96,17 +96,20 @@ harness-evaluator run runs/sample-run.yaml
 # Skip gateway preflight check
 harness-evaluator run runs/sample-run.yaml --no-check-gateway
 
-# Disable the live progress panel (e.g. for CI logs)
+# Quiet: no live panel and no narration, warnings and errors only
 harness-evaluator run runs/sample-run.yaml --no-progress
 
-# Show per-cell INFO logs (retries, budget, gateway calls)
+# Same as the default (run narrates at INFO already)
 harness-evaluator run runs/sample-run.yaml -v
 
-# Show DEBUG-level detail (adapter/docker internals)
+# Show DEBUG-level detail (harness command lines, tracebacks, adapter/docker internals)
 harness-evaluator run runs/sample-run.yaml -vv
 ```
 
 ### Output
+
+The run plan is printed first. It names every location the run writes to,
+so a failure hours later is still investigable:
 
 ```
 Run: broad-first-pass
@@ -114,36 +117,79 @@ Run: broad-first-pass
   Models: ['claude-sonnet-5', 'gpt-5.6-terra']
   Repeats: 5
   Total cells: 1000
-Gateway reachable on port 8877
+  Tasks: 20 (open-design-001, open-design-002, swe-bugfix-001, … (+14))
+  Tracks: 8 open_ended, 12 swe
+  Concurrency: 1 cell(s) at a time  |  Budget cap: $100.00
+  Image: ghcr.io/yorch/harness-evaluator-runner:latest
+  Workdir ./harness_evaluator_workdir  |  Results harness_evaluator_results.db  |  Gateway calls harness_evaluator_gateway.db
+Gateway reachable on 172.17.0.1:8877
 ```
 
-During the run, a Textual TUI is shown (auto-off in non-TTY/CI):
+#### Run narration
+
+Every run mode narrates progress through the logging system at INFO, so
+the TUI log pane, the Rich `Live` panel and plain non-TTY output all show
+the same story:
 
 ```
-┌─ Eval Log ─────────────────────────── harness-evaluator ─┐
-│ 12:34:56 INFO  Run 'sample': budget $100, 0 cells done   │
-│ 12:34:57 INFO  Cell claude-code__claude-sonnet-5__swe... │
-│ 12:35:01 WARN  Cell retrying (attempt 2/3)               │
-│ 12:35:12 ERROR Cell failed: test_timeout                 │
-│                                                           │
-│ (scrollable — scroll up to inspect, `f` to resume tail)  │
-├─ Eval Progress ──────────────────────────────────────────┤
-│ ████████████░░░░░░░░  120/1000 (12.0%)                   │
-│ ✓ 100  ✗ 15  ⊘ 5  ► 1                                   │
-│ Cost: $1.2340 (info) | Cap: $100.00  |  Elapsed: 5:42    │
-│ Running: opencode__claude-sonnet-5__swe-bugfix-003__r0  │
-└──────────────────────────────────────────────────────────┘
+INFO  Run 'sample': 1000 total cells, 0 already completed, 1000 to run (sequentially)
+INFO  ▶ [1/1000] start opencode | claude-sonnet-5 | swe-bugfix-001 | rep 0
+INFO    · opencode__claude-sonnet-5__swe-bugfix-001__r0: preparing the workspace (copying the task repo)
+INFO    · opencode__claude-sonnet-5__swe-bugfix-001__r0: starting the container
+INFO    · opencode__claude-sonnet-5__swe-bugfix-001__r0: running the harness (this is the long part)
+INFO    · opencode__claude-sonnet-5__swe-bugfix-001__r0: harness exited 0 after 74.3s (18402 B stdout, 0 B stderr)
+INFO    · opencode__claude-sonnet-5__swe-bugfix-001__r0: evaluating the result (diff + hidden tests)
+INFO    · opencode__claude-sonnet-5__swe-bugfix-001__r0: evaluation pass (score 1.00, success)
+INFO  ✓ [1/1000] pass opencode | claude-sonnet-5 | swe-bugfix-001 | rep 0 — 81.2s, $0.0214, 14 API calls, 41028 tokens (score 1.00)
+```
+
+Failures are narrated in the same shape, with the failure class and reason:
+
+```
+WARN  ...__r0: harness exited 1 after 68.6s — output tail: Error: API key is invalid
+INFO  ✗ [2/1000] FAIL opencode | claude-sonnet-5 | swe-bugfix-002 | rep 0 — 74.8s, $0.0000, 0 API calls, 0 tokens (score 0.00) [no_change]: No changes were made to the repository; harness error: Error: API key is invalid
+WARN  [2/1000] opencode__claude-sonnet-5__swe-bugfix-002__r0: no API calls were captured for this cell, so nothing was measured — the harness never reached the gateway
+ERROR ✗ [3/1000] ERROR opencode | claude-sonnet-5 | swe-bugfix-003 | rep 0 — RuntimeError: docker run failed (exit 125): Unable to find image … Pull the runner image before the run (docker pull …)
+↻ [4/1000] retry opencode | claude-sonnet-5 | swe-bugfix-004 | rep 0 — attempt 1/3 failed (Harness command timed out after 300s), retrying in 2.0s
+```
+
+The per-cell phases (`cloning`, `container_start`, `setup`,
+`harness_running`, `evaluating`, `aggregating`, `reconciling`) are the same
+values the TUI footer shows, and are also persisted to `run_state.phase`.
+
+#### TUI
+
+On a TTY, a Textual TUI is shown (auto-off in non-TTY/CI):
+
+```
+┌─ Eval Log ─────────────────────────────────────────────────┐
+│ 12:34:57 INFO  ▶ [1/1000] start opencode | claude-sonnet…  │
+│ 12:34:58 INFO    · opencode__claude-sonnet-5__swe-bugfi…   │
+│ 12:35:01 WARN  ↻ [1/1000] retry opencode | … attempt 2/3   │
+│ 12:35:12 ERROR ✗ [1/1000] ERROR opencode | … docker run…   │
+│                                                            │
+│ (scrollable — scroll up to inspect, `f` to resume tail)    │
+├─ Eval Progress ────────────────────────────────────────────┤
+│ ████████████░░░░░░░░  120/1000 (12.0%)                     │
+│ ✓ 100  ✗ 15  ⊘ 5  ► 1  ⚠ 2 infra                          │
+│ Cost: $1.2340 (info) | Cap: $100.00  |  Elapsed: 5:42      │
+│ ! opencode__…__swe-bugfix-003__r0: no_change — No changes…  │
+│ Running:                                                   │
+│   ► opencode | claude-sonnet-5 | swe-bugfix-004 | rep 0 [harness_running] (9 calls, $0.0121) │
+└────────────────────────────────────────────────────────────┘
 ```
 
 The TUI has two regions:
-- **Log area** (top, scrollable) — shows all log output in real time,
+- **Log area** (top, scrollable) — the run narration above, in real time,
   color-coded by level (INFO, WARN, ERROR). Auto-follows the tail; scroll
   up to pause, press `f` to resume.
-- **Progress footer** (bottom, fixed) — shows a progress bar,
-  completed/failed/skipped/running counts, cumulative cost (labelled
-  `(info)`, distinct from the `Cap:` budget figure — see
-  [Budget exemption](orchestrator/#budget-exemption)), elapsed time, and
-  the current cell ID.
+- **Progress footer** (bottom, fixed) — a progress bar,
+  completed/failed/skipped/running counts, a `⚠ N infra` count when any
+  cell hit an infrastructure error, cumulative cost (labelled `(info)`,
+  distinct from the `Cap:` budget figure — see
+  [Budget exemption](orchestrator/#budget-exemption)), elapsed time, the
+  most recent failure, and the running cells with their current phase and
+  live API-call/cost counts.
 
 Keyboard shortcuts:
 
@@ -153,39 +199,66 @@ Keyboard shortcuts:
 | `d` | Toggle DEBUG log level |
 | `t` | Toggle timestamps in log |
 | `f` | Toggle auto-follow (tail mode) |
+| `o` | Cycle the per-cell harness output panel |
 
-The TUI defaults to INFO log level (more useful than the WARNING default
-of non-TUI mode, since the log area makes output readable). `-v` / `-vv`
-are honoured on every path — the TUI, the non-TTY plain path, and the
-Rich `Live` fallback all reconfigure logging to the requested verbosity.
+`-v` / `-vv` are honoured on every path — the TUI, the non-TTY plain path,
+and the Rich `Live` fallback all reconfigure logging to the requested
+verbosity.
 
 When not a TTY (CI, pipes) or `--no-progress` is passed, the TUI is
 skipped and logs go to stderr via a Rich handler.
 
+#### Summary
+
 ```
 Run complete
-  Passed: 600
-  Failed: 400
+  Passed: 600 of 1000
+  Failed: 400 (harness ran, task not solved)
+  Errored: 0 (infrastructure error, no result)
   Skipped: 0
   Total cost (informational, includes budget-exempt cells): $12.3456
   Billable cost: $12.3456 / $100.00 budget cap
 
+Failures by class:
+  312 × wrong_approach
+  88 × no_change
+
+Failure detail (first 10 of 400):
+  opencode__claude-sonnet-5__swe-bugfix-002__r0: no_change — No changes were made …
+  …
+  … and 390 more — see harness-evaluator results broad-first-pass --db harness_evaluator_results.db
+  Full harness stdout/stderr per cell is stored in the results DB (visible in the dashboard's cell detail view).
+
 Next steps
   View per-cell results:
     harness-evaluator results broad-first-pass
-  Generate HTML/JSON/CSV reports:
-    harness-evaluator report broad-first-pass
-  Statistical analysis:
-    harness-evaluator stats broad-first-pass
-  Interactive dashboard:
-    harness-evaluator dashboard --db harness_evaluator_results.db
+  …
 ```
+
+`Failed` and `Errored` are deliberately separate figures:
+
+- **Failed** — the harness ran and the evaluator scored it, but it did not
+  pass. This is a legitimate eval result.
+- **Errored** — the cell produced no result at all, so nothing was
+  measured. Either the infrastructure failed outright (a missing Docker
+  image, a crashed container, retries exhausted) or the cell completed
+  without a single provider call reaching the gateway, which means the
+  harness never talked to the model. When any cell is in this state the
+  headline reads `Run FAILED`, a remediation block is printed, and the
+  command exits non-zero.
+
+A run where every cell failed but none errored is still reported
+prominently (`Run complete, but 0 of N cell(s) passed`), because that is
+almost always a configuration problem rather than a real result.
 
 ### Exit codes
 
-`harness-evaluator run` exits non-zero in two cases beyond an ordinary
+`harness-evaluator run` exits non-zero in three cases beyond an ordinary
 uncaught error:
 
+- **`Run FAILED`** (exit 1): one or more cells hit an infrastructure error
+  and produced no result (`Errored` above is non-zero). The run did not
+  measure what it was asked to measure, so it must not look green in CI.
 - **`Run outcome UNKNOWN`** (exit 1): no final progress snapshot could be
   obtained at all — the TUI exited cleanly with nothing to report and,
   where applicable, the fallback run also produced nothing. Not the same
@@ -197,8 +270,8 @@ uncaught error:
   but incomplete — a partial run is reported honestly rather than as a
   clean "Run complete".
 
-A normal completed run (all cells ran, whether they individually passed
-or failed) exits 0.
+A completed run exits 0 even when harnesses failed their tasks: a harness
+that ran and did not solve the task is a measurement, not a malfunction.
 
 ### Dry run output
 

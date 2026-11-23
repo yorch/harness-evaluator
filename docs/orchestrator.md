@@ -244,13 +244,42 @@ The Docker runner deletes the cell's workdir (`shutil.rmtree`) before starting, 
 |-------|-------------|
 | `total_cells` | Total cells in the matrix |
 | `completed` | Cells that passed (exit_class=pass) |
-| `failed` | Cells that failed (exit_class=fail or kills) |
+| `failed` | Cells that did not pass (exit_class=fail or kills) |
+| `errored` | The subset of `failed` that produced **no result at all** (see below) |
 | `skipped` | Cells skipped (already completed or budget cap) |
 | `running` | Currently executing cells |
 | `total_cost` | Cumulative spend across all cells |
-| `errors` | List of error messages (first 5 shown by CLI) |
+| `errors` | List of error messages (first 10 shown by CLI) |
+| `error_classes` | `{error_class: count}` tally, printed as the CLI's "Failures by class" |
+| `current_cell` / `running_cells` | The last-started cell, and all in-flight cells |
+| `skip_reasons` | `{cell_id: reason}` for every skipped cell |
+
+`errored` is what separates "the harness ran and failed the task" (a
+measurement) from "the run measured nothing" (a malfunction). A cell is
+counted as errored when:
+
+- retries were exhausted (`RETRYABLE_KILL`), or
+- `run_cell_fn` raised a non-retryable exception (`NON_RETRYABLE_KILL`) —
+  e.g. a missing Docker image or a container that would not start, or
+- the cell *completed* but `run_cell_fn` returned an `infra_error` reason.
+  The Docker runner sets this when a failing cell captured zero API calls
+  and its auth mode routes through the gateway, which means the harness
+  never reached the model at all. `codex_chatgpt` deliberately bypasses the
+  gateway, so it is excluded.
+
+`harness-evaluator run` keys its exit code on `errored`, not on `failed` —
+see [CLI Reference → Exit codes](cli-reference/#exit-codes).
 
 Progress counters are mutated under a `_progress_lock` (`asyncio.Lock`) to prevent lost updates when running in parallel.
+
+### Run narration
+
+Every state transition is also logged at INFO (cell start, cell outcome
+with cost/token/API-call figures, retries, budget skips) by the
+orchestrator, and each per-cell execution phase is logged by the Docker
+runner as it is written to `run_state.phase`. This is what the TUI log
+pane, the Rich `Live` panel and plain CI output all display; see
+[CLI Reference → Run narration](cli-reference/#run-narration).
 
 ## Results store schema
 

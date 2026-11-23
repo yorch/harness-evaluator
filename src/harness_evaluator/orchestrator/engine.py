@@ -11,7 +11,9 @@ Handles:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -21,6 +23,31 @@ from harness_evaluator.orchestrator.config import CostMode, RunCell, RunConfig, 
 from harness_evaluator.orchestrator.results_store import ResultsStore
 
 logger = logging.getLogger(__name__)
+
+# Infrastructure errors (a failed `docker run`, an unreachable gateway) carry
+# the remediation hint at the *end* of the message, so they get a longer
+# budget than an eval error message before truncation.
+_INFRA_ERROR_CHARS = 500
+
+
+def cell_label(cell: RunCell) -> str:
+    """Human-readable one-line description of a cell for log narration.
+
+    ``cell_id`` is machine-oriented (``h__m__task__r0``); this is the same
+    information in the form the TUI footer and the CLI summary use, so a
+    reader can tell at a glance which harness/model/task a log line is about.
+    """
+    return (
+        f"{cell.harness.name} | {cell.model.name} | {cell.task.id} | rep {cell.repeat}"
+    )
+
+
+def truncate_message(message: str, limit: int = 200) -> str:
+    """Collapse and bound an error message for single-line log output."""
+    collapsed = " ".join(message.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 1] + "…"
 
 
 class CellStatus(StrEnum):
@@ -61,11 +88,25 @@ class OrchestratorProgress:
     when ``model.cost_mode`` is subscription — see
     ``Orchestrator._is_budget_exempt``, ``_reconcile_reservation`` and
     ``_estimate_cell_cost``.
+
+    ``failed`` counts every cell that did not pass, for backwards
+    compatibility with the footer's ``✗`` count. ``errored`` counts the
+    subset of those that never produced an eval result at all because the
+    infrastructure failed (retries exhausted, or a non-retryable exception
+    out of ``run_cell_fn`` — a missing Docker image, an unreachable
+    gateway, a crashed container). The distinction is what the CLI's exit
+    code is keyed on: a harness that ran and did not solve the task is a
+    legitimate eval result, while an infra error means the run did not
+    measure what it was asked to measure.
+
+    ``error_classes`` counts failures by ``error_class`` so the summary can
+    say *how* cells failed ("18 × no_change") rather than only how many.
     """
 
     total_cells: int = 0
     completed: int = 0
     failed: int = 0
+    errored: int = 0
     skipped: int = 0
     running: int = 0
     total_cost: float = 0.0
@@ -73,6 +114,7 @@ class OrchestratorProgress:
     current_cell: str | None = None
     running_cells: list[str] = field(default_factory=list)
     skip_reasons: dict[str, str] = field(default_factory=dict)
+    error_classes: dict[str, int] = field(default_factory=dict)
 
     @property
     def done(self) -> int:
@@ -94,6 +136,7 @@ class OrchestratorProgress:
             total_cells=self.total_cells,
             completed=self.completed,
             failed=self.failed,
+            errored=self.errored,
             skipped=self.skipped,
             running=self.running,
             total_cost=self.total_cost,
@@ -101,6 +144,7 @@ class OrchestratorProgress:
             current_cell=self.current_cell,
             running_cells=list(self.running_cells),
             skip_reasons=dict(self.skip_reasons),
+            error_classes=dict(self.error_classes),
         )
 
 
@@ -109,6 +153,10 @@ class Orchestrator:
 
     MAX_RETRIES = 3
     RETRY_BASE_DELAY = 2.0  # seconds
+    # How often to log "still running" while cells are in flight. Long
+    # enough not to add noise to the narration, short enough that a CI job
+    # watching for output does not consider the run dead.
+    HEARTBEAT_INTERVAL = 60.0  # seconds
 
     def __init__(
         self,
@@ -149,6 +197,12 @@ class Orchestrator:
         # _estimate_cell_cost uses the real count (not len(tasks) which
         # is wrong when tasks=["*"]).
         self._total_cells: int | None = None
+        # Narration counters: how many cells this process will actually run
+        # (the matrix minus resumability skips) and how many have been
+        # started so far, used to stamp log lines with "[3/12]". Guarded by
+        # the progress lock, like the progress counters themselves.
+        self._pending_total: int = 0
+        self._started: int = 0
 
     async def run(self) -> OrchestratorProgress:
         """Execute the full eval matrix.
@@ -233,34 +287,57 @@ class Orchestrator:
             if c.cell_id in completed:
                 self.progress.skip_reasons[c.cell_id] = "already completed (resumability)"
         await self._notify_progress()
+        self._pending_total = len(pending_cells)
         logger.info(
-            "Run '%s': %d total cells, %d already completed, %d to run",
+            "Run '%s': %d total cells, %d already completed, %d to run (%s)",
             self.config.name,
             len(cells),
             self.progress.skipped,
             len(pending_cells),
+            f"{self.config.parallel_runs} in parallel"
+            if self.config.parallel_runs > 1
+            else "sequentially",
         )
+        if not pending_cells:
+            logger.warning(
+                "Run '%s': nothing to run — every cell in the matrix is already "
+                "completed in %s. Use a different run name, or delete that "
+                "results DB, to re-run from scratch.",
+                self.config.name,
+                self.config.results_db,
+            )
 
-        # Execute cells (sequential or parallel)
-        if self.config.parallel_runs <= 1:
-            for cell in pending_cells:
-                await self._run_cell_with_budget_check(cell)
-        else:
-            # Parallel execution with semaphore. return_exceptions=True so a
-            # single cell raising an unexpected error does not cancel its
-            # siblings mid-flight (each cell already records its own outcome).
-            sem = asyncio.Semaphore(self.config.parallel_runs)
-            tasks = [self._run_cell_with_budget_and_sem(sem, cell) for cell in pending_cells]
-            gather_results = await asyncio.gather(*tasks, return_exceptions=True)
-            for cell, outcome in zip(pending_cells, gather_results, strict=True):
-                if isinstance(outcome, BaseException):
-                    logger.error("Cell %s raised unexpectedly: %s", cell.cell_id, outcome)
+        # Execute cells (sequential or parallel), with a heartbeat so a long
+        # cell does not look like a hang.
+        heartbeat = asyncio.create_task(self._heartbeat())
+        try:
+            if self.config.parallel_runs <= 1:
+                for cell in pending_cells:
+                    await self._run_cell_with_budget_check(cell)
+            else:
+                # Parallel execution with semaphore. return_exceptions=True so a
+                # single cell raising an unexpected error does not cancel its
+                # siblings mid-flight (each cell already records its own outcome).
+                sem = asyncio.Semaphore(self.config.parallel_runs)
+                tasks = [
+                    self._run_cell_with_budget_and_sem(sem, cell) for cell in pending_cells
+                ]
+                gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+                for cell, outcome in zip(pending_cells, gather_results, strict=True):
+                    if isinstance(outcome, BaseException):
+                        logger.error("Cell %s raised unexpectedly: %s", cell.cell_id, outcome)
+        finally:
+            heartbeat.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat
 
         logger.info(
-            "Run '%s' complete: %d passed, %d failed, %d skipped, $%.4f spent",
+            "Run '%s' complete: %d passed, %d failed (%d of them infrastructure "
+            "errors), %d skipped, $%.4f spent",
             self.config.name,
             self.progress.completed,
             self.progress.failed,
+            self.progress.errored,
             self.progress.skipped,
             self.progress.total_cost,
         )
@@ -319,11 +396,11 @@ class Orchestrator:
                     self._remaining_budget <= 0 or self._remaining_budget < estimate
                 ):
                     logger.warning(
-                        "Budget cap reached ($%.4f remaining < $%.4f "
-                        "estimated), skipping cell %s",
+                        "⊘ skip %s — budget cap reached ($%.4f remaining < "
+                        "$%.4f estimated for this cell)",
+                        cell_label(cell),
                         self._remaining_budget,
                         estimate,
-                        cell.cell_id,
                     )
                     skip_reason = (
                         f"Budget cap reached (${self._remaining_budget:.4f} "
@@ -346,7 +423,18 @@ class Orchestrator:
             self.progress.running += 1
             self.progress.current_cell = cell.cell_id
             self.progress.running_cells.append(cell.cell_id)
+            self._started += 1
+            ordinal = self._ordinal(self._started)
         await self._notify_progress()
+        cell_started_at = time.monotonic()
+        logger.info("▶ %s start %s", ordinal, cell_label(cell))
+        logger.debug(
+            "%s cell_id=%s track=%s timeout=%ss",
+            ordinal,
+            cell.cell_id,
+            cell.task.track,
+            cell.task.timeout_seconds,
+        )
 
         try:
             # --- Phase 1: run the harness with retry (only run_cell_fn is
@@ -363,21 +451,25 @@ class Orchestrator:
                         retry_count += 1
                         delay = self.RETRY_BASE_DELAY * (2 ** (retry_count - 1))
                         logger.warning(
-                            "Cell %s failed (retryable, attempt %d/%d): %s. "
-                            "Retrying in %.1fs",
-                            cell.cell_id,
+                            "↻ %s retry %s — attempt %d/%d failed (%s), "
+                            "retrying in %.1fs",
+                            ordinal,
+                            cell_label(cell),
                             retry_count,
                             self.MAX_RETRIES,
-                            e,
+                            truncate_message(str(e)),
                             delay,
                         )
                         await asyncio.sleep(delay)
                         continue
                     logger.error(
-                        "Cell %s exhausted retries (%d): %s",
-                        cell.cell_id,
+                        "✗ %s ERROR %s — retries exhausted after %d attempts "
+                        "in %.1fs: %s",
+                        ordinal,
+                        cell_label(cell),
                         self.MAX_RETRIES,
-                        e,
+                        time.monotonic() - cell_started_at,
+                        truncate_message(str(e), _INFRA_ERROR_CHARS),
                     )
                     async with self._budget_lock:
                         self._release_reservation(cell.cell_id)
@@ -387,7 +479,11 @@ class Orchestrator:
                         )
                     async with self._progress_lock:
                         self.progress.failed += 1
-                        self.progress.errors.append(f"{cell.cell_id}: {e}")
+                        self.progress.errored += 1
+                        self._count_error_class("retry_exhausted")
+                        self.progress.errors.append(
+                            f"{cell.cell_id}: retry_exhausted — {e}"
+                        )
                     await self._notify_progress()
                     return
 
@@ -486,11 +582,25 @@ class Orchestrator:
                         self.progress.completed += 1
                     else:
                         self.progress.failed += 1
+                        # A cell can complete (the harness ran, the evaluator
+                        # scored it) and still be an infrastructure failure:
+                        # `run_cell_fn` sets `infra_error` when the result is
+                        # not a measurement of anything, e.g. no provider call
+                        # was ever captured. Count it with the kills so the
+                        # summary headline and exit code reflect it.
+                        infra_error = result.get("infra_error")
+                        if infra_error:
+                            self.progress.errored += 1
                         # Surface eval failures (not just infra kills) in
                         # progress.errors so the CLI summary can show
                         # *why* a cell failed, not just that it did.
                         err_cls = result.get("error_class") or "unknown"
                         err_msg = result.get("error_message") or ""
+                        if infra_error:
+                            err_msg = (
+                                f"{err_msg}; {infra_error}" if err_msg else str(infra_error)
+                            )
+                        self._count_error_class(str(err_cls))
                         if err_msg:
                             self.progress.errors.append(
                                 f"{cell.cell_id}: {err_cls} — {err_msg}"
@@ -500,6 +610,10 @@ class Orchestrator:
                                 f"{cell.cell_id}: {err_cls}"
                             )
                 await self._notify_progress()
+                self._log_cell_outcome(
+                    cell, ordinal, result, exit_class, success, cell_cost,
+                    time.monotonic() - cell_started_at,
+                )
             except Exception as persist_err:
                 logger.error(
                     "Failed to persist result for cell %s (harness completed): %s",
@@ -509,11 +623,20 @@ class Orchestrator:
             return
 
         except asyncio.CancelledError:
-            logger.warning("Cell %s cancelled", cell.cell_id)
+            logger.warning("⊗ %s cancelled %s", ordinal, cell_label(cell))
             raise
         except Exception as e:
             # Non-retryable error raised by the harness (run_cell_fn).
-            logger.error("Cell %s failed (non-retryable): %s", cell.cell_id, e)
+            logger.error(
+                "✗ %s ERROR %s — %s: %s",
+                ordinal,
+                cell_label(cell),
+                type(e).__name__,
+                truncate_message(str(e), _INFRA_ERROR_CHARS),
+            )
+            logger.debug(
+                "Non-retryable failure detail for cell %s", cell.cell_id, exc_info=True
+            )
             async with self._budget_lock:
                 self._release_reservation(cell.cell_id)
                 self._save_failure(
@@ -522,7 +645,9 @@ class Orchestrator:
                 )
             async with self._progress_lock:
                 self.progress.failed += 1
-                self.progress.errors.append(f"{cell.cell_id}: {e}")
+                self.progress.errored += 1
+                self._count_error_class("non_retryable")
+                self.progress.errors.append(f"{cell.cell_id}: non_retryable — {e}")
             await self._notify_progress()
             return
         finally:
@@ -536,6 +661,100 @@ class Orchestrator:
                 if cell.cell_id in self.progress.running_cells:
                     self.progress.running_cells.remove(cell.cell_id)
             await self._notify_progress()
+
+    async def _heartbeat(self) -> None:
+        """Periodically log that the run is still alive and where it is.
+
+        A single cell routinely runs for several minutes inside
+        ``harness_running``, during which nothing else logs. Without a
+        heartbeat that is indistinguishable from a hang — and some CI
+        systems kill a job that produces no output at all. Only logs while
+        at least one cell is in flight, so it stays quiet in fast runs and
+        in tests (the interval is far longer than any test run).
+
+        Cancelled by ``run()`` when the matrix finishes.
+        """
+        while True:
+            await asyncio.sleep(self.HEARTBEAT_INTERVAL)
+            async with self._progress_lock:
+                snapshot = self.progress.snapshot()
+            if snapshot.running <= 0:
+                continue
+            logger.info(
+                "… still running: %d/%d done (%d in flight: %s), $%.4f so far",
+                snapshot.done,
+                snapshot.total_cells,
+                snapshot.running,
+                ", ".join(snapshot.running_cells) or (snapshot.current_cell or "?"),
+                snapshot.total_cost,
+            )
+
+    def _ordinal(self, started: int) -> str:
+        """Return the ``[3/12]`` progress stamp for a cell's log lines.
+
+        The denominator is the number of cells this process will actually
+        run (the matrix minus resumability skips), which is what the reader
+        is waiting on. Under ``parallel_runs > 1`` the numerator is the
+        order cells were *started* in, not a position in a queue.
+        """
+        total = self._pending_total or self.progress.total_cells
+        return f"[{started}/{total}]" if total else f"[{started}]"
+
+    def _count_error_class(self, error_class: str) -> None:
+        """Tally a failure by error class. Call under the progress lock."""
+        self.progress.error_classes[error_class] = (
+            self.progress.error_classes.get(error_class, 0) + 1
+        )
+
+    def _log_cell_outcome(
+        self,
+        cell: RunCell,
+        ordinal: str,
+        result: dict[str, Any],
+        exit_class: str,
+        success: Any,
+        cell_cost: float,
+        elapsed_s: float,
+    ) -> None:
+        """Narrate a completed cell's outcome at INFO.
+
+        Two shapes, both carrying the cost/token/API-call figures that make
+        a result interpretable without opening the results DB:
+
+          ``✓ [3/12] pass  h | m | task | rep 0 — 62.1s, $0.0210, 14 calls``
+          ``✗ [3/12] FAIL  h | m | task | rep 0 — no_change: <why>``
+
+        Zero API calls on a failing cell is the signature of a harness that
+        never reached the gateway at all; the runner already warns about
+        that case in detail (see ``DockerRunner.run_cell``), so it is only
+        reflected in the ``0 API calls`` figure here.
+        """
+        usage = result.get("usage")
+        tokens = 0
+        if usage is not None:
+            tokens = getattr(usage, "input_tokens", 0) + getattr(usage, "output_tokens", 0)
+        calls = result.get("num_api_calls", 0)
+        stats = f"{elapsed_s:.1f}s, ${cell_cost:.4f}, {calls} API calls, {tokens} tokens"
+        if exit_class == ExitClass.PASS.value:
+            logger.info(
+                "✓ %s pass %s — %s (score %.2f)",
+                ordinal, cell_label(cell), stats, float(success or 0.0),
+            )
+            return
+        err_cls = result.get("error_class") or "unknown"
+        err_msg = truncate_message(str(result.get("error_message") or ""))
+        logger.info(
+            "✗ %s FAIL %s — %s (score %.2f) [%s]%s",
+            ordinal,
+            cell_label(cell),
+            stats,
+            float(success or 0.0),
+            err_cls,
+            f": {err_msg}" if err_msg else "",
+        )
+        infra_error = result.get("infra_error")
+        if infra_error:
+            logger.warning("%s %s: %s", ordinal, cell.cell_id, infra_error)
 
     def _save_failure(
         self,

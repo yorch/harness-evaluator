@@ -27,6 +27,17 @@ if TYPE_CHECKING:
     from harness_evaluator.gateway.autostart import GatewaySubprocess
     from harness_evaluator.tui import EvalApp
 
+# How many individual failure messages the run summary prints before
+# deferring to `harness-evaluator results`. Five was too few to diagnose a
+# run where several different things went wrong at once.
+_MAX_ERRORS_SHOWN = 10
+
+# Per-failure character budget in the summary. Infrastructure errors carry
+# their remediation hint at the end of the message (see
+# `DockerRunner._start_container`), so cutting at a few hundred characters
+# threw away the actionable half.
+_MAX_ERROR_CHARS = 500
+
 app = typer.Typer(
     name="harness-evaluator",
     help="Harness evaluator: compare agentic coding harnesses on effectiveness and efficiency.",
@@ -244,6 +255,39 @@ def canary(
         raise typer.Exit(1)
 
 
+def _print_run_plan(cfg: Any, cells: list[Any]) -> None:
+    """Print what the run will actually do, and where its output will land.
+
+    A run can take hours and writes to four different places (workdir,
+    results DB, gateway DB, gateway log). Naming them up front is what
+    makes a failure investigable afterwards — "check the gateway log" is
+    only actionable if the user was told which file that is.
+    """
+    tracks: dict[str, int] = {}
+    for cell in cells:
+        track = getattr(cell.task.track, "value", str(cell.task.track))
+        tracks[track] = tracks.get(track, 0) + 1
+    task_ids = sorted({c.task.id for c in cells})
+    shown = ", ".join(task_ids[:6]) + (f", … (+{len(task_ids) - 6})" if len(task_ids) > 6 else "")
+    console.print(f"  Tasks: {len(task_ids)} ({shown})")
+    console.print(
+        "  Tracks: " + ", ".join(f"{count} {track}" for track, count in sorted(tracks.items()))
+    )
+    console.print(
+        f"  Concurrency: {cfg.parallel_runs} cell(s) at a time"
+        + (
+            f"  |  Budget cap: ${cfg.budget_usd:.2f}"
+            if cfg.budget_usd is not None
+            else "  |  Budget cap: none"
+        )
+    )
+    console.print(f"  Image: {cfg.docker_image}")
+    console.print(
+        f"  [dim]Workdir {cfg.workdir}  |  Results {cfg.results_db}  "
+        f"|  Gateway calls {cfg.gateway_db}[/dim]"
+    )
+
+
 def _render_progress_panel(
     progress: Any,
     start_time: float,
@@ -264,13 +308,18 @@ def _render_progress_panel(
     filled = int(bar_width * done / total) if total else 0
     bar = "█" * filled + "░" * (bar_width - filled)
 
-    # Counts line
+    # Counts line. `errored` is the infra-failure subset of `failed`; it is
+    # shown separately because it is the difference between "the harness
+    # tried and got it wrong" (a result) and "the run is broken" (not one).
+    errored = getattr(progress, "errored", 0)
     counts = (
         f"[green]✓ {progress.completed}[/green]  "
         f"[red]✗ {progress.failed}[/red]  "
         f"[yellow]⊘ {progress.skipped}[/yellow]  "
         f"[blue]► {progress.running}[/blue]"
     )
+    if errored:
+        counts += f"  [bold red]⚠ {errored} infra error(s)[/bold red]"
 
     # Cost line. `progress.total_cost` is the informational "true cost of
     # every cell" figure — it is NOT the figure charged against `budget`
@@ -301,7 +350,18 @@ def _render_progress_panel(
         f"{cost_line}  |  Elapsed: {elapsed:.0f}s\n"
         f"[dim]{cell_line}[/dim]"
     )
+    # Most recent failure, so a run that is quietly failing every cell says
+    # so on screen instead of only in the final summary.
+    if progress.errors:
+        last = escape(_one_line(progress.errors[-1], 110))
+        content += f"\n[red]Last failure: {last}[/red]"
     return Panel(content, title="[bold]Eval Progress[/bold]", border_style="blue")
+
+
+def _one_line(text: str, limit: int) -> str:
+    """Collapse whitespace and bound ``text`` to ``limit`` characters."""
+    collapsed = " ".join(text.split())
+    return collapsed if len(collapsed) <= limit else collapsed[: limit - 1] + "…"
 
 
 @app.command()
@@ -377,6 +437,7 @@ def run(
         raise typer.Exit(1) from exc
 
     console.print(f"  Total cells: {len(cells)}")
+    _print_run_plan(cfg, cells)
 
     if dry_run:
         table = Table(title="Eval Matrix")
@@ -479,7 +540,8 @@ def run(
 
             if started:
                 console.print(
-                    f"[green]Gateway auto-started on port {cfg.gateway_port}[/green]"
+                    f"[green]Gateway auto-started on port {cfg.gateway_port}[/green] "
+                    f"[dim](log: {gateway_log or 'harness_evaluator_gateway.log'})[/dim]"
                 )
                 reachable_on = "auto-started"
             else:
@@ -630,12 +692,15 @@ def run(
     # than attempting (and never using) the TUI first.
     want_live_panel = show_progress and no_tui and sys.stdout.isatty()
 
-    # Non-TTY runs default to WARNING (silent) at verbose=0. When the user
-    # asked for progress but no live UI is possible, floor the level at
-    # INFO so the run reports *something* between the matrix banner and the
-    # final summary instead of going dark end to end.
+    # Logging defaults to WARNING (silent) at verbose=0, which for a run
+    # means no narration at all: no cell start/finish lines, no phase
+    # transitions, no harness exit codes. Whenever progress was asked for
+    # (the default), floor the level at INFO so every mode — TUI log pane,
+    # Rich `Live` panel, and the plain non-TTY path — narrates the run.
+    # An explicit --no-progress still means "be quiet"; -vv still means
+    # DEBUG.
     effective_verbose = verbose
-    if show_progress and not sys.stdout.isatty() and effective_verbose < 1:
+    if show_progress and effective_verbose < 1:
         effective_verbose = 1
     _configure_logging(effective_verbose)
 
@@ -754,10 +819,30 @@ def run(
             "\n[bold red]Run interrupted[/bold red]: the TUI crashed before the run "
             "finished. The numbers below are PARTIAL, not a completed run."
         )
+    elif progress.errored:
+        # Cells that never produced an eval result at all: the run did not
+        # measure what it was asked to measure. Say so in the headline
+        # rather than burying it in a "Failed:" count that also covers
+        # harnesses which legitimately failed their task.
+        console.print(
+            f"\n[bold red]Run FAILED[/bold red]: {progress.errored} of "
+            f"{progress.total_cells} cell(s) hit an infrastructure error and "
+            "produced no result."
+        )
+    elif progress.total_cells and not progress.completed and progress.failed:
+        console.print(
+            f"\n[bold yellow]Run complete, but 0 of {progress.total_cells} "
+            "cell(s) passed[/bold yellow] — this is usually a configuration "
+            "problem rather than a harness result. See the failures below."
+        )
     else:
         console.print("\n[bold green]Run complete[/bold green]")
-    console.print(f"  Passed: {progress.completed}")
-    console.print(f"  Failed: {progress.failed}")
+    eval_failed = max(progress.failed - progress.errored, 0)
+    console.print(f"  Passed: {progress.completed} of {progress.total_cells}")
+    console.print(f"  Failed: {eval_failed} [dim](harness ran, task not solved)[/dim]")
+    console.print(
+        f"  Errored: {progress.errored} [dim](infrastructure error, no result)[/dim]"
+    )
     console.print(f"  Skipped: {progress.skipped}")
     console.print(
         f"  Total cost (informational, includes budget-exempt cells): "
@@ -795,14 +880,48 @@ def run(
             for cell_id, reason in sorted(progress.skip_reasons.items()):
                 console.print(f"    {cell_id}: {reason}")
 
-    # Show first few failures if any
+    # Failure breakdown: how cells failed (grouped), then the individual
+    # messages. Grouping first is what turns "400 failed" into a diagnosis —
+    # "400 × no_change" is a config problem, a spread across error classes
+    # is a genuine set of eval results.
+    if progress.error_classes:
+        console.print("\n[red]Failures by class:[/red]")
+        for err_cls, count in sorted(
+            progress.error_classes.items(), key=lambda kv: (-kv[1], kv[0])
+        ):
+            console.print(f"  {count} × {escape(err_cls)}")
     if progress.errors:
-        console.print(f"\n[red]First {min(5, len(progress.errors))} errors:[/red]")
-        for err in progress.errors[:5]:
+        shown = progress.errors[:_MAX_ERRORS_SHOWN]
+        console.print(
+            f"\n[red]Failure detail (first {len(shown)} of "
+            f"{len(progress.errors)}):[/red]"
+        )
+        for err in shown:
             # Escape Rich markup — error messages may contain [brackets]
             # from harness stderr excerpts that would otherwise be
             # interpreted as Rich tags and raise MarkupError.
-            console.print(f"  {escape(err)}")
+            console.print(f"  {escape(_one_line(err, _MAX_ERROR_CHARS))}")
+        if len(progress.errors) > len(shown):
+            console.print(
+                f"  [dim]… and {len(progress.errors) - len(shown)} more — see "
+                f"harness-evaluator results {cfg.name} --db {cfg.results_db}[/dim]"
+            )
+        console.print(
+            "  [dim]Full harness stdout/stderr per cell is stored in the results "
+            "DB (visible in the dashboard's cell detail view).[/dim]"
+        )
+    if progress.errored:
+        # Where to look next for the class of failure that is never the
+        # harness's own doing.
+        console.print(
+            "\n[bold]Infrastructure errors[/bold] usually mean one of:\n"
+            "  - the runner image is missing → "
+            f"docker pull {cfg.docker_image}\n"
+            "  - the gateway is unreachable from containers → "
+            f"harness-evaluator gateway --port {cfg.gateway_port}\n"
+            "  - credentials are missing or invalid → harness-evaluator check-keys\n"
+            f"  Gateway log: {gateway_log or 'harness_evaluator_gateway.log'}"
+        )
 
     # Next steps: tell the user how to explore the results.
     # Pass --db explicitly so the commands work regardless of which
@@ -817,9 +936,16 @@ def run(
     console.print("  [dim]Interactive dashboard:[/dim]")
     console.print(f"    harness-evaluator dashboard --db {cfg.results_db}")
 
-    if tui_panicked:
-        # Partial results from a mid-run TUI crash (see above): everything
-        # useful has now been printed, but this is not a clean run.
+    if tui_panicked or progress.errored:
+        # Two non-clean outcomes: partial results from a mid-run TUI crash
+        # (see above), or cells that never produced a result because the
+        # infrastructure failed. Both have printed everything useful by
+        # now, and neither is a run whose numbers can be trusted as
+        # complete, so neither may exit 0 — a CI job that pulls the wrong
+        # image or runs without credentials must not look green.
+        #
+        # A harness that ran and failed its task is NOT in this bucket: it
+        # is a legitimate eval result and still exits 0.
         if gw_subprocess is not None:
             gw_subprocess.cleanup()
         raise typer.Exit(1)
