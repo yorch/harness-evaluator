@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.0.0](https://github.com/yorch/harness-evaluator/compare/v0.16.0...v1.0.0) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** separate infrastructure errors from eval failures ([#80](https://github.com/yorch/harness-evaluator/issues/80))
+
+### Features
+
+* **cli:** separate infrastructure errors from eval failures ([#80](https://github.com/yorch/harness-evaluator/issues/80)) ([f1c9360](https://github.com/yorch/harness-evaluator/commit/f1c9360df07d06fc014d9e1a4d3e63bf7cbb0781))
+* **evaluator:** surface the actual cause in crash and docker-run errors ([#78](https://github.com/yorch/harness-evaluator/issues/78)) ([25d6f5c](https://github.com/yorch/harness-evaluator/commit/25d6f5c60742e2b530e8c3c361c5622ee23ccf6c))
+* **orchestrator:** narrate the run cell by cell ([#79](https://github.com/yorch/harness-evaluator/issues/79)) ([a8e1b49](https://github.com/yorch/harness-evaluator/commit/a8e1b498ae07c7da402d16076ebe9720e01263b3))
+
+
+### Bug Fixes
+
+* **runner:** give the open-ended judge a host-reachable gateway url ([#83](https://github.com/yorch/harness-evaluator/issues/83)) ([43fab88](https://github.com/yorch/harness-evaluator/commit/43fab88ea5aeebff1e8bab433fdfc17d100364a4))
+* **runner:** run hidden tests in the image and make host networking usable ([#75](https://github.com/yorch/harness-evaluator/issues/75)) ([5e7b5ee](https://github.com/yorch/harness-evaluator/commit/5e7b5eeb5376205629853d748e77fc49410a4f7d))
+* **tui:** show per-cell phase labels in the progress footer ([#77](https://github.com/yorch/harness-evaluator/issues/77)) ([f4ff191](https://github.com/yorch/harness-evaluator/commit/f4ff19110a4f6b04630a946fe39fc543d41d3810))
+
+
+### Documentation
+
+* correct the isolation claims the code never backed ([#73](https://github.com/yorch/harness-evaluator/issues/73)) ([138fbf4](https://github.com/yorch/harness-evaluator/commit/138fbf4bc33b4688d4646e51e0ef272702c2d528))
+
 ## [0.16.0](https://github.com/yorch/harness-evaluator/compare/v0.15.1...v0.16.0) (2026-09-05)
 
 
