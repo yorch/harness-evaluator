@@ -208,6 +208,7 @@ class EvalApp(App[object]):
             total_cells=snapshot.total_cells,
             completed=snapshot.completed,
             failed=snapshot.failed,
+            errored=snapshot.errored,
             skipped=snapshot.skipped,
             running=snapshot.running,
             total_cost=snapshot.total_cost,
@@ -217,6 +218,7 @@ class EvalApp(App[object]):
             start_time=start_time,
             cell_phases=dict(prev_phases),
             cell_api_stats=dict(prev_api_stats),
+            last_error=snapshot.errors[-1] if snapshot.errors else None,
         )
 
     def _poll_cell_activity(self, state: FooterState) -> None:

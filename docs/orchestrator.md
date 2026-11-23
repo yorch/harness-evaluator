@@ -244,14 +244,41 @@ The Docker runner deletes the cell's workdir (`shutil.rmtree`) before starting, 
 |-------|-------------|
 | `total_cells` | Total cells in the matrix |
 | `completed` | Cells that passed (exit_class=pass) |
-| `failed` | Cells that failed (exit_class=fail or kills) |
+| `failed` | Cells that did not pass (exit_class=fail or kills) |
+| `errored` | The subset of `failed` that produced **no result at all** (see below) |
 | `skipped` | Cells skipped (already completed or budget cap) |
 | `running` | Currently executing cells |
 | `total_cost` | Cumulative spend across all cells |
-| `errors` | List of error messages (first 5 shown by CLI) |
+| `errors` | List of error messages (first 10 shown by CLI) |
+| `error_classes` | `{error_class: count}` tally, printed as the CLI's "Failures by class" |
 | `current_cell` / `running_cells` | The last-started cell, and all in-flight cells |
 | `skip_reasons` | `{cell_id: reason}` for every skipped cell |
 
+`errored` is what separates "the harness ran and failed the task" (a
+measurement) from "the run measured nothing" (a malfunction). A cell is
+counted as errored when:
+
+- retries were exhausted (`RETRYABLE_KILL`), or
+- `run_cell_fn` raised a non-retryable exception (`NON_RETRYABLE_KILL`) —
+  e.g. a missing Docker image or a container that would not start, or
+- the cell *completed* but `run_cell_fn` returned an `infra_error` reason.
+  The Docker runner sets this when the harness never started (no adapter
+  registered under the configured name), or when a failing cell captured zero API calls
+  although the harness was handed the gateway URL (in its env or on its
+  command line) and its adapter is known to honour it. Adapters that talk
+  to their own backend (Cursor, Copilot, Kiro, Antigravity, Google models)
+  and `minimal`-tier adapters that may ignore the base URL (Pi, OMP) are
+  excluded, since zero captured calls is expected for them. Such a cell is
+  persisted as `NON_RETRYABLE_KILL` with score 0 and the reason appended to
+  `error_message`, so statistics treat it like any other infrastructure
+  kill, and its `run_state` is `failed`, so a resume re-runs it.
+
+  For open-ended cells, the judge's calls share the cell's trace, so a
+  harness that never reached the model can go undetected there. That only
+  ever under-reports infrastructure errors; it never flags a real result.
+
+`harness-evaluator run` keys its exit code on `errored`, not on `failed` —
+see [CLI Reference → Exit codes](cli-reference/#exit-codes).
 
 Progress counters are mutated under a `_progress_lock` (`asyncio.Lock`) to prevent lost updates when running in parallel.
 
