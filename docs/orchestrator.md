@@ -249,8 +249,20 @@ The Docker runner deletes the cell's workdir (`shutil.rmtree`) before starting, 
 | `running` | Currently executing cells |
 | `total_cost` | Cumulative spend across all cells |
 | `errors` | List of error messages (first 5 shown by CLI) |
+| `current_cell` / `running_cells` | The last-started cell, and all in-flight cells |
+| `skip_reasons` | `{cell_id: reason}` for every skipped cell |
+
 
 Progress counters are mutated under a `_progress_lock` (`asyncio.Lock`) to prevent lost updates when running in parallel.
+
+### Run narration
+
+Every state transition is also logged at INFO (cell start, cell outcome
+with cost/token/API-call figures, retries, budget skips) by the
+orchestrator, and each per-cell execution phase is logged by the Docker
+runner as it is written to `run_state.phase`. This is what the TUI log
+pane, the Rich `Live` panel and plain CI output all display; see
+[CLI Reference → Run narration](cli-reference/#run-narration).
 
 ## Results store schema
 
