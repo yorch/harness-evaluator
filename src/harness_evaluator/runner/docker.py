@@ -4,8 +4,25 @@ Each run gets a fresh container with:
   - The task repo cloned and set up on the host (mounted as a volume)
   - The harness installed and configured
   - The gateway proxy accessible for token accounting
-  - Network policy enforced
   - Timeout enforcement
+
+What the container is and is not isolated from, stated precisely because it has
+been overstated before:
+
+- **Capabilities**: ``--cap-drop=ALL``.
+- **User**: the *invoking* user, not a dedicated unprivileged one. On a root
+  host the container therefore runs as root (see ``run_as_user``), because the
+  bind-mounted workdir is host-owned and must stay writable both ways.
+- **Filesystem**: the cell workdir, plus -- under OAuth auth modes -- a
+  writable temp copy of the harness's credential directory, which carries live
+  tokens (see ``_resolve_credential_mounts``).
+- **Network**: not restricted. Verified against a real daemon: outbound
+  internet works, host loopback-only services are *not* reachable, and other
+  containers on the same default bridge *are*. Restricting egress would mean
+  allowlisting rather than blocking, since harnesses must reach the gateway and
+  through it the provider API -- a feature rather than a flag, and one that
+  would change what is measured, as at least one harness alters its behaviour
+  when it detects a contained environment with no internet.
 
 The runner uses Approach A: it launches a long-running container
 (``docker run -d ... sleep``), then runs setup and the harness command
@@ -338,7 +355,6 @@ class DockerRunner:
         workdir_base: str = "./harness_evaluator_workdir",
         gateway_host: str = "host.docker.internal",
         gateway_port: int = 8877,
-        network: str = "harness-evaluator-net",
         gateway_db: str = "harness_evaluator_gateway.db",
         results_db: str = "harness_evaluator_results.db",
         docker_bin: str = "docker",
@@ -352,7 +368,6 @@ class DockerRunner:
         self.workdir_base = Path(workdir_base)
         self.gateway_host = gateway_host
         self.gateway_port = gateway_port
-        self.network = network
         self.gateway_db = gateway_db
         self.results_db = results_db
         self.docker_bin = docker_bin
