@@ -471,6 +471,83 @@ class TestContainerLifecycle:
                     workdir, {}, timeout=60, name="c1"
                 )
 
+    async def _start_container_error(
+        self, runner: DockerRunner, tmp_path: Any, stderr: str
+    ) -> str:
+        """Return the RuntimeError message for a failing ``docker run``."""
+        workdir = tmp_path / "wd"
+        workdir.mkdir(exist_ok=True)
+        with patch(
+            "harness_evaluator.runner.docker._run_subprocess", new_callable=AsyncMock
+        ) as mock_run:
+            mock_run.return_value = CompletedProcess(
+                returncode=125, stdout="", stderr=stderr
+            )
+            with pytest.raises(RuntimeError) as excinfo:
+                await runner._start_container(workdir, {}, timeout=60, name="c1")
+        return str(excinfo.value)
+
+    async def test_missing_image_error_names_the_pull_command(
+        self, runner: DockerRunner, tmp_path: Any
+    ):
+        """The most common way a run fails on a fresh machine. The raw docker
+        stderr does not say which image the config asked for, nor that
+        pre-pulling is the fix."""
+        message = await self._start_container_error(
+            runner,
+            tmp_path,
+            "Unable to find image 'ghcr.io/x/runner:latest' locally\n"
+            "docker: Error response from daemon: pull access denied",
+        )
+        assert "docker pull" in message
+        assert "docker_image setting" in message
+
+    async def test_stale_container_error_names_the_removal_command(
+        self, runner: DockerRunner, tmp_path: Any
+    ):
+        message = await self._start_container_error(
+            runner,
+            tmp_path,
+            'Conflict. The container name "/harness-evaluator-c1" is already '
+            "in use by container \"abc123\".",
+        )
+        # The hint names the container this call was asked to create, which
+        # is the already-sanitized name the caller passed in.
+        assert "docker rm -f c1" in message
+
+    async def test_daemon_permission_error_is_explained(
+        self, runner: DockerRunner, tmp_path: Any
+    ):
+        message = await self._start_container_error(
+            runner,
+            tmp_path,
+            "permission denied while trying to connect to the Docker daemon socket",
+        )
+        assert "docker" in message.lower()
+        assert "group" in message
+
+    async def test_container_permission_error_is_not_blamed_on_the_daemon(
+        self, runner: DockerRunner, tmp_path: Any
+    ):
+        """An entrypoint or bind-mount permission failure also mentions
+        docker and 'permission denied', but joining the docker group would
+        not fix it."""
+        message = await self._start_container_error(
+            runner,
+            tmp_path,
+            'docker: Error response from daemon: exec: "/entrypoint.sh": '
+            "permission denied",
+        )
+        assert "group" not in message
+
+    async def test_unrecognised_error_gets_no_invented_hint(
+        self, runner: DockerRunner, tmp_path: Any
+    ):
+        message = await self._start_container_error(
+            runner, tmp_path, "something nobody has seen before"
+        )
+        assert message.endswith("something nobody has seen before")
+
     async def test_start_container_creates_container_home(
         self, runner: DockerRunner, tmp_path: Any
     ):

@@ -19,6 +19,28 @@ from typing import Any
 
 from harness_evaluator.evaluator.utils import get_workdir_diff
 from harness_evaluator.orchestrator.config import TaskSpec
+from harness_evaluator.runner.redaction import make_error_excerpt
+
+# How much of the test output to fold into a crash message. Enough for the
+# actual cause (a missing module, an import error, a usage message), not so
+# much that it swamps the CLI summary.
+_TEST_OUTPUT_EXCERPT_CHARS = 300
+
+
+def _with_test_output(message: str, test_output: str) -> str:
+    """Append a bounded excerpt of the test output to a crash message.
+
+    When the test runner does not produce parseable results, the reason is
+    always *in the output* — `No module named pytest`, an import error, a
+    usage message — but the message alone said only "crashed or produced no
+    parseable results", which is a restatement of the symptom. The excerpt
+    is redacted and ANSI-stripped, since the test command is arbitrary and
+    its output ends up in the results DB, the CLI summary and the dashboard.
+    """
+    excerpt = make_error_excerpt(
+        test_output, max_chars=_TEST_OUTPUT_EXCERPT_CHARS, from_end=True
+    )
+    return f"{message}; test output: {excerpt}" if excerpt else message
 
 TestRunner = Callable[[Path, str, int], tuple[str, int, bool]]
 """Runs a task's test command: (repo_dir, command, timeout) -> (output, rc, timed_out)."""
@@ -132,7 +154,9 @@ class SWEEvaluator:
                 exit_class="fail",
                 success=0.0,
                 error_class=ErrorClass.TIMEOUT,
-                error_message=f"Tests timed out after {timeout}s",
+                error_message=_with_test_output(
+                    f"Tests timed out after {timeout}s", test_output
+                ),
                 test_output=test_output,
                 diff=diff,
             )
@@ -153,7 +177,9 @@ class SWEEvaluator:
                     exit_class="fail",
                     success=0.0,
                     error_class=ErrorClass.CRASH,
-                    error_message="Test command ran but collected 0 tests",
+                    error_message=_with_test_output(
+                        "Test command ran but collected 0 tests", test_output
+                    ),
                     test_output=test_output,
                     tests_passed=0,
                     tests_total=0,
@@ -174,7 +200,10 @@ class SWEEvaluator:
             if returncode != 0 and tests_total == 0:
                 # No tests were parsed and non-zero exit — likely a crash
                 error_class = ErrorClass.CRASH
-                error_message = "Test runner crashed or produced no parseable results"
+                error_message = _with_test_output(
+                    "Test runner crashed or produced no parseable results",
+                    test_output,
+                )
             elif self._looks_like_overfit(test_output, diff):
                 error_class = ErrorClass.OVERFIT
                 error_message = "All tests failed — changes may overfit to visible tests"

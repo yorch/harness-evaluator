@@ -81,6 +81,104 @@ def swe_task(tmp_path):
     )
 
 
+def _commit_a_change(repo) -> None:
+    """Make (and commit) an arbitrary change so evaluation gets past the
+    NO_CHANGE short-circuit and actually runs the test command."""
+    (repo / "src" / "utils.py").write_text("# changed\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "change"], cwd=repo, capture_output=True)
+
+
+class TestCrashMessagesIncludeTestOutput:
+    """A crash message that only restates the symptom ("crashed or produced
+    no parseable results") is useless: the cause is always in the test
+    output. A real run failed all its SWE cells because the host had no
+    pytest, and the recorded message never said so."""
+
+    def test_crash_message_names_the_actual_error(self, swe_evaluator, mock_repo):
+        _commit_a_change(mock_repo)
+        task = TaskSpec(
+            id="t",
+            name="T",
+            track=TaskTrack.SWE,
+            task_prompt="p",
+            test_command="python3 -c 'import definitely_not_installed'",
+        )
+        result = swe_evaluator.evaluate(task, mock_repo)
+        assert result.error_class == ErrorClass.CRASH
+        assert "test output:" in result.error_message
+        assert "definitely_not_installed" in result.error_message
+        # The full output is still stored separately, untruncated.
+        assert "ModuleNotFoundError" in result.test_output
+
+    def test_excerpt_keeps_the_end_where_the_failure_is(
+        self, swe_evaluator, mock_repo
+    ):
+        """Test runners print a banner first and the failure last."""
+        _commit_a_change(mock_repo)
+        task = TaskSpec(
+            id="t",
+            name="T",
+            track=TaskTrack.SWE,
+            task_prompt="p",
+            test_command=(
+                "python3 -c \"print('banner ' * 200); "
+                "raise SystemExit('THE ACTUAL REASON')\""
+            ),
+        )
+        result = swe_evaluator.evaluate(task, mock_repo)
+        assert "THE ACTUAL REASON" in result.error_message
+        assert result.error_message.count("banner") < 50
+
+    def test_zero_collected_tests_message_includes_output(
+        self, swe_evaluator, mock_repo
+    ):
+        _commit_a_change(mock_repo)
+        task = TaskSpec(
+            id="t",
+            name="T",
+            track=TaskTrack.SWE,
+            task_prompt="p",
+            test_command="python3 -c \"print('nothing to see here')\"",
+        )
+        result = swe_evaluator.evaluate(task, mock_repo)
+        assert result.error_class == ErrorClass.CRASH
+        assert "collected 0 tests" in result.error_message
+        assert "nothing to see here" in result.error_message
+
+    def test_message_is_unchanged_when_there_is_no_output(
+        self, swe_evaluator, mock_repo
+    ):
+        _commit_a_change(mock_repo)
+        task = TaskSpec(
+            id="t",
+            name="T",
+            track=TaskTrack.SWE,
+            task_prompt="p",
+            test_command="python3 -c ''",
+        )
+        result = swe_evaluator.evaluate(task, mock_repo)
+        assert result.error_message == "Test command ran but collected 0 tests"
+
+    def test_secrets_in_the_crash_message_are_redacted(self, swe_evaluator, mock_repo):
+        """The test command is arbitrary and the crash message reaches the
+        results DB, the CLI summary and the dashboard."""
+        _commit_a_change(mock_repo)
+        task = TaskSpec(
+            id="t",
+            name="T",
+            track=TaskTrack.SWE,
+            task_prompt="p",
+            test_command=(
+                "python3 -c \"import sys; "
+                "sys.exit('key=sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA')\""
+            ),
+        )
+        result = swe_evaluator.evaluate(task, mock_repo)
+        assert "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" not in result.error_message
+        assert "[REDACTED]" in result.error_message
+
+
 class TestSWEEvaluator:
     def test_no_change_detected(self, swe_evaluator, mock_repo, swe_task):
         """Test that no changes result in NO_CHANGE error class."""

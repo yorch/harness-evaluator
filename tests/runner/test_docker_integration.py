@@ -687,6 +687,7 @@ class TestRedactionApplied:
                 success=0.0,
                 error_class="no_change",
                 diff="",
+                test_output=f"ANTHROPIC_API_KEY={secret_value}",
             )
         )
 
@@ -751,6 +752,9 @@ class TestRedactionApplied:
         assert "ANTHROPIC_API_KEY=[REDACTED]" in result["harness_stdout"], (
             f"expected ANTHROPIC_API_KEY=[REDACTED] in "
             f"harness_stdout: {result['harness_stdout']}"
+        )
+        assert secret_value not in result["test_output"], (
+            f"secret leaked into test_output: {result['test_output']}"
         )
         assert "Bearer [REDACTED]" in result["harness_stderr"], (
             f"expected Bearer [REDACTED] in "
