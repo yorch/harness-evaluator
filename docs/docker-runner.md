@@ -9,7 +9,7 @@ The Docker runner (`src/harness_evaluator/runner/docker.py`) executes each eval 
 
 ## Container image
 
-The runner image contains 5 preinstalled harnesses (Claude Code, Codex, OpenCode, Pi, OMP), Node.js 22, Python 3, Git, and Bun. The adapter registry also includes Aider, Gemini CLI, Antigravity, Copilot, Cursor, and Kiro — to use these, build a custom image with the harness binary installed. You can either pull the pre-built image from GHCR or build it locally.
+The runner image contains 5 preinstalled harnesses (Claude Code, Codex, OpenCode, Pi, OMP), Node.js 26, Python 3, Git, and Bun. The adapter registry also includes Aider, Gemini CLI, Antigravity, Copilot, Cursor, and Kiro — to use these, build a custom image with the harness binary installed. You can either pull the pre-built image from GHCR or build it locally.
 
 ### Pull the pre-built image (recommended)
 
@@ -49,7 +49,7 @@ labels. See [Configuration](configuration/#docker-image-configuration).
 
 | Component | Purpose |
 |-----------|---------|
-| Node.js 22 | Required by Pi (≥22.19) and all npm-distributed harnesses |
+| Node.js 26 (LTS) | Required by Pi (≥22.19) and all npm-distributed harnesses |
 | Python 3 + pip | For task repos that need pytest |
 | Git | Repo cloning and diff evaluation |
 | Claude Code (`claude`) | Anthropic's CLI harness |

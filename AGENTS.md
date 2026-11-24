@@ -53,7 +53,7 @@ proxy for token/cost accounting.
 - `tasks/` — Task YAML definitions and repo fixtures (bundled into the wheel
   at `harness_evaluator/tasks` so an installed harness-evaluator runs without a repo checkout)
 - `Dockerfile` — Image with 5 preinstalled harnesses (claude-code, codex,
-  opencode, pi, omp) + Bun (node:22-slim base). The adapter registry also
+  opencode, pi, omp) + Bun (node:26-slim base). The adapter registry also
   includes aider, gemini, antigravity, copilot, cursor, and kiro — these
   require a custom Docker image with the harness binary installed.
   Harness versions are build args (`CLAUDE_CODE_VERSION`, etc.) with pinned defaults.
