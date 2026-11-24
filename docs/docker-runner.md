@@ -33,8 +33,8 @@ docker_image: "ghcr.io/yorch/harness-evaluator-runner:latest"
 docker build -t harness-evaluator-runner:latest .
 ```
 
-Harness (and Bun) versions are build args, so you can pin a specific harness
-release to compare versions:
+Harnesses are installed with Bun (`bun install -g`), and both the harness and Bun
+versions are build args, so you can pin a specific release to compare versions:
 
 ```bash
 docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harness-evaluator-runner:cc-2.0.0 .
@@ -57,10 +57,10 @@ labels. See [Configuration](configuration/#docker-image-configuration).
 | OpenCode (`opencode`) | Open-source agentic coding tool |
 | Pi (`pi`) | Minimal terminal coding harness |
 | OMP (`omp`) | Coding-first fork of Pi with Rust core |
-| Bun | Runtime required by OMP's CLI entry point |
+| Bun | Installs the harnesses with `bun install -g`; runtime for OMP's CLI entry point and the TypeScript task repos |
 | pytest, pyyaml, requests, aiohttp | Python packages for task repos |
 
-The image is ~3.7 GB because it carries all five preinstalled harnesses. OMP is the largest single contributor (~0.9 GB) because it bundles the onnxruntime / `@huggingface/transformers` ML stack; the Dockerfile prunes OMP's GPU (CUDA/DirectML/TensorRT) providers and non-linux (macOS/Windows) binaries after install, since none of them can run in this headless linux/x64 CPU container, saving ~1 GB. For single-harness evals, you can build a trimmed variant by commenting out unused `RUN` lines in the Dockerfile. To add a non-preinstalled harness (Aider, Gemini CLI, etc.), add its install command to the Dockerfile and rebuild.
+The image is ~2.7 GB because it carries all five preinstalled harnesses, each shipping a native binary. Earlier OMP releases bundled the onnxruntime / `@huggingface/transformers` ML stack, whose GPU (CUDA/DirectML/TensorRT) and non-linux (macOS/Windows) binaries cannot run in this headless linux/x64 CPU container; the Dockerfile still prunes them if a future release brings them back. For single-harness evals, you can build a trimmed variant by removing unused `bun install -g` lines from the harness layer. To add a non-preinstalled harness (Aider, Gemini CLI, etc.), add its install command to the Dockerfile and rebuild.
 
 ### Non-root user
 

@@ -433,7 +433,7 @@ Output:
 3. Implement `info()`, `prepare()`, `run()`, and `get_command()`
 4. Call `register_adapter("my-harness", MyHarnessAdapter)` at module level
 5. Add the import to `_load_all()` in `registry.py`
-6. Add the harness to the Dockerfile (`npm install -g ...`)
+6. Add the harness to the Dockerfile (`bun install -g ...`)
 7. Add tests in `tests/adapters/`
 
 ### Base URL convention: `base_url_includes_version`
