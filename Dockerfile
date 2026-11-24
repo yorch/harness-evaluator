@@ -1,8 +1,8 @@
 # Docker image for harness-evaluator harness execution.
 #
 # Contains all five supported harnesses plus a Python runtime for task
-# repos that need pytest.  Built on node:22-slim because Pi requires
-# Node.js >= 22.19 and OMP/Codex/Claude/OpenCode all distribute via npm.
+# repos that need pytest.  Built on node:26-slim (the active LTS) because Pi
+# requires Node.js >= 22.19 and OMP/Codex/Claude/OpenCode all distribute via npm.
 #
 # Build:
 #   docker build -t harness-evaluator-runner:latest .
@@ -16,7 +16,7 @@
 # For a single-harness eval you can build a trimmed variant by commenting
 # out unused RUN lines.
 
-FROM node:22-slim AS base
+FROM node:26-slim AS base
 
 # ---------------------------------------------------------------------------
 # System packages
@@ -58,12 +58,12 @@ RUN pip3 install --no-cache-dir \
 # set for reproducibility. Override to evaluate a specific harness version:
 #   docker build --build-arg CLAUDE_CODE_VERSION=2.0.0 -t harness-evaluator-runner:cc-2.0.0 .
 # then reference that image via `docker_image:` in the run config.
-ARG CLAUDE_CODE_VERSION=2.1.251
-ARG CODEX_VERSION=0.151.0
-ARG OPENCODE_VERSION=1.18.25
-ARG PI_VERSION=0.84.4
-ARG OMP_VERSION=18.0.11
-ARG BUN_VERSION=1.4.0
+ARG CLAUDE_CODE_VERSION=2.1.331
+ARG CODEX_VERSION=0.172.0
+ARG OPENCODE_VERSION=1.19.6
+ARG PI_VERSION=1.6.0
+ARG OMP_VERSION=19.1.1
+ARG BUN_VERSION=1.4.5
 
 # Claude Code — Anthropic's CLI
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}

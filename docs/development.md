@@ -163,7 +163,7 @@ Python core that orchestrates Node.js coding harnesses running inside Docker con
 | `src/harness_evaluator/stats/` | Mixed-effects model, variance decomposition, bootstrap CIs |
 | `src/harness_evaluator/cli.py` | Typer-based CLI entry point |
 | `tasks/` | Task YAML definitions and repo fixtures |
-| `Dockerfile` | Image with 5 preinstalled harnesses + Bun (node:22-slim base) |
+| `Dockerfile` | Image with 5 preinstalled harnesses + Bun (node:26-slim base) |
 
 See [Architecture](architecture/) for the full component map and data flow.
 

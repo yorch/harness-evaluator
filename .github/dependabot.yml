@@ -1,0 +1,34 @@
+version: 2
+updates:
+  # Python runtime + dev dependencies (uv.lock)
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+
+  # Docs site dependencies (site/package-lock.json)
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    groups:
+      site:
+        patterns: ["*"]
+
+  # Runner image: base image digest and apt/npm layers
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Pinned actions (checkout, setup-uv, docker/*, release-please, ...)
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
